@@ -27,8 +27,6 @@ struct SelectableTextView: UIViewRepresentable {
         uiView.attributedText = attributed
     }
 
-    /// Let SwiftUI lay the view out at the UITextView's natural text height
-    /// given the proposed width (requires iOS 16+, which is below our iOS 17 floor).
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
         let width = proposal.width.flatMap { $0 > 0 ? $0 : nil } ?? 320
         return uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))

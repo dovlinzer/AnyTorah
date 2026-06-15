@@ -204,13 +204,6 @@ struct CommentaryPanelView: View {
                 scrollToAmudBHeader(in: panel.commentaryEntries, proxy: proxy)
                 vm.commentaryScrollToAmudB = false
             }
-            .onChange(of: panel.loadVersion) { _, _ in
-                guard vm.category == .talmud, vm.talmudAmud == 1 else { return }
-                // Yield once to let the new entries finish layout, then scroll with the live proxy.
-                DispatchQueue.main.async {
-                    scrollToAmudBHeader(in: panel.commentaryEntries, proxy: proxy)
-                }
-            }
             .onChange(of: vm.commentaryScrollToAmudA) { _, newValue in
                 guard newValue else { return }
                 withAnimation { proxy.scrollTo("commentary_top", anchor: .top) }
