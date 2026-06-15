@@ -1,0 +1,23 @@
+# iOS / Xcode
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+DerivedData/
+build/
+*.ipa
+*.dSYM.zip
+*.dSYM
+Pods/
+.DS_Store
+
+# Android
+AnyTorahAndroid/.gradle/
+AnyTorahAndroid/app/build/
+AnyTorahAndroid/build/
+AnyTorahAndroid/local.properties
+*.apk
+*.aab
+*.keystore
+
+# General
+*.swp
+*~

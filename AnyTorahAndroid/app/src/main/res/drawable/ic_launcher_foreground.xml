@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Torah scroll body (gold parchment) -->
+    <path
+        android:fillColor="#F0CC72"
+        android:pathData="M54,20 C38,20 26,32 26,48 L26,72 C26,80 32,86 40,86 L68,86 C76,86 82,80 82,72 L82,48 C82,32 70,20 54,20 Z" />
+    <!-- Text lines on the scroll -->
+    <path
+        android:strokeColor="#1B3A8A"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M38,46 L70,46 M38,56 L70,56 M38,66 L62,66" />
+    <!-- Scroll knobs (top) -->
+    <path
+        android:fillColor="#8B6914"
+        android:pathData="M44,20 L48,20 L48,26 L44,26 Z M60,20 L64,20 L64,26 L60,26 Z" />
+    <!-- Scroll knobs (bottom) -->
+    <path
+        android:fillColor="#8B6914"
+        android:pathData="M44,82 L48,82 L48,88 L44,88 Z M60,82 L64,82 L64,88 L60,88 Z" />
+</vector>

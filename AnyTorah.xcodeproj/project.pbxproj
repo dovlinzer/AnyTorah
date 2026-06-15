@@ -1,0 +1,502 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		00AABB22CC33DD44EE55FF66 /* pages.json in Resources */ = {isa = PBXBuildFile; fileRef = 11BBCC33DD44EE55FF660011 /* pages.json */; };
+		027B7E634948DFE7A4988349 /* SefariaTextClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EDD2177BE2C97B68E1056DF /* SefariaTextClient.swift */; };
+		074BB671A68F4BCE9668B892 /* NotoSerifHebrew-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1BAA2EF41C6142F3A0E8FBF6 /* NotoSerifHebrew-Regular.ttf */; };
+		093844CD4612B31EC589810D /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2174BC073154809126EC534 /* ContentView.swift */; };
+		2A70A67DF930B4BD8090E57D /* TextModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1720454524DF8C31EBC9631 /* TextModels.swift */; };
+		2B3CA79DE1107F97DC0ED977 /* Bookmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4650825B67A9D77A997AA710 /* Bookmark.swift */; };
+		2B442BB4FB89CFC33C9A1E94 /* Rashi.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 6B5D3890DE3DA6F49C1BB9BF /* Rashi.ttf */; };
+		2E1F88FEE07D7157EF635EE1 /* YomiService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63287C9C4B340ECC4D610E59 /* YomiService.swift */; };
+		3B48880E9BE842A262F59FEE /* AnyTorahApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5400738FE43CDDCA1148BD8 /* AnyTorahApp.swift */; };
+		45F89A1F6F6A72930180F3E4 /* CommentaryPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30E555492B61741604F2B7F /* CommentaryPanelView.swift */; };
+		6926043A2585F5F86872AF50 /* TextReaderViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90D0084EA7A9E2C5650A7747 /* TextReaderViewModel.swift */; };
+		759CBA97869668705CD1C121 /* TextSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11D0250468495D9ACB4FCA34 /* TextSelectorView.swift */; };
+		78EB23366C384154A23AF3E3 /* FrankRuhlLibre-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7F2C6123E2B34469812D4F07 /* FrankRuhlLibre-Regular.ttf */; };
+		87EBFB75F65879AA05E8DC8B /* SASimanNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44F9986F9840643005A9A474 /* SASimanNames.swift */; };
+		88F8AC16B9E240FDA520D349 /* ein_ayah.json in Resources */ = {isa = PBXBuildFile; fileRef = 88B96E33BC3A44839C46541F /* ein_ayah.json */; };
+		8CFCB2F577A34412E3A9348E /* BookmarkEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1182F1CB42D4E6F332A21D76 /* BookmarkEditSheet.swift */; };
+		8FCE44DA7EE5461CB9571BBC /* EinAyahLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 847855B9EC61451C852BEEC5 /* EinAyahLoader.swift */; };
+		9CF80DB4BDE5854BB12208E9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 298C6693258F77878D0AFED1 /* Assets.xcassets */; };
+		9D04B72771B07FDF9C328A29 /* TextContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DE575F1FA5EEE563E0EABBC /* TextContentView.swift */; };
+		A42A7162070A8524F7D9D49C /* HebrewUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD1EBCB8D17D927227C6FBE5 /* HebrewUtils.swift */; };
+		A7C3F9E214B856D07E3A1CB8 /* DedicationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3B8A1E6C492D07E5B9C2F14 /* DedicationService.swift */; };
+		AA11BB22CC33DD44EE55FF66 /* CommentaryPanelViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB22CC33DD44EE55FF6600AA /* CommentaryPanelViewModel.swift */; };
+		B00314D4712C49F28927F2B1 /* NotoRashiHebrew-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 12E837A009184E7DBEBCFAF6 /* NotoRashiHebrew-Regular.ttf */; };
+		B223D09FDE0A48AF79F1DBDD /* AudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9F99A8A9F70A7258CAD1EBF /* AudioPlayer.swift */; };
+		B41FC958ED052C2CCAF0668F /* BookmarkListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D1A091DE272567481681DA2 /* BookmarkListView.swift */; };
+		B4379258D23E4718031E0BE7 /* BookmarkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B56177B3360DC9563D0BB8A /* BookmarkManager.swift */; };
+		C5D20B30D520CDCA664D81E5 /* TextReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0FF8DC97327A81E10C297D0 /* TextReaderView.swift */; };
+		CA618EE046866E666E6D0A18 /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51843B948C0B1422A968C504 /* SplashView.swift */; };
+		CC1A2B3D4E5F6A7B8C9D0E1F /* SelectableTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD2A3B4C5D6E7F8A9B0C1D2E /* SelectableTextView.swift */; };
+		CC33DD44EE55FF6600AABB22 /* DafPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD44EE55FF6600AABB22CC33 /* DafPageView.swift */; };
+		D763D920A87154A36DEF165F /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 985DF0DB3464786C42B4558A /* SettingsView.swift */; };
+		D7A4C69E10298365317E5F7B /* TextCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B36F6B827D293F0E9ACAFBF /* TextCatalog.swift */; };
+		EE55FF6600AABB22CC33DD44 /* TalmudPageManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF6600AABB22CC33DD44EE55 /* TalmudPageManager.swift */; };
+		F5D983355821C456CDF19891 /* CategoryMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E4556E61538888E6C341DD9 /* CategoryMenuView.swift */; };
+		F7AD86A08DEE260E6A443C38 /* RambamIntroductions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1407717DD3E83F4E86199C40 /* RambamIntroductions.swift */; };
+		FCE16F47EDC82EAC1341F8B1 /* TalmudAudioService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AB4EE1C8500B44CEA98EA04 /* TalmudAudioService.swift */; };
+		FE819D0F2FC9190F0026926A /* DedicationBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE819D0E2FC9190F0026926A /* DedicationBannerView.swift */; };
+		FE819D112FCC790E0026926A /* HomeCombinedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE819D102FCC790E0026926A /* HomeCombinedView.swift */; };
+		FE819D212FCCA83A0026926A /* yct_splash.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = FE819D202FCCA83A0026926A /* yct_splash.mp4 */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0D1A091DE272567481681DA2 /* BookmarkListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkListView.swift; sourceTree = "<group>"; };
+		0E4556E61538888E6C341DD9 /* CategoryMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryMenuView.swift; sourceTree = "<group>"; };
+		1182F1CB42D4E6F332A21D76 /* BookmarkEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkEditSheet.swift; sourceTree = "<group>"; };
+		11BBCC33DD44EE55FF660011 /* pages.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = pages.json; sourceTree = "<group>"; };
+		11D0250468495D9ACB4FCA34 /* TextSelectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextSelectorView.swift; sourceTree = "<group>"; };
+		12E837A009184E7DBEBCFAF6 /* NotoRashiHebrew-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "NotoRashiHebrew-Regular.ttf"; sourceTree = "<group>"; };
+		1407717DD3E83F4E86199C40 /* RambamIntroductions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RambamIntroductions.swift; sourceTree = "<group>"; };
+		1BAA2EF41C6142F3A0E8FBF6 /* NotoSerifHebrew-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "NotoSerifHebrew-Regular.ttf"; sourceTree = "<group>"; };
+		298C6693258F77878D0AFED1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		3B36F6B827D293F0E9ACAFBF /* TextCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextCatalog.swift; sourceTree = "<group>"; };
+		3DE575F1FA5EEE563E0EABBC /* TextContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextContentView.swift; sourceTree = "<group>"; };
+		3EDD2177BE2C97B68E1056DF /* SefariaTextClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SefariaTextClient.swift; sourceTree = "<group>"; };
+		44F9986F9840643005A9A474 /* SASimanNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SASimanNames.swift; sourceTree = "<group>"; };
+		4650825B67A9D77A997AA710 /* Bookmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bookmark.swift; sourceTree = "<group>"; };
+		51843B948C0B1422A968C504 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
+		63287C9C4B340ECC4D610E59 /* YomiService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YomiService.swift; sourceTree = "<group>"; };
+		6B56177B3360DC9563D0BB8A /* BookmarkManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkManager.swift; sourceTree = "<group>"; };
+		6B5D3890DE3DA6F49C1BB9BF /* Rashi.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Rashi.ttf; sourceTree = "<group>"; };
+		7F2C6123E2B34469812D4F07 /* FrankRuhlLibre-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "FrankRuhlLibre-Regular.ttf"; sourceTree = "<group>"; };
+		847855B9EC61451C852BEEC5 /* EinAyahLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EinAyahLoader.swift; sourceTree = "<group>"; };
+		88B96E33BC3A44839C46541F /* ein_ayah.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = ein_ayah.json; sourceTree = "<group>"; };
+		90D0084EA7A9E2C5650A7747 /* TextReaderViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextReaderViewModel.swift; sourceTree = "<group>"; };
+		985DF0DB3464786C42B4558A /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		9AB4EE1C8500B44CEA98EA04 /* TalmudAudioService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalmudAudioService.swift; sourceTree = "<group>"; };
+		A0FF8DC97327A81E10C297D0 /* TextReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextReaderView.swift; sourceTree = "<group>"; };
+		A21FE02B4AAAD50249556A48 /* AnyTorah.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AnyTorah.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A5400738FE43CDDCA1148BD8 /* AnyTorahApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnyTorahApp.swift; sourceTree = "<group>"; };
+		B1720454524DF8C31EBC9631 /* TextModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextModels.swift; sourceTree = "<group>"; };
+		B2174BC073154809126EC534 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		B30E555492B61741604F2B7F /* CommentaryPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentaryPanelView.swift; sourceTree = "<group>"; };
+		BB22CC33DD44EE55FF6600AA /* CommentaryPanelViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentaryPanelViewModel.swift; sourceTree = "<group>"; };
+		D9F99A8A9F70A7258CAD1EBF /* AudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayer.swift; sourceTree = "<group>"; };
+		DD1EBCB8D17D927227C6FBE5 /* HebrewUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HebrewUtils.swift; sourceTree = "<group>"; };
+		DD2A3B4C5D6E7F8A9B0C1D2E /* SelectableTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectableTextView.swift; sourceTree = "<group>"; };
+		DD44EE55FF6600AABB22CC33 /* DafPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DafPageView.swift; sourceTree = "<group>"; };
+		F3B8A1E6C492D07E5B9C2F14 /* DedicationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DedicationService.swift; sourceTree = "<group>"; };
+		FCAB1E421BC1DA808AD4F5F9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		FE819D0E2FC9190F0026926A /* DedicationBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DedicationBannerView.swift; sourceTree = "<group>"; };
+		FE819D102FCC790E0026926A /* HomeCombinedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeCombinedView.swift; sourceTree = "<group>"; };
+		FE819D202FCCA83A0026926A /* yct_splash.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = yct_splash.mp4; sourceTree = "<group>"; };
+		FF6600AABB22CC33DD44EE55 /* TalmudPageManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalmudPageManager.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		471913B360445DD146522895 /* AnyTorah */ = {
+			isa = PBXGroup;
+			children = (
+				A5400738FE43CDDCA1148BD8 /* AnyTorahApp.swift */,
+				298C6693258F77878D0AFED1 /* Assets.xcassets */,
+				D9F99A8A9F70A7258CAD1EBF /* AudioPlayer.swift */,
+				88B96E33BC3A44839C46541F /* ein_ayah.json */,
+				11BBCC33DD44EE55FF660011 /* pages.json */,
+				FCAB1E421BC1DA808AD4F5F9 /* Info.plist */,
+				FE819D202FCCA83A0026926A /* yct_splash.mp4 */,
+				A18D4F4F01C488A5A1B3900B /* API */,
+				B56B8C586A9C50E18C17FBF0 /* Fonts */,
+				D6590EF4160AB1940DBF8CB2 /* Models */,
+				CE05DC1E90EFA5134636DEB9 /* ViewModels */,
+				660F6E9B5D322776D75F4FEA /* Views */,
+			);
+			path = AnyTorah;
+			sourceTree = "<group>";
+		};
+		5541ED218FB408FDC0CB4166 = {
+			isa = PBXGroup;
+			children = (
+				471913B360445DD146522895 /* AnyTorah */,
+				F9663B80B6172721497BA942 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		660F6E9B5D322776D75F4FEA /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				1182F1CB42D4E6F332A21D76 /* BookmarkEditSheet.swift */,
+				0D1A091DE272567481681DA2 /* BookmarkListView.swift */,
+				0E4556E61538888E6C341DD9 /* CategoryMenuView.swift */,
+				B30E555492B61741604F2B7F /* CommentaryPanelView.swift */,
+				B2174BC073154809126EC534 /* ContentView.swift */,
+				FE819D102FCC790E0026926A /* HomeCombinedView.swift */,
+				985DF0DB3464786C42B4558A /* SettingsView.swift */,
+				FE819D0E2FC9190F0026926A /* DedicationBannerView.swift */,
+				51843B948C0B1422A968C504 /* SplashView.swift */,
+				3DE575F1FA5EEE563E0EABBC /* TextContentView.swift */,
+				A0FF8DC97327A81E10C297D0 /* TextReaderView.swift */,
+				11D0250468495D9ACB4FCA34 /* TextSelectorView.swift */,
+				DD2A3B4C5D6E7F8A9B0C1D2E /* SelectableTextView.swift */,
+				DD44EE55FF6600AABB22CC33 /* DafPageView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		A18D4F4F01C488A5A1B3900B /* API */ = {
+			isa = PBXGroup;
+			children = (
+				F3B8A1E6C492D07E5B9C2F14 /* DedicationService.swift */,
+				847855B9EC61451C852BEEC5 /* EinAyahLoader.swift */,
+				3EDD2177BE2C97B68E1056DF /* SefariaTextClient.swift */,
+				9AB4EE1C8500B44CEA98EA04 /* TalmudAudioService.swift */,
+				63287C9C4B340ECC4D610E59 /* YomiService.swift */,
+				FF6600AABB22CC33DD44EE55 /* TalmudPageManager.swift */,
+			);
+			path = API;
+			sourceTree = "<group>";
+		};
+		B56B8C586A9C50E18C17FBF0 /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				6B5D3890DE3DA6F49C1BB9BF /* Rashi.ttf */,
+				7F2C6123E2B34469812D4F07 /* FrankRuhlLibre-Regular.ttf */,
+				1BAA2EF41C6142F3A0E8FBF6 /* NotoSerifHebrew-Regular.ttf */,
+				12E837A009184E7DBEBCFAF6 /* NotoRashiHebrew-Regular.ttf */,
+			);
+			path = Fonts;
+			sourceTree = "<group>";
+		};
+		CE05DC1E90EFA5134636DEB9 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				90D0084EA7A9E2C5650A7747 /* TextReaderViewModel.swift */,
+				BB22CC33DD44EE55FF6600AA /* CommentaryPanelViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		D6590EF4160AB1940DBF8CB2 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				4650825B67A9D77A997AA710 /* Bookmark.swift */,
+				6B56177B3360DC9563D0BB8A /* BookmarkManager.swift */,
+				DD1EBCB8D17D927227C6FBE5 /* HebrewUtils.swift */,
+				1407717DD3E83F4E86199C40 /* RambamIntroductions.swift */,
+				44F9986F9840643005A9A474 /* SASimanNames.swift */,
+				3B36F6B827D293F0E9ACAFBF /* TextCatalog.swift */,
+				B1720454524DF8C31EBC9631 /* TextModels.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		F9663B80B6172721497BA942 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A21FE02B4AAAD50249556A48 /* AnyTorah.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		93A78202CBAF267D92BD415C /* AnyTorah */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B4CD286B4F3E7E0FC6261D15 /* Build configuration list for PBXNativeTarget "AnyTorah" */;
+			buildPhases = (
+				D6FB4CB0E8B77D9FD51F3AFD /* Sources */,
+				C244CF4FF5E70493BA1E313B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AnyTorah;
+			packageProductDependencies = (
+			);
+			productName = AnyTorah;
+			productReference = A21FE02B4AAAD50249556A48 /* AnyTorah.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		BBC69EC0328AD28A9F78D0DC /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					93A78202CBAF267D92BD415C = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 02C64713D32B3B531ABE6AA2 /* Build configuration list for PBXProject "AnyTorah" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 5541ED218FB408FDC0CB4166;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = F9663B80B6172721497BA942 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				93A78202CBAF267D92BD415C /* AnyTorah */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		C244CF4FF5E70493BA1E313B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9CF80DB4BDE5854BB12208E9 /* Assets.xcassets in Resources */,
+				88F8AC16B9E240FDA520D349 /* ein_ayah.json in Resources */,
+				2B442BB4FB89CFC33C9A1E94 /* Rashi.ttf in Resources */,
+				78EB23366C384154A23AF3E3 /* FrankRuhlLibre-Regular.ttf in Resources */,
+				074BB671A68F4BCE9668B892 /* NotoSerifHebrew-Regular.ttf in Resources */,
+				B00314D4712C49F28927F2B1 /* NotoRashiHebrew-Regular.ttf in Resources */,
+				00AABB22CC33DD44EE55FF66 /* pages.json in Resources */,
+				FE819D212FCCA83A0026926A /* yct_splash.mp4 in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D6FB4CB0E8B77D9FD51F3AFD /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3B48880E9BE842A262F59FEE /* AnyTorahApp.swift in Sources */,
+				B223D09FDE0A48AF79F1DBDD /* AudioPlayer.swift in Sources */,
+				2B3CA79DE1107F97DC0ED977 /* Bookmark.swift in Sources */,
+				8CFCB2F577A34412E3A9348E /* BookmarkEditSheet.swift in Sources */,
+				B41FC958ED052C2CCAF0668F /* BookmarkListView.swift in Sources */,
+				B4379258D23E4718031E0BE7 /* BookmarkManager.swift in Sources */,
+				F5D983355821C456CDF19891 /* CategoryMenuView.swift in Sources */,
+				45F89A1F6F6A72930180F3E4 /* CommentaryPanelView.swift in Sources */,
+				093844CD4612B31EC589810D /* ContentView.swift in Sources */,
+				A42A7162070A8524F7D9D49C /* HebrewUtils.swift in Sources */,
+				F7AD86A08DEE260E6A443C38 /* RambamIntroductions.swift in Sources */,
+				FE819D112FCC790E0026926A /* HomeCombinedView.swift in Sources */,
+				87EBFB75F65879AA05E8DC8B /* SASimanNames.swift in Sources */,
+				A7C3F9E214B856D07E3A1CB8 /* DedicationService.swift in Sources */,
+				8FCE44DA7EE5461CB9571BBC /* EinAyahLoader.swift in Sources */,
+				027B7E634948DFE7A4988349 /* SefariaTextClient.swift in Sources */,
+				D763D920A87154A36DEF165F /* SettingsView.swift in Sources */,
+				CA618EE046866E666E6D0A18 /* SplashView.swift in Sources */,
+				FCE16F47EDC82EAC1341F8B1 /* TalmudAudioService.swift in Sources */,
+				D7A4C69E10298365317E5F7B /* TextCatalog.swift in Sources */,
+				9D04B72771B07FDF9C328A29 /* TextContentView.swift in Sources */,
+				CC1A2B3D4E5F6A7B8C9D0E1F /* SelectableTextView.swift in Sources */,
+				FE819D0F2FC9190F0026926A /* DedicationBannerView.swift in Sources */,
+				2A70A67DF930B4BD8090E57D /* TextModels.swift in Sources */,
+				C5D20B30D520CDCA664D81E5 /* TextReaderView.swift in Sources */,
+				6926043A2585F5F86872AF50 /* TextReaderViewModel.swift in Sources */,
+				759CBA97869668705CD1C121 /* TextSelectorView.swift in Sources */,
+				2E1F88FEE07D7157EF635EE1 /* YomiService.swift in Sources */,
+				AA11BB22CC33DD44EE55FF66 /* CommentaryPanelViewModel.swift in Sources */,
+				CC33DD44EE55FF6600AABB22 /* DafPageView.swift in Sources */,
+				EE55FF6600AABB22CC33DD44 /* TalmudPageManager.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0BFEABC1B5BF8E3D47292FEF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = DU44C93RZ5;
+				INFOPLIST_FILE = AnyTorah/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.anytorah.app;
+				PRODUCT_NAME = AnyTorah;
+				SDKROOT = iphoneos;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		7E630EE0A582C15B99779F4F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		DDABDBCD566DE3980D0EFC20 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = DU44C93RZ5;
+				INFOPLIST_FILE = AnyTorah/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.anytorah.app;
+				PRODUCT_NAME = AnyTorah;
+				SDKROOT = iphoneos;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		E0439894C61563FF4DE4B1B5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_PREVIEWS = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		02C64713D32B3B531ABE6AA2 /* Build configuration list for PBXProject "AnyTorah" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E0439894C61563FF4DE4B1B5 /* Debug */,
+				7E630EE0A582C15B99779F4F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B4CD286B4F3E7E0FC6261D15 /* Build configuration list for PBXNativeTarget "AnyTorah" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DDABDBCD566DE3980D0EFC20 /* Debug */,
+				0BFEABC1B5BF8E3D47292FEF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = BBC69EC0328AD28A9F78D0DC /* Project object */;
+}
