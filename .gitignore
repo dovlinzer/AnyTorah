@@ -21,3 +21,4 @@ AnyTorahAndroid/local.properties
 # General
 *.swp
 *~
+*.hprof
