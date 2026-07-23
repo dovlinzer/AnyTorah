@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+/*
+ * Color scheme ported from the native app (AnyTorah/CLAUDE.md "App colors"):
+ * light = white bg + dark indigo accent; dark = deep blue bg + amber accent.
+ */
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  --accent: #1a3399;
+  --accent-foreground: #ffffff;
+  --card: #f7f7f8;
+  --border: #e5e5e5;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --font-sans: var(--font-geist-sans);
+  --font-hebrew: var(--font-hebrew);
+  --font-hebrew-sans: var(--font-hebrew-sans);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0f1c47;
+    --foreground: #ffffff;
+    --accent: #f0cc73;
+    --accent-foreground: #0f1c47;
+    --card: #16255c;
+    --border: #24357a;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/*
+ * Shulchan Arukh inline commentary-marker brackets — one look per panel slot (0/1/2), matched
+ * between the main text's inline markers and the commentary panel's entry labels so a reader
+ * can tell at a glance which bracket belongs to which commentator, independent of the letter
+ * or bracket shape alone. Each slot varies font family, weight, and size.
+ */
+.sa-mark {
+  unicode-bidi: isolate;
+  white-space: nowrap;
+}
+.sa-mark-0 {
+  font-family: var(--font-hebrew);
+  font-weight: 400;
+  font-size: 1em;
+  color: var(--accent);
+}
+.sa-mark-1 {
+  font-family: var(--font-hebrew-sans);
+  font-weight: 400;
+  font-size: 0.82em;
+  color: var(--foreground);
+  opacity: 0.85;
+}
+.sa-mark-2 {
+  font-family: var(--font-hebrew);
+  font-weight: 700;
+  font-size: 0.78em;
+  color: var(--accent);
+  opacity: 0.75;
+}
