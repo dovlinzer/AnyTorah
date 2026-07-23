@@ -4,6 +4,8 @@
 import { TextCatalog } from "./textCatalog";
 import type { ReaderCategory } from "./commentaryPools";
 import { rambamIntroductions } from "./rambamIntroductions";
+import { stripNikud } from "./hebrewUtils";
+import { textCategoryMeta } from "./textModels";
 
 export interface CategoryItem {
   id: number;
@@ -17,33 +19,42 @@ export interface CategoryGroup {
   items: CategoryItem[];
 }
 
-export function getCategoryGroups(category: ReaderCategory): CategoryGroup[] {
+/** Picks the display name for a catalog entry — nikkud-stripped Hebrew when saHebrewMode is on. */
+function displayName(name: string, hebrewName: string, hebrewMode: boolean): string {
+  return hebrewMode ? stripNikud(hebrewName) : name;
+}
+
+export function getCategoryGroups(category: ReaderCategory, hebrewMode = false): CategoryGroup[] {
   switch (category) {
     case "tanakh":
       return TextCatalog.tanakhSections.map((s) => ({
-        name: s.name,
-        items: s.books.map((b) => ({ id: b.id, name: b.name, count: b.chapters })),
+        name: displayName(s.name, s.hebrewName, hebrewMode),
+        items: s.books.map((b) => ({ id: b.id, name: displayName(b.name, b.hebrewName, hebrewMode), count: b.chapters })),
       }));
     case "mishnah":
       return TextCatalog.mishnahSedarim.map((s) => ({
-        name: s.name,
-        items: s.tractates.map((t) => ({ id: t.id, name: t.name, count: t.chapters })),
+        name: displayName(s.name, s.hebrewName, hebrewMode),
+        items: s.tractates.map((t) => ({ id: t.id, name: displayName(t.name, t.hebrewName, hebrewMode), count: t.chapters })),
       }));
     case "talmud":
       return TextCatalog.talmudSedarim.map((s) => ({
-        name: s.name,
-        items: s.tractates.map((t) => ({ id: t.id, name: t.name, count: t.endDaf })),
+        name: displayName(s.name, s.hebrewName, hebrewMode),
+        items: s.tractates.map((t) => ({ id: t.id, name: displayName(t.name, t.hebrewName, hebrewMode), count: t.endDaf })),
       }));
     case "rambam":
       return TextCatalog.rambamSefarim.map((s) => ({
-        name: s.name,
-        items: s.works.map((w) => ({ id: w.id, name: w.name, count: w.chapters })),
+        name: displayName(s.name, s.hebrewName, hebrewMode),
+        items: s.works.map((w) => ({ id: w.id, name: displayName(w.name, w.hebrewName, hebrewMode), count: w.chapters })),
       }));
     case "shulchanArukh":
       return [
         {
           name: "",
-          items: TextCatalog.shulchanArukhSections.map((s) => ({ id: s.id, name: s.name, count: s.simanim })),
+          items: TextCatalog.shulchanArukhSections.map((s) => ({
+            id: s.id,
+            name: displayName(s.name, s.hebrewName, hebrewMode),
+            count: s.simanim,
+          })),
         },
       ];
   }
@@ -69,7 +80,14 @@ export function getChapterMax(category: ReaderCategory, index: number): number {
   return 1;
 }
 
-export function getChapterUnitLabel(category: ReaderCategory): string {
+export function getChapterUnitLabel(category: ReaderCategory, hebrewMode = false): string {
+  if (hebrewMode) {
+    switch (category) {
+      case "talmud": return "דף";
+      case "shulchanArukh": return "סימן";
+      default: return "פרק";
+    }
+  }
   switch (category) {
     case "talmud": return "daf";
     case "shulchanArukh": return "siman";
@@ -82,7 +100,8 @@ export function getTalmudSefariaName(index: number): string | undefined {
   return TextCatalog.allTalmudTractates.find((t) => t.id === index)?.sefariaName;
 }
 
-export function getCategoryDisplayName(category: ReaderCategory): string {
+export function getCategoryDisplayName(category: ReaderCategory, hebrewMode = false): string {
+  if (hebrewMode) return stripNikud(textCategoryMeta[category].hebrewName);
   switch (category) {
     case "tanakh": return "Tanakh";
     case "mishnah": return "Mishnah";

@@ -16,6 +16,7 @@ import CommentaryPanel from "@/components/CommentaryPanel";
 import SASimanPicker from "@/components/SASimanPicker";
 import DafImagePanel from "@/components/DafImagePanel";
 import { loadTalmudPages, hasPages as hasTalmudPages, type TalmudPages } from "@/lib/talmudPages";
+import { toHebrewNumeral } from "@/lib/textModels";
 
 interface ChapterResponse {
   ref: string;
@@ -88,6 +89,31 @@ function storeFontSizeLevel(key: string, level: number) {
     window.localStorage.setItem(key, String(level));
   } catch {
     // localStorage unavailable — font size choice just won't persist.
+  }
+}
+
+// Hebrew/RTL display mode — matches native's saHebrewMode: book/tractate names and category
+// tabs switch to nikkud-stripped Hebrew, chapter/siman numbers show as Hebrew numerals, and the
+// selector toolbar flips to RTL layout. Independent of the per-panel Hebrew/English/both content
+// toggles (textDisplayMode/commentaryDisplayMode) — this only affects UI chrome, not which
+// language of the text itself is shown.
+const HEBREW_MODE_KEY = "anytorah:hebrewMode";
+
+function loadHebrewMode(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(HEBREW_MODE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function storeHebrewMode(on: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(HEBREW_MODE_KEY, on ? "1" : "0");
+  } catch {
+    // localStorage unavailable — toggle just won't persist.
   }
 }
 
@@ -318,6 +344,25 @@ function DisplayModePill({
   );
 }
 
+/** EN/עב pill toggling saHebrewMode — Hebrew names, Hebrew numerals, and RTL toolbar layout. */
+function HebrewModeToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex shrink-0 overflow-hidden rounded-full border border-border text-sm">
+      {[false, true].map((v) => (
+        <button
+          key={String(v)}
+          onClick={() => onChange(v)}
+          aria-label={v ? "Switch to Hebrew names" : "Switch to English names"}
+          className="px-3 py-1.5 transition-colors"
+          style={on === v ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+        >
+          {v ? "עב" : "EN"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** Thin vertical rule separating the Text and Commentary control groups. */
 function VerticalDivider() {
   return <div className="h-8 w-px shrink-0 self-center bg-border" />;
@@ -349,6 +394,12 @@ const INITIAL_SELECTION: Selection = {
 export default function Reader() {
   const [category, setCategory] = useState<ReaderCategory>("tanakh");
   const [selection, setSelection] = useState<Selection>(INITIAL_SELECTION);
+  const [hebrewMode, setHebrewModeState] = useState(false);
+  useEffect(() => setHebrewModeState(loadHebrewMode()), []);
+  const setHebrewMode = (on: boolean) => {
+    setHebrewModeState(on);
+    storeHebrewMode(on);
+  };
   // Text and commentary each get their own Hebrew/English/both toggle — some users want to
   // read the main text in "both" but skim commentary in English-only, or vice versa.
   const [textDisplayMode, setTextDisplayMode] = useState<TextDisplayMode>("both");
@@ -373,10 +424,11 @@ export default function Reader() {
   const mainEnglishFontPx = 16 + mainFontSizeLevel * 2 - (category === "talmud" ? 2 : 0);
 
   const { index, chapter } = selection[category];
-  const groups = useMemo(() => getCategoryGroups(category), [category]);
+  const groups = useMemo(() => getCategoryGroups(category, hebrewMode), [category, hebrewMode]);
   const chapterMin = getChapterMin(category, index);
   const chapterMax = getChapterMax(category, index);
-  const chapterUnit = getChapterUnitLabel(category);
+  const chapterUnit = getChapterUnitLabel(category, hebrewMode);
+  const numeral = (n: number) => (hebrewMode ? toHebrewNumeral(n) : String(n));
 
   // Scanned daf image — shown as its own column alongside the digital text (Talmud only).
   const [talmudPages, setTalmudPages] = useState<TalmudPages | null>(null);
@@ -510,21 +562,27 @@ export default function Reader() {
         <h1 className="text-xl font-semibold tracking-tight" style={{ color: "var(--accent)" }}>
           AnyTorah
         </h1>
-        <div className="flex overflow-hidden rounded-full border border-border text-sm">
-          {READER_CATEGORIES.map((c) => (
-            <button
-              key={c}
-              onClick={() => setCategory(c)}
-              className="px-3 py-1.5 transition-colors"
-              style={category === c ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
-            >
-              {getCategoryDisplayName(c)}
-            </button>
-          ))}
+        <div className="flex shrink-0 items-center gap-3">
+          <div dir={hebrewMode ? "rtl" : "ltr"} className="flex overflow-hidden rounded-full border border-border text-sm">
+            {READER_CATEGORIES.map((c) => (
+              <button
+                key={c}
+                onClick={() => setCategory(c)}
+                className="px-3 py-1.5 transition-colors"
+                style={category === c ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+              >
+                {getCategoryDisplayName(c, hebrewMode)}
+              </button>
+            ))}
+          </div>
+          <HebrewModeToggle on={hebrewMode} onChange={setHebrewMode} />
         </div>
       </header>
 
-      <div className="mb-4 flex shrink-0 flex-nowrap items-center gap-3 overflow-x-auto rounded-lg border border-border bg-card p-3">
+      <div
+        dir={hebrewMode ? "rtl" : "ltr"}
+        className="mb-4 flex shrink-0 flex-nowrap items-center gap-3 overflow-x-auto rounded-lg border border-border bg-card p-3"
+      >
         <select
           value={index}
           onChange={(e) => handleIndexChange(Number(e.target.value))}
@@ -547,7 +605,9 @@ export default function Reader() {
         <span className="shrink-0 text-sm opacity-60">{chapterUnit}</span>
         <CommitInput value={chapter} min={chapterMin} max={chapterMax} onCommit={handleChapterChange} />
         <span className="shrink-0 text-xs opacity-50">
-          {chapterMin === 1 ? `of ${chapterMax}` : `${chapterMin}–${chapterMax}`}
+          {chapterMin === 1
+            ? hebrewMode ? `מתוך ${numeral(chapterMax)}` : `of ${chapterMax}`
+            : `${numeral(chapterMin)}–${numeral(chapterMax)}`}
         </span>
 
         {category === "shulchanArukh" && (
@@ -555,7 +615,7 @@ export default function Reader() {
             onClick={() => setSimanPickerOpen(true)}
             className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
           >
-            Browse simanim…
+            {hebrewMode ? "עיין בסימנים…" : "Browse simanim…"}
           </button>
         )}
 
@@ -568,7 +628,7 @@ export default function Reader() {
                 className="px-3 py-1.5 transition-colors"
                 style={talmudAmud === a ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
               >
-                {a}
+                {hebrewMode ? (a === "a" ? "א" : "ב") : a}
               </button>
             ))}
           </div>
@@ -580,13 +640,13 @@ export default function Reader() {
             className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
             style={showDafImage ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
           >
-            {showDafImage ? "Hide daf" : "Show daf"}
+            {hebrewMode ? (showDafImage ? "הסתר דף" : "הצג דף") : showDafImage ? "Hide daf" : "Show daf"}
           </button>
         )}
 
         {showDaf && (
           <div className="flex shrink-0 items-center gap-1 rounded-full border border-border px-1 py-1 text-sm">
-            <span className="pl-2 text-xs opacity-60">Daf</span>
+            <span className="pl-2 text-xs opacity-60">{hebrewMode ? "דף" : "Daf"}</span>
             {(["left", "middle"] as const).map((pos) => (
               <button
                 key={pos}
@@ -596,11 +656,14 @@ export default function Reader() {
                   dafPosition === pos ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined
                 }
               >
-                {pos === "left" ? "Left" : "Middle"}
+                {hebrewMode ? (pos === "left" ? "שמאל" : "אמצע") : pos === "left" ? "Left" : "Middle"}
               </button>
             ))}
           </div>
         )}
+
+        <div className="flex-1" />
+        <VerticalDivider />
 
         <ControlGroup label="Text">
           <DisplayModePill mode={textDisplayMode} onChange={setTextDisplayMode} />
@@ -751,6 +814,7 @@ export default function Reader() {
             setSimanPickerOpen(false);
           }}
           onClose={() => setSimanPickerOpen(false)}
+          hebrewMode={hebrewMode}
         />
       )}
     </div>
