@@ -16,6 +16,7 @@ export default function CommentaryPanel({
   onSlotsChange,
   talmudAmud,
   mainSegmentCount,
+  fontSizeLevel,
 }: {
   category: ReaderCategory;
   index: number;
@@ -31,6 +32,8 @@ export default function CommentaryPanel({
   talmudAmud?: "a" | "b";
   /** Rambam only — real halakha count of the current chapter, needed for its depth-3 fix. */
   mainSegmentCount?: number;
+  /** -2..+2, each step ±2px from the base 14px; inherited by all entry text below. */
+  fontSizeLevel: number;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [openSlotIndex, setOpenSlotIndex] = useState<number | null>(null);
@@ -148,7 +151,11 @@ export default function CommentaryPanel({
         </div>
       )}
 
-      <div ref={contentRef} className="flex-1 space-y-3 overflow-y-auto p-3 text-sm">
+      <div
+        ref={contentRef}
+        className="flex-1 space-y-3 overflow-y-auto p-3"
+        style={{ fontSize: 14 + fontSizeLevel * 2 }}
+      >
         {loading && <p className="py-6 text-center opacity-60">Loading…</p>}
         {error && <p className="py-6 text-center text-red-500">{error}</p>}
         {!loading && !error && entries && entries.length === 0 && (

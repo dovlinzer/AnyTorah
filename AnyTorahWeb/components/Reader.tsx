@@ -49,6 +49,76 @@ function storeSlots(contextKey: string, slots: CommentaryType[]) {
   }
 }
 
+// Font size: -2..+2, each step ±2px from base, matching native's anyTorahFontSize scheme.
+const FONT_SIZE_STORAGE_KEY = "anytorah:fontSizeLevel";
+const FONT_SIZE_MIN = -2;
+const FONT_SIZE_MAX = 2;
+const FONT_SIZE_LABELS = ["Smallest", "Small", "Default", "Large", "Largest"];
+
+function loadFontSizeLevel(): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const raw = window.localStorage.getItem(FONT_SIZE_STORAGE_KEY);
+    const n = raw === null ? NaN : parseInt(raw, 10);
+    return Number.isFinite(n) ? clamp(n, FONT_SIZE_MIN, FONT_SIZE_MAX) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function storeFontSizeLevel(level: number) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(FONT_SIZE_STORAGE_KEY, String(level));
+  } catch {
+    // localStorage unavailable — font size choice just won't persist.
+  }
+}
+
+/** Small-A…large-A control with 5 tappable dots, matching native's font-size setting. */
+function FontSizeControl({ level, onChange }: { level: number; onChange: (n: number) => void }) {
+  return (
+    <div className="flex items-center gap-2 rounded-full border border-border px-3 py-1.5">
+      <button
+        onClick={() => onChange(clamp(level - 1, FONT_SIZE_MIN, FONT_SIZE_MAX))}
+        disabled={level <= FONT_SIZE_MIN}
+        aria-label="Decrease font size"
+        className="text-xs opacity-70 transition-opacity hover:opacity-100 disabled:opacity-25"
+      >
+        A
+      </button>
+      <div className="flex items-center gap-1">
+        {[-2, -1, 0, 1, 2].map((d) => {
+          const size = 5 + (d + 2) * 2;
+          return (
+            <button
+              key={d}
+              onClick={() => onChange(d)}
+              aria-label={`Font size: ${FONT_SIZE_LABELS[d + 2]}`}
+              title={FONT_SIZE_LABELS[d + 2]}
+              className="rounded-full"
+              style={{
+                width: size,
+                height: size,
+                background: "var(--foreground)",
+                opacity: d === level ? 1 : 0.25,
+              }}
+            />
+          );
+        })}
+      </div>
+      <button
+        onClick={() => onChange(clamp(level + 1, FONT_SIZE_MIN, FONT_SIZE_MAX))}
+        disabled={level >= FONT_SIZE_MAX}
+        aria-label="Increase font size"
+        className="text-base opacity-70 transition-opacity hover:opacity-100 disabled:opacity-25"
+      >
+        A
+      </button>
+    </div>
+  );
+}
+
 /** Number input that only commits (and re-fetches) on blur/Enter, not per keystroke. */
 function CommitInput({
   value,
@@ -102,6 +172,14 @@ export default function Reader() {
   const [category, setCategory] = useState<ReaderCategory>("tanakh");
   const [selection, setSelection] = useState<Selection>(INITIAL_SELECTION);
   const [displayMode, setDisplayMode] = useState<TextDisplayMode>("both");
+  const [fontSizeLevel, setFontSizeLevelState] = useState(0);
+  useEffect(() => setFontSizeLevelState(loadFontSizeLevel()), []);
+  const setFontSizeLevel = (level: number) => {
+    setFontSizeLevelState(level);
+    storeFontSizeLevel(level);
+  };
+  const mainHebrewFontPx = 20 + fontSizeLevel * 2;
+  const mainEnglishFontPx = 16 + fontSizeLevel * 2;
 
   const { index, chapter } = selection[category];
   const groups = useMemo(() => getCategoryGroups(category), [category]);
@@ -258,7 +336,11 @@ export default function Reader() {
           </div>
         )}
 
-        <div className="ml-auto flex overflow-hidden rounded-full border border-border text-sm">
+        <div className="ml-auto flex items-center gap-3">
+          <FontSizeControl level={fontSizeLevel} onChange={setFontSizeLevel} />
+        </div>
+
+        <div className="flex overflow-hidden rounded-full border border-border text-sm">
           {DISPLAY_MODES.map(({ mode, label }) => (
             <button
               key={mode}
@@ -304,23 +386,30 @@ export default function Reader() {
                             <p
                               dir="rtl"
                               lang="he"
-                              className="text-xl leading-relaxed"
-                              style={{ fontFamily: "var(--font-hebrew)" }}
+                              className="leading-relaxed"
+                              style={{ fontFamily: "var(--font-hebrew)", fontSize: mainHebrewFontPx }}
                               dangerouslySetInnerHTML={{ __html: seg.hebrewHTML }}
                             />
                           ) : (
                             <p
                               dir="rtl"
                               lang="he"
-                              className="text-xl leading-relaxed"
-                              style={{ fontFamily: "var(--font-hebrew)", whiteSpace: "pre-line" }}
+                              className="leading-relaxed"
+                              style={{
+                                fontFamily: "var(--font-hebrew)",
+                                fontSize: mainHebrewFontPx,
+                                whiteSpace: "pre-line",
+                              }}
                             >
                               {seg.hebrewHTML}
                             </p>
                           )
                         )}
                         {(displayMode === "translation" || displayMode === "both") && seg.englishHTML && (
-                          <p className="text-base leading-relaxed opacity-90" style={{ whiteSpace: "pre-line" }}>
+                          <p
+                            className="leading-relaxed opacity-90"
+                            style={{ fontSize: mainEnglishFontPx, whiteSpace: "pre-line" }}
+                          >
                             {seg.englishHTML}
                           </p>
                         )}
@@ -345,6 +434,7 @@ export default function Reader() {
             onSlotsChange={setSlots}
             talmudAmud={category === "talmud" ? talmudAmud : undefined}
             mainSegmentCount={category === "rambam" ? data?.segments.length : undefined}
+            fontSizeLevel={fontSizeLevel}
           />
         </div>
       </div>
