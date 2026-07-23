@@ -25,6 +25,13 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
 	</dict>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Rashi.ttf</string>
+		<string>FrankRuhlLibre-Regular.ttf</string>
+		<string>NotoSerifHebrew-Regular.ttf</string>
+		<string>NotoRashiHebrew-Regular.ttf</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -34,13 +41,6 @@
 	<array>
 		<string>audio</string>
 	</array>
-	<key>UIAppFonts</key>
-	<array>
-		<string>Rashi.ttf</string>
-		<string>FrankRuhlLibre-Regular.ttf</string>
-		<string>NotoSerifHebrew-Regular.ttf</string>
-		<string>NotoRashiHebrew-Regular.ttf</string>
-	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UIRequiredDeviceCapabilities</key>
@@ -49,16 +49,10 @@
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
-		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 </dict>
 </plist>

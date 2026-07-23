@@ -11,6 +11,7 @@ Pods/
 
 # Android
 AnyTorahAndroid/.gradle/
+AnyTorahAndroid/.kotlin/
 AnyTorahAndroid/app/build/
 AnyTorahAndroid/build/
 AnyTorahAndroid/local.properties
@@ -22,3 +23,4 @@ AnyTorahAndroid/local.properties
 *.swp
 *~
 *.hprof
+*.bak

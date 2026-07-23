@@ -1,11 +1,14 @@
 import SwiftUI
 
-private enum Screen {
+private enum Screen: String {
     case home, reader
 }
 
 struct ContentView: View {
-    @State private var screen: Screen = .home
+    @State private var screen: Screen = {
+        let raw = UserDefaults.standard.string(forKey: "lastScreen") ?? ""
+        return Screen(rawValue: raw) ?? .home
+    }()
     @State private var vm = TextReaderViewModel()
     @State private var bookmarkManager = BookmarkManager()
     @State private var audioPlayer = AudioPlayer()
@@ -80,6 +83,7 @@ struct ContentView: View {
                     appBg: appBg,
                     appFg: appFg,
                     onGo: {
+                        UserDefaults.standard.set(Screen.reader.rawValue, forKey: "lastScreen")
                         withAnimation(.easeInOut(duration: 0.25)) { screen = .reader }
                     }
                 )
@@ -93,6 +97,7 @@ struct ContentView: View {
                     appBg: appBg,
                     appFg: appFg,
                     onBack: {
+                        UserDefaults.standard.set(Screen.home.rawValue, forKey: "lastScreen")
                         withAnimation(.easeInOut(duration: 0.25)) { screen = .home }
                     }
                 )

@@ -38,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.text.SpanStyle
@@ -356,12 +357,14 @@ private fun CommentaryContent(
     loadVersion: Int = 0
 ) {
     val colors = LocalAnyTorahColors.current
-    val commHeFontSize = (17f + fontSizeLevel * 2f).coerceAtLeast(10f)
-    val rashiHeFontSize = (9f + fontSizeLevel * 2f).coerceAtLeast(10f)
+    val isTablet = LocalConfiguration.current.smallestScreenWidthDp >= 600
+    val tabletBoost = if (isTablet) 8f else 0f
+    val commHeFontSize = (17f + fontSizeLevel * 2f + tabletBoost).coerceAtLeast(10f)
+    val rashiHeFontSize = (9f + fontSizeLevel * 2f + tabletBoost).coerceAtLeast(10f)
     val actualHeFontSize = if (useRashiFont) rashiHeFontSize else commHeFontSize
     val hebrewFontFamily = if (useRashiFont) notoRashiFamily else FontFamily(Font(R.font.frank_ruhl_libre_regular))
-    val commEnFontSize = (13f + fontSizeLevel * 2f).coerceAtLeast(10f)
-    val commSmallFontSize = (13f + fontSizeLevel * 2f).coerceAtLeast(10f)
+    val commEnFontSize = (13f + fontSizeLevel * 2f + tabletBoost).coerceAtLeast(10f)
+    val commSmallFontSize = (13f + fontSizeLevel * 2f + tabletBoost).coerceAtLeast(10f)
 
     val scrollState = rememberScrollState()
     var amudBOffsetPx by remember(loadVersion) { mutableStateOf(-1) }

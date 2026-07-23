@@ -26,6 +26,11 @@ class AudioPlayer {
     private var startAtSeconds: Double = 0
 
     init() {
+        // Enable background audio playback. Must be set before the first AVPlayer item
+        // is loaded; .playback category tells iOS to keep audio running when the app
+        // loses focus (Home button, lock screen, switching apps).
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+        try? AVAudioSession.sharedInstance().setActive(true)
         setupRemoteCommands()
         setupAudioRouteChangeHandling()
     }

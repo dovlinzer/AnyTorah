@@ -1518,9 +1518,10 @@ enum CommentaryType: String, CaseIterable, Identifiable {
     private func biurHalakhaRef(from mainRef: String) -> String {
         let pattern = #"(\d+)$"#
         if let range = mainRef.range(of: pattern, options: .regularExpression) {
-            return "Biur Halakha \(mainRef[range])"
+            // Biur Halakha is depth-3 (Siman → Seif → Comment); bare siman ref returns only seif 1.
+            return "Biur Halakha \(mainRef[range]):1-50"
         }
-        return "Biur Halakha 1"
+        return "Biur Halakha 1:1-50"
     }
 
     // MARK: - SA combined-book refs
@@ -1661,9 +1662,16 @@ struct TextSegment: Identifiable {
 
 /// A single item in the displayed commentary list.
 enum CommentaryEntry {
-    /// A regular commentary segment. `index` counts only text entries (skips headers)
-    /// so the numbered margin stays sequential.
-    case text(index: Int, he: String, en: String)
+    /// A regular commentary segment.
+    /// `index` is the sequential position (used for scrolling/identity).
+    /// `label` overrides the displayed number when set (e.g. mishnah number for multi-paragraph
+    /// Mishnah commentary so all paragraphs on the same mishnah share the same label).
+    case text(index: Int, label: Int?, he: String, en: String)
+
+    /// Backward-compatible factory — label defaults to nil (sequential display).
+    static func text(index: Int, he: String, en: String) -> CommentaryEntry {
+        .text(index: index, label: nil, he: he, en: en)
+    }
     /// Subtle recension separator — used only for Tosafot Rid multi-recension dividers.
     case recensionHeader(String)
     /// Prominent book-section separator — used when a commentator combines two distinct

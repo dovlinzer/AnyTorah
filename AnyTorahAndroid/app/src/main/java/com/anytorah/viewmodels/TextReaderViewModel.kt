@@ -820,8 +820,12 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                 "$currentRef:1-200"
 
             category == TextCategory.MISHNAH &&
-            (selectedCommentary == CommentaryType.RASHASH ||
-             selectedCommentary == CommentaryType.YACHIN) ->
+            selectedCommentary in listOf(
+                CommentaryType.RAMBAM_MISHNAH, CommentaryType.BARTENURA,
+                CommentaryType.TOSAFOT_YOM_TOV, CommentaryType.MELEKHET_SHLOMO,
+                CommentaryType.TOSAFOT_RABBI_AKIVA_EIGER, CommentaryType.ENGLISH_EXPLANATION,
+                CommentaryType.RASH_MI_SHANTZ, CommentaryType.YESH_SEDER_LA_MISHNAH,
+                CommentaryType.GRA, CommentaryType.RASHASH, CommentaryType.YACHIN) ->
                 "$currentRef:1-20"
 
             category == TextCategory.TANAKH -> "$currentRef:1-200"
@@ -851,26 +855,27 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         // SA commentaries have no introduction sections on Sefaria — skip introRef entirely
         // to prevent Sefaria from returning siman-1 content for the "Introduction" pseudo-ref
         // and prepending it as a duplicate of the real siman-1 data.
-        val introR: String? = if (isAtFirstSection && versions.size == 1 && category != TextCategory.SHULCHAN_ARUKH) introRef(commentaryRef) else null
+        val introR: String? = if (isAtFirstSection && versions.size == 1
+            && category != TextCategory.SHULCHAN_ARUKH
+            && category != TextCategory.MISHNAH
+            && category != TextCategory.RAMBAM) introRef(commentaryRef) else null
+
+        val useMishnahLabels = category == TextCategory.MISHNAH || category == TextCategory.RAMBAM || category == TextCategory.TANAKH
 
         if (versions.size == 1) {
-            // Fast path: single ref, parallel he/en fetch.
+            // Fast path: single aligned fetch preserving outer structural pairing.
             val ref = versions[0].first
-            val enDef = viewModelScope.async {
-                runCatching { SefariaTextClient.fetchRaw(ref, "en") }.getOrElse { emptyList() }
-            }
-            val heDef = viewModelScope.async {
-                runCatching { SefariaTextClient.fetchRaw(ref, "he") }.getOrElse { emptyList() }
-            }
-            val eSegs = enDef.await()
-            val hSegs = heDef.await()
+            val (hSegs, eSegs, outerIdx) = runCatching {
+                SefariaTextClient.fetchBothAligned(ref)
+            }.getOrElse { Triple(emptyList(), emptyList(), emptyList()) }
             val count = maxOf(eSegs.size, hSegs.size)
-            var entries: List<CommentaryEntry> = (0 until count).map { i ->
-                CommentaryEntry.Text(
-                    index = i,
-                    he = hSegs.getOrElse(i) { "" },
-                    en = eSegs.getOrElse(i) { "" }
-                )
+            var seqIdx = 0
+            var entries: List<CommentaryEntry> = (0 until count).mapNotNull { i ->
+                val h = hSegs.getOrElse(i) { "" }
+                val e = eSegs.getOrElse(i) { "" }
+                if (h.isBlank() && e.isBlank()) return@mapNotNull null
+                val label: Int? = if (useMishnahLabels) outerIdx.getOrElse(i) { i } else null
+                CommentaryEntry.Text(index = seqIdx++, label = label, he = h, en = e)
             }
             if (introR != null) entries = prependIntro(entries, introR)
             commentaryEntries = entries
@@ -889,8 +894,9 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                     if (useBookDivider) CommentaryEntry.BookDivider(label)
                     else CommentaryEntry.RecensionHeader(label)
                 )
-                val eSegs = runCatching { SefariaTextClient.fetchRaw(ref, "en") }.getOrElse { emptyList() }
-                val hSegs = runCatching { SefariaTextClient.fetchRaw(ref, "he") }.getOrElse { emptyList() }
+                val (hSegs, eSegs, _) = runCatching {
+                    SefariaTextClient.fetchBothAligned(ref)
+                }.getOrElse { Triple(emptyList(), emptyList(), emptyList()) }
                 val count = maxOf(eSegs.size, hSegs.size)
                 for (i in 0 until count) {
                     entries.add(CommentaryEntry.Text(
@@ -911,14 +917,10 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
             val baseRef = versions[0].first  // e.g. "Rashi on Berakhot 2"
             val refA = "${baseRef}a.1-200"
             val refB = "${baseRef}b.1-200"
-            val aHeDef = viewModelScope.async { runCatching { SefariaTextClient.fetchRaw(refA, "he") }.getOrElse { emptyList() } }
-            val aEnDef = viewModelScope.async { runCatching { SefariaTextClient.fetchRaw(refA, "en") }.getOrElse { emptyList() } }
-            val bHeDef = viewModelScope.async { runCatching { SefariaTextClient.fetchRaw(refB, "he") }.getOrElse { emptyList() } }
-            val bEnDef = viewModelScope.async { runCatching { SefariaTextClient.fetchRaw(refB, "en") }.getOrElse { emptyList() } }
-            val aHe = aHeDef.await()
-            val aEn = aEnDef.await()
-            val bHe = bHeDef.await()
-            val bEn = bEnDef.await()
+            val aFetch = viewModelScope.async { runCatching { SefariaTextClient.fetchBothAligned(refA) }.getOrElse { Triple(emptyList(), emptyList(), emptyList()) } }
+            val bFetch = viewModelScope.async { runCatching { SefariaTextClient.fetchBothAligned(refB) }.getOrElse { Triple(emptyList(), emptyList(), emptyList()) } }
+            val (aHe, aEn, _) = aFetch.await()
+            val (bHe, bEn, _) = bFetch.await()
             val aCount = maxOf(aHe.size, aEn.size)
             val bCount = maxOf(bHe.size, bEn.size)
             if (aCount > 0 || bCount > 0) {
@@ -926,8 +928,8 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                 for (i in 0 until aCount) {
                     entries.add(CommentaryEntry.Text(
                         index = i,
-                        he = if (i < aHe.size) aHe[i] else "",
-                        en = if (i < aEn.size) aEn[i] else ""
+                        he = aHe.getOrElse(i) { "" },
+                        en = aEn.getOrElse(i) { "" }
                     ))
                 }
                 if (bCount > 0) {
@@ -935,8 +937,8 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                     for (i in 0 until bCount) {
                         entries.add(CommentaryEntry.Text(
                             index = aCount + i,
-                            he = if (i < bHe.size) bHe[i] else "",
-                            en = if (i < bEn.size) bEn[i] else ""
+                            he = bHe.getOrElse(i) { "" },
+                            en = bEn.getOrElse(i) { "" }
                         ))
                     }
                 }
@@ -974,14 +976,9 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private suspend fun fetchIntroEntries(ref: String, startIdx: Int): List<CommentaryEntry> {
-        val enDef = viewModelScope.async {
-            runCatching { SefariaTextClient.fetchRaw(ref, "en") }.getOrElse { emptyList() }
-        }
-        val heDef = viewModelScope.async {
-            runCatching { SefariaTextClient.fetchRaw(ref, "he") }.getOrElse { emptyList() }
-        }
-        val eSegs = enDef.await()
-        val hSegs = heDef.await()
+        val (hSegs, eSegs, _) = runCatching {
+            SefariaTextClient.fetchBothAligned(ref)
+        }.getOrElse { Triple(emptyList(), emptyList(), emptyList()) }
         val count = maxOf(eSegs.size, hSegs.size)
         if (count == 0) return emptyList()
         return (0 until count).map { i ->
@@ -1001,6 +998,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
             when (entry) {
                 is CommentaryEntry.Text -> CommentaryEntry.Text(
                     index = entry.index + iCount,
+                    label = entry.label,
                     he = entry.he,
                     en = entry.en
                 )

@@ -10,15 +10,31 @@ import com.anytorah.models.TextSegment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.Cache
 import okhttp3.CacheControl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.TimeUnit
+
+/**
+ * Mirrors iOS's `SefariaError` — distinguishes a genuinely empty API result from a masked
+ * network/decoding failure, so callers can tell "the text doesn't exist" apart from
+ * "the request failed" instead of collapsing both into a blanket "No text found".
+ */
+sealed class SefariaException(message: String, cause: Throwable? = null) : Exception(message, cause) {
+    class NetworkError(cause: Throwable) : SefariaException(cause.message ?: "Network error", cause)
+    object NoText : SefariaException("No text found")
+    class DecodingError(status: Int? = null) : SefariaException(
+        if (status != null) "Could not parse response (HTTP $status)" else "Could not parse response"
+    )
+}
 
 object SefariaTextClient {
 
@@ -44,8 +60,43 @@ object SefariaTextClient {
         return "$BASE_URL/$encoded?context=0&lang=$lang"
     }
 
+    // MARK: - Retry
+
+    /**
+     * Executes [request] with up to [attempts] tries, retrying only transient failures —
+     * dropped connections, timeouts, DNS hiccups (any [IOException] from OkHttp) and 429/5xx
+     * responses — with short backoff between tries. This exists because "No text found"
+     * reports from real devices (including App Store/Play review) have turned out to be
+     * transient network failures masquerading as an empty API response — a brief retry
+     * resolves most of them instead of surfacing an error.
+     */
+    private suspend fun executeWithRetry(request: Request, attempts: Int = 3): Response =
+        withContext(Dispatchers.IO) {
+            var lastError: Exception = IOException("Unknown network error")
+            for (attempt in 0 until attempts) {
+                val isLastAttempt = attempt == attempts - 1
+                try {
+                    val response = getClient().newCall(request).execute()
+                    if (response.code == 429 || response.code in 500..599) {
+                        val status = response.code
+                        response.close()
+                        lastError = IOException("HTTP $status")
+                        if (isLastAttempt) throw lastError
+                    } else {
+                        return@withContext response
+                    }
+                } catch (e: IOException) {
+                    lastError = e
+                    if (isLastAttempt) throw e
+                }
+                delay(300L * (attempt + 1))
+            }
+            throw lastError
+        }
+
     // MARK: - Single-language fetch
 
+    /** Low-level single-language fetch. lang="he" → json["he"], lang="en" → json["text"]. */
     private suspend fun fetchSingleLang(ref: String, lang: String): List<String> =
         withContext(Dispatchers.IO) {
             val url = buildUrl(ref, lang)
@@ -53,25 +104,171 @@ object SefariaTextClient {
                 .url(url)
                 .cacheControl(CacheControl.Builder().maxStale(24, TimeUnit.HOURS).build())
                 .build()
-            val response = getClient().newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext emptyList()
-            try {
-                val json = JSONObject(body)
-                if (json.has("error")) return@withContext emptyList()
-                val key = if (lang == "he") "he" else "text"
-                val value = json.opt(key) ?: return@withContext emptyList()
-                flattenValue(value).filter { it.isNotBlank() }
-            } catch (e: Exception) {
-                emptyList()
+            val response = try {
+                executeWithRetry(request)
+            } catch (e: IOException) {
+                throw SefariaException.NetworkError(e)
             }
+            val (body, status) = response.use { it.body?.string() to it.code }
+            if (body == null) throw SefariaException.DecodingError(status)
+            val json = try {
+                JSONObject(body)
+            } catch (e: Exception) {
+                throw SefariaException.DecodingError(status)
+            }
+            if (json.has("error")) {
+                throw SefariaException.NetworkError(IOException(json.optString("error", "Sefaria API error")))
+            }
+            val key = if (lang == "he") "he" else "text"
+            val value = json.opt(key) ?: throw SefariaException.NoText
+            val segs = flattenValue(value).filter { it.isNotBlank() }
+            if (segs.isEmpty()) throw SefariaException.NoText
+            segs
         }
 
     // MARK: - Public fetch APIs
 
     suspend fun fetchBoth(ref: String): Pair<List<String>, List<String>> = coroutineScope {
-        val heDef = async { runCatching { fetchSingleLang(ref, "he") }.getOrElse { emptyList() } }
-        val enDef = async { runCatching { fetchSingleLang(ref, "en") }.getOrElse { emptyList() } }
-        Pair(heDef.await(), enDef.await())
+        val heDef = async { runCatching { fetchSingleLang(ref, "he") } }
+        val enDef = async { runCatching { fetchSingleLang(ref, "en") } }
+        val heResult = heDef.await()
+        val enResult = enDef.await()
+
+        val heSegs = heResult.getOrElse { emptyList() }
+        val enSegs = enResult.getOrElse { emptyList() }
+        if (heSegs.isNotEmpty() || enSegs.isNotEmpty()) {
+            return@coroutineScope Pair(heSegs, enSegs)
+        }
+
+        // Both sides came back empty. Rather than blanket-report "no text" (which is what a
+        // network timeout, a blocked/challenged request, or a bad JSON response all look like
+        // once swallowed), surface whichever underlying failure isn't itself a genuine "no text"
+        // — that's the actual cause, and it's what needs fixing or reporting.
+        for (result in listOf(heResult, enResult)) {
+            val error = result.exceptionOrNull()
+            if (error != null && error !is SefariaException.NoText) throw error
+        }
+        throw SefariaException.NoText
+    }
+
+    /**
+     * Fetches Hebrew and English from a single request, preserving structural alignment.
+     *
+     * Sefaria commentary texts are depth-3: outer array = one entry per mishnah/verse/halakha,
+     * inner array = paragraphs within that entry. Hebrew typically has 1 inner paragraph per
+     * entry while the English translation may have several. Naively flattening and pairing
+     * positionally produces misalignment whenever inner counts differ.
+     *
+     * Returns Triple(he, en, outerIndices) where outerIndices[i] is the 0-based outer-array
+     * position (e.g. mishnah number) that paragraph i belongs to.
+     */
+    suspend fun fetchBothAligned(ref: String): Triple<List<String>, List<String>, List<Int>> =
+        withContext(Dispatchers.IO) {
+            val url = buildUrl(ref, "en")
+            val request = Request.Builder()
+                .url(url)
+                .cacheControl(CacheControl.Builder().maxStale(24, TimeUnit.HOURS).build())
+                .build()
+            val body = try {
+                executeWithRetry(request).use { it.body?.string() } ?: return@withContext Triple(emptyList(), emptyList(), emptyList())
+            } catch (e: Exception) {
+                return@withContext Triple(emptyList(), emptyList(), emptyList())
+            }
+            try {
+                val json = JSONObject(body)
+                if (json.has("error")) return@withContext Triple(emptyList(), emptyList(), emptyList())
+                val heVal = json.opt("he") ?: return@withContext Triple(emptyList(), emptyList(), emptyList())
+                val enVal = json.opt("text") ?: return@withContext Triple(emptyList(), emptyList(), emptyList())
+
+                val heArr = heVal as? JSONArray
+                val enArr = enVal as? JSONArray
+
+                val heSegs = mutableListOf<String>()
+                val enSegs = mutableListOf<String>()
+                val outerIndices = mutableListOf<Int>()
+
+                if (heArr != null && enArr != null) {
+                    when {
+                        heArr.length() == enArr.length() -> {
+                            // Same outer count — pair per outer element, joining minority inner side.
+                            for (i in 0 until heArr.length()) {
+                                val hInner = flattenValue(heArr[i]).filter { it.isNotBlank() }
+                                val eInner = flattenValue(enArr[i]).filter { it.isNotBlank() }
+                                val before = heSegs.size
+                                alignedAppend(hInner, eInner, heSegs, enSegs)
+                                repeat(heSegs.size - before) { outerIndices.add(i) }
+                            }
+                        }
+                        enArr.length() == 0 -> {
+                            // No English translation — iterate over Hebrew structure.
+                            for (i in 0 until heArr.length()) {
+                                val hInner = flattenValue(heArr[i]).filter { it.isNotBlank() }
+                                val before = heSegs.size
+                                alignedAppend(hInner, emptyList(), heSegs, enSegs)
+                                repeat(heSegs.size - before) { outerIndices.add(i) }
+                            }
+                        }
+                        heArr.length() == 0 -> {
+                            // No Hebrew translation — iterate over English structure.
+                            for (i in 0 until enArr.length()) {
+                                val eInner = flattenValue(enArr[i]).filter { it.isNotBlank() }
+                                val before = heSegs.size
+                                alignedAppend(emptyList(), eInner, heSegs, enSegs)
+                                repeat(heSegs.size - before) { outerIndices.add(i) }
+                            }
+                        }
+                        else -> {
+                            // Outer counts differ and both non-zero (e.g. intro: 1 he vs 7 en).
+                            val hInner = flattenValue(heArr).filter { it.isNotBlank() }
+                            val eInner = flattenValue(enArr).filter { it.isNotBlank() }
+                            val before = heSegs.size
+                            alignedAppend(hInner, eInner, heSegs, enSegs)
+                            repeat(heSegs.size - before) { outerIndices.add(0) }
+                        }
+                    }
+                } else {
+                    // Scalar or non-array values — fall back to flat lists.
+                    heSegs.addAll(flattenValue(heVal).filter { it.isNotBlank() })
+                    enSegs.addAll(flattenValue(enVal).filter { it.isNotBlank() })
+                    for (i in heSegs.indices) outerIndices.add(i)
+                }
+
+                Triple(heSegs.toList(), enSegs.toList(), outerIndices.toList())
+            } catch (e: Exception) {
+                Triple(emptyList(), emptyList(), emptyList())
+            }
+        }
+
+    private fun alignedAppend(
+        hInner: List<String>, eInner: List<String>,
+        heSegs: MutableList<String>, enSegs: MutableList<String>
+    ) {
+        if (hInner.isEmpty() && eInner.isEmpty()) return
+        when {
+            hInner.size == eInner.size ->
+                hInner.zip(eInner).forEach { (h, e) -> heSegs.add(h); enSegs.add(e) }
+            eInner.isEmpty() ->
+                // No English: each Hebrew paragraph is its own entry.
+                hInner.forEach { h -> heSegs.add(h); enSegs.add("") }
+            hInner.isEmpty() ->
+                // No Hebrew: each English paragraph is its own entry.
+                eInner.forEach { e -> heSegs.add(""); enSegs.add(e) }
+            hInner.size == 1 -> {
+                // 1 Hebrew para, multiple English: join English into one entry.
+                heSegs.add(hInner[0]); enSegs.add(eInner.joinToString(" "))
+            }
+            eInner.size == 1 -> {
+                // Multiple Hebrew paras, 1 English: join Hebrew into one entry.
+                heSegs.add(hInner.joinToString(" ")); enSegs.add(eInner[0])
+            }
+            else -> {
+                // Both > 1 but different counts: pair up to min, extras get empty partner.
+                val minCount = minOf(hInner.size, eInner.size)
+                for (j in 0 until minCount) { heSegs.add(hInner[j]); enSegs.add(eInner[j]) }
+                for (j in minCount until hInner.size) { heSegs.add(hInner[j]); enSegs.add("") }
+                for (j in minCount until eInner.size) { heSegs.add(""); enSegs.add(eInner[j]) }
+            }
+        }
     }
 
     /** Fetches a pre-built Sefaria ref string in the given language ("he" or "en"). */
@@ -126,11 +323,14 @@ object SefariaTextClient {
         val refA = "${tractate.sefariaName} ${daf}a"
         val refB = "${tractate.sefariaName} ${daf}b"
 
-        val pairADef = async { runCatching { fetchBoth(refA) }.getOrElse { Pair(emptyList(), emptyList()) } }
-        val pairBDef = async { runCatching { fetchBoth(refB) }.getOrElse { Pair(emptyList(), emptyList()) } }
+        val pairADef = async { runCatching { fetchBoth(refA) } }
+        val pairBDef = async { runCatching { fetchBoth(refB) } }
 
-        val pairA = pairADef.await()
-        val pairB = pairBDef.await()
+        val pairAResult = pairADef.await()
+        val pairBResult = pairBDef.await()
+
+        val pairA = pairAResult.getOrElse { Pair(emptyList(), emptyList()) }
+        val pairB = pairBResult.getOrElse { Pair(emptyList(), emptyList()) }
 
         val segments = mutableListOf<TextSegment>()
 
@@ -158,7 +358,14 @@ object SefariaTextClient {
             ))
         }
 
-        segments.filter { it.isAmudBMarker || it.hebrewHTML.isNotEmpty() || it.englishHTML.isNotEmpty() }
+        val validSegments = segments.filter { it.isAmudBMarker || it.hebrewHTML.isNotEmpty() || it.englishHTML.isNotEmpty() }
+        if (validSegments.isNotEmpty()) return@coroutineScope validSegments
+
+        for (result in listOf(pairAResult, pairBResult)) {
+            val error = result.exceptionOrNull()
+            if (error != null && error !is SefariaException.NoText) throw error
+        }
+        throw SefariaException.NoText
     }
 
     suspend fun fetchChapter(
@@ -223,8 +430,7 @@ object SefariaTextClient {
                     .url(url)
                     .cacheControl(CacheControl.Builder().maxStale(24, TimeUnit.HOURS).build())
                     .build()
-                val response = getClient().newCall(request).execute()
-                val body = response.body?.string() ?: return@withContext emptyList()
+                val body = executeWithRetry(request).use { it.body?.string() } ?: return@withContext emptyList()
                 val json = JSONObject(body)
                 if (json.has("error")) return@withContext emptyList()
                 val key = if (lang == "he") "he" else "text"
@@ -566,7 +772,7 @@ object SefariaTextClient {
             val req = Request.Builder()
                 .url("https://www.sefaria.org/api/links/$encoded")
                 .build()
-            getClient().newCall(req).execute().use { it.body?.string() ?: "[]" }
+            executeWithRetry(req).use { it.body?.string() ?: "[]" }
         }
         val json = JSONArray(data)
         var midrashRef: String? = null

@@ -166,7 +166,7 @@ struct TextSelectorView: View {
             // Go button
             Button(action: onGo) {
                 Text(saHebrewMode
-                     ? "פתח \(vm.navBookTitle) \(vm.navChapterTitle)"
+                     ? "פתח \(vm.navBookTitle) \(vm.navChapterTitle)\(vm.category == .talmud && vm.talmudSubcategory == .bavli ? " \(vm.talmudAmud == 0 ? "ע״א" : "ע״ב")" : "")"
                      : "Open \(vm.displayTitle)")
                     .font(.headline)
                     .foregroundStyle(appBg)

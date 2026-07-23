@@ -68,6 +68,7 @@ struct TextReaderView: View {
     @AppStorage("reverseNavDirection") private var reverseNavDirection: Bool = false
     @AppStorage("bottomPanelFraction") private var bottomPanelFraction: Double = 0.40
     @State private var liveBottomFraction: Double? = nil
+    @State private var mainTextSelectionMode: Bool = false
 
     private var cardFill: Color { appFg.opacity(0.08) }
 
@@ -271,6 +272,15 @@ struct TextReaderView: View {
 
                     Spacer()
 
+                    HStack(spacing: 14) {
+                    Button {
+                        mainTextSelectionMode.toggle()
+                    } label: {
+                        Image(systemName: mainTextSelectionMode ? "cursor.rays" : "text.cursor")
+                            .foregroundStyle(mainTextSelectionMode ? appFg : appFg.opacity(0.45))
+                            .font(.body)
+                    }
+
                     Button {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                             vm.commentaryVisible.toggle()
@@ -297,6 +307,7 @@ struct TextReaderView: View {
                         .foregroundStyle(appFg)
                         .font(.body)
                     }
+                    } // HStack closing brace
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -909,14 +920,31 @@ struct TextReaderView: View {
             // Reset to amud-aleph whenever the daf changes.
             .onChange(of: vm.talmudDaf) { _, _ in dafSideA = true }
         } else {
-            TextContentView(
-                segments: vm.segments,
-                displayMode: vm.displayMode,
-                category: vm.category,
-                daf: vm.talmudDaf,
-                fg: appFg,
-                scrollToVerse: vm.category == .midrash ? $vm.midrashScrollToIndex : $vm.tanakhScrollToVerse,
-                scrollToAmudB: $vm.talmudScrollToAmudB)
+            VStack(spacing: 0) {
+                if mainTextSelectionMode {
+                    HStack {
+                        Text("Text selection — scroll disabled")
+                            .font(.caption2)
+                            .foregroundStyle(appFg.opacity(0.7))
+                        Spacer()
+                        Button("Done") { mainTextSelectionMode = false }
+                            .font(.caption2.bold())
+                            .foregroundStyle(appFg)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .background(appFg.opacity(0.08))
+                }
+                TextContentView(
+                    segments: vm.segments,
+                    displayMode: vm.displayMode,
+                    category: vm.category,
+                    daf: vm.talmudDaf,
+                    fg: appFg,
+                    textSelectionMode: mainTextSelectionMode,
+                    scrollToVerse: vm.category == .midrash ? $vm.midrashScrollToIndex : $vm.tanakhScrollToVerse,
+                    scrollToAmudB: $vm.talmudScrollToAmudB)
+            }
         }
     }
 

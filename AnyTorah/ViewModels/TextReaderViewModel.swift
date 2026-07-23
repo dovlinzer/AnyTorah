@@ -8,7 +8,9 @@ final class TextReaderViewModel {
 
     // MARK: - Selection state
 
-    var category: TextCategory = .talmud
+    var category: TextCategory = .talmud {
+        didSet { UserDefaults.standard.set(category.rawValue, forKey: "lastCategory") }
+    }
 
     /// Set to true during restoreState(for:) to suppress cascading didSet resets.
     @ObservationIgnored private var isRestoring = false
@@ -55,7 +57,9 @@ final class TextReaderViewModel {
         didSet { if !isRestoring { yerushalmiHalakha = 1 } }
     }
     var yerushalmiHalakha: Int = 1
-    var talmudAmud: Int = 0           // 0 = alef, 1 = bet
+    var talmudAmud: Int = 0 {         // 0 = alef, 1 = bet
+        didSet { if !isRestoring { saveState(for: .talmud) } }
+    }
     var talmudScrollToAmudB: Bool = false
     var commentaryScrollToAmudB: Bool = false
     var commentaryScrollToAmudA: Bool = false
@@ -166,6 +170,14 @@ final class TextReaderViewModel {
         // Restore commentary panel visibility.
         commentaryVisible = UserDefaults.standard.bool(forKey: "commentaryVisible")
         // Slot persistence is handled inside CommentaryPanelViewModel.init.
+
+        // Restore last-used category and its picker state so the home screen and
+        // reader reopen exactly where the user left off.
+        if let raw = UserDefaults.standard.string(forKey: "lastCategory"),
+           let cat = TextCategory(rawValue: raw) {
+            category = cat
+            restoreState(for: cat)
+        }
     }
 
     // MARK: - Per-category selection persistence
@@ -920,8 +932,11 @@ final class TextReaderViewModel {
             // Tosefta Kifshutah and Brief Commentary are depth-3 (Chapter → Mishnah → Comment).
             commentaryRef = "\(currentRef):1-200"
         } else if category == .mishnah &&
-                  (panel.selectedCommentary == .rashash || panel.selectedCommentary == .yachin) {
-            // Rashash and Yachin are textDepth=3 (Chapter → Mishnah → Comment).
+                  [.rambamMishnah, .bartenura, .tosafotYomTov, .melekhetShlomo,
+                   .tosafotRabbiAkivaEiger, .englishExplanation,
+                   .rashMiShantz, .yeshSederLaMishnah, .gra,
+                   .rashash, .yachin].contains(panel.selectedCommentary) {
+            // All these Mishnah commentaries are textDepth=3 (Chapter → Mishnah → Comment).
             // A bare chapter ref returns only mishnah-1 comments; append range to get all.
             commentaryRef = "\(currentRef):1-20"
         } else if category == .tanakh {
@@ -963,22 +978,33 @@ final class TextReaderViewModel {
         // SA commentaries have no introduction sections on Sefaria — skip introRef entirely
         // to prevent Sefaria from returning siman-1 content for the "Introduction" pseudo-ref
         // and prepending it as a duplicate of the real siman-1 data.
-        let introR: String? = (isAtFirstSection && versions.count == 1 && category != .shulchanArukh)
+        // Mishnah commentaries don't have genuine intro sections on Sefaria — their
+        // "Introduction" ref returns ch.1 content, duplicating the main fetch.
+        let introR: String? = (isAtFirstSection && versions.count == 1
+                               && category != .shulchanArukh
+                               && category != .mishnah
+                               && category != .rambam)
             ? Self.introRef(for: versions[0].ref) : nil
 
+        // Use outer-level indices (= mishnah/verse/halakha number) as display labels for
+        // Mishnah and Rambam commentary so entries reflect the actual halakha/mishnah number.
+        let useMishnahLabels = category == .mishnah || category == .rambam || category == .tanakh
+
         if versions.count == 1 {
-            // Fast path: single ref, parallel he/en fetch.
+            // Fast path: single aligned fetch so he[i] and en[i] always correspond.
             let ref = versions[0].ref
-            async let enFetch = (try? SefariaTextClient.shared.fetchRaw(ref: ref, language: "en"))
-            async let heFetch = (try? SefariaTextClient.shared.fetchRaw(ref: ref, language: "he"))
-            let (en, he) = await (enFetch, heFetch)
-            let eSegs = en ?? []
-            let hSegs = he ?? []
+            let (hSegs, eSegs, outerIdx) = (try? await SefariaTextClient.shared.fetchBothAligned(ref: ref)) ?? ([], [], [])
             let count = max(eSegs.count, hSegs.count)
-            var entries: [CommentaryEntry] = (0..<count).map { i in
-                .text(index: i,
-                      he: i < hSegs.count ? hSegs[i] : "",
-                      en: i < eSegs.count ? eSegs[i] : "")
+            var seqIdx = 0
+            var entries: [CommentaryEntry] = (0..<count).compactMap { i in
+                let h = i < hSegs.count ? hSegs[i] : ""
+                let e = i < eSegs.count ? eSegs[i] : ""
+                guard !h.trimmingCharacters(in: .whitespaces).isEmpty ||
+                      !e.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+                let label: Int? = useMishnahLabels ? (i < outerIdx.count ? outerIdx[i] : i) : nil
+                let entry = CommentaryEntry.text(index: seqIdx, label: label, he: h, en: e)
+                seqIdx += 1
+                return entry
             }
             if let ir = introR {
                 entries = await prependIntro(to: entries, introRef: ir)
@@ -1002,15 +1028,18 @@ final class TextReaderViewModel {
                 if let lbl = label {
                     entries.append(useBookDivider ? .bookDivider(lbl) : .recensionHeader(lbl))
                 }
-                let eSegs = (try? await SefariaTextClient.shared.fetchRaw(ref: ref, language: "en")) ?? []
-                let hSegs = (try? await SefariaTextClient.shared.fetchRaw(ref: ref, language: "he")) ?? []
+                let (hSegs, eSegs, _) = (try? await SefariaTextClient.shared.fetchBothAligned(ref: ref)) ?? ([], [], [])
                 let count = max(eSegs.count, hSegs.count)
+                var added = 0
                 for i in 0..<count {
-                    entries.append(.text(index: segIdx + i,
-                                        he: i < hSegs.count ? hSegs[i] : "",
-                                        en: i < eSegs.count ? eSegs[i] : ""))
+                    let h = i < hSegs.count ? hSegs[i] : ""
+                    let e = i < eSegs.count ? eSegs[i] : ""
+                    guard !h.trimmingCharacters(in: .whitespaces).isEmpty ||
+                          !e.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+                    entries.append(.text(index: segIdx + added, label: nil, he: h, en: e))
+                    added += 1
                 }
-                segIdx += count
+                segIdx += added
             }
             panel.commentaryEntries = entries
         }
@@ -1023,29 +1052,30 @@ final class TextReaderViewModel {
             let baseRef = versions[0].ref  // e.g. "Rashi on Berakhot 2"
             let refA = baseRef + "a.1-200"
             let refB = baseRef + "b.1-200"
-            async let aHeFetch = SefariaTextClient.shared.fetchRaw(ref: refA, language: "he")
-            async let aEnFetch = SefariaTextClient.shared.fetchRaw(ref: refA, language: "en")
-            async let bHeFetch = SefariaTextClient.shared.fetchRaw(ref: refB, language: "he")
-            async let bEnFetch = SefariaTextClient.shared.fetchRaw(ref: refB, language: "en")
-            let aHe = (try? await aHeFetch) ?? []
-            let aEn = (try? await aEnFetch) ?? []
-            let bHe = (try? await bHeFetch) ?? []
-            let bEn = (try? await bEnFetch) ?? []
+            async let aFetch = SefariaTextClient.shared.fetchBothAligned(ref: refA)
+            async let bFetch = SefariaTextClient.shared.fetchBothAligned(ref: refB)
+            let (aHe, aEn, _) = (try? await aFetch) ?? ([], [], [])
+            let (bHe, bEn, _) = (try? await bFetch) ?? ([], [], [])
             let aCount = max(aHe.count, aEn.count)
             let bCount = max(bHe.count, bEn.count)
             if aCount > 0 || bCount > 0 {
                 var entries: [CommentaryEntry] = []
+                var idx = 0
                 for i in 0..<aCount {
-                    entries.append(.text(index: i,
-                                        he: i < aHe.count ? aHe[i] : "",
-                                        en: i < aEn.count ? aEn[i] : ""))
+                    let h = i < aHe.count ? aHe[i] : ""
+                    let e = i < aEn.count ? aEn[i] : ""
+                    guard !h.trimmingCharacters(in: .whitespaces).isEmpty ||
+                          !e.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+                    entries.append(.text(index: idx, he: h, en: e)); idx += 1
                 }
                 if bCount > 0 {
                     entries.append(.recensionHeader("עמוד ב׳"))
                     for i in 0..<bCount {
-                        entries.append(.text(index: aCount + i,
-                                            he: i < bHe.count ? bHe[i] : "",
-                                            en: i < bEn.count ? bEn[i] : ""))
+                        let h = i < bHe.count ? bHe[i] : ""
+                        let e = i < bEn.count ? bEn[i] : ""
+                        guard !h.trimmingCharacters(in: .whitespaces).isEmpty ||
+                              !e.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+                        entries.append(.text(index: idx, he: h, en: e)); idx += 1
                     }
                 }
                 panel.commentaryEntries = entries
@@ -1089,20 +1119,23 @@ final class TextReaderViewModel {
         return parts.dropLast().joined(separator: " ") + ", Introduction"
     }
 
-    /// Fetches he/en for `ref` in parallel and returns CommentaryEntry.text values
+    /// Fetches he/en for `ref` in a single aligned request and returns CommentaryEntry.text values
     /// numbered starting from `startIdx`.  Returns [] if the ref has no content.
     private func fetchIntroEntries(ref: String, startIdx: Int) async -> [CommentaryEntry] {
-        async let enFetch = (try? SefariaTextClient.shared.fetchRaw(ref: ref, language: "en"))
-        async let heFetch = (try? SefariaTextClient.shared.fetchRaw(ref: ref, language: "he"))
-        let (en, he) = await (enFetch, heFetch)
-        let eSegs = en ?? []
-        let hSegs = he ?? []
-        let count = max(eSegs.count, hSegs.count)
+        guard let (hSegs, eSegs, _) = try? await SefariaTextClient.shared.fetchBothAligned(ref: ref) else {
+            return []
+        }
+        let count = max(hSegs.count, eSegs.count)
         guard count > 0 else { return [] }
-        return (0..<count).map { i in
-            .text(index: startIdx + i,
-                  he: i < hSegs.count ? hSegs[i] : "",
-                  en: i < eSegs.count ? eSegs[i] : "")
+        var seqIdx = startIdx
+        return (0..<count).compactMap { i in
+            let h = i < hSegs.count ? hSegs[i] : ""
+            let e = i < eSegs.count ? eSegs[i] : ""
+            guard !h.trimmingCharacters(in: .whitespaces).isEmpty ||
+                  !e.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+            let entry = CommentaryEntry.text(index: seqIdx, label: nil, he: h, en: e)
+            seqIdx += 1
+            return entry
         }
     }
 
@@ -1113,8 +1146,8 @@ final class TextReaderViewModel {
         guard !introEntries.isEmpty else { return entries }
         let iCount = introEntries.count
         let shifted: [CommentaryEntry] = entries.map { entry in
-            if case .text(let idx, let h, let e) = entry {
-                return .text(index: idx + iCount, he: h, en: e)
+            if case .text(let idx, let lbl, let h, let e) = entry {
+                return .text(index: idx + iCount, label: lbl, he: h, en: e)
             }
             return entry
         }

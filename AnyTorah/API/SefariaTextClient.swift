@@ -6,14 +6,16 @@ enum SefariaError: LocalizedError {
     case invalidURL
     case networkError(Error)
     case noText
-    case decodingError
+    case decodingError(status: Int?)
 
     var errorDescription: String? {
         switch self {
         case .invalidURL:          return "Invalid Sefaria URL"
         case .networkError(let e): return "Network error: \(e.localizedDescription)"
         case .noText:              return "No text found"
-        case .decodingError:       return "Could not parse response"
+        case .decodingError(let status):
+            if let status { return "Could not parse response (HTTP \(status))" }
+            return "Could not parse response"
         }
     }
 }
@@ -30,21 +32,227 @@ final class SefariaTextClient {
         config.urlCache = URLCache(memoryCapacity: 20 * 1024 * 1024,
                                    diskCapacity:  100 * 1024 * 1024)
         config.requestCachePolicy = .returnCacheDataElseLoad
+        // A short per-request timeout keeps a stalled connection from blocking the UI for
+        // the platform's 60s default; retries below then get several tries within that budget.
+        config.timeoutIntervalForRequest = 15
         return URLSession(configuration: config)
     }()
+
+    // MARK: - Retry
+
+    /// Fetches `url` with up to `attempts` tries, retrying only transient failures — dropped
+    /// connections, timeouts, DNS hiccups, and 429/5xx responses — with short backoff between
+    /// tries. Non-transient errors (e.g. a malformed URL's connection refusal) are rethrown
+    /// immediately. This exists because "No text found" reports from real devices (including
+    /// App Store review) have turned out to be transient network failures masquerading as an
+    /// empty API response — a brief retry resolves most of them instead of surfacing an error.
+    private func dataWithRetry(from url: URL, attempts: Int = 3) async throws -> (Data, URLResponse) {
+        var lastError: Error = URLError(.unknown)
+        for attempt in 0..<attempts {
+            let isLastAttempt = attempt == attempts - 1
+            do {
+                let (data, response) = try await session.data(from: url)
+                if let http = response as? HTTPURLResponse, Self.isRetryableStatus(http.statusCode) {
+                    lastError = NSError(domain: "Sefaria", code: http.statusCode,
+                                         userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode)"])
+                } else {
+                    return (data, response)
+                }
+            } catch {
+                lastError = error
+                if !Self.isRetryableNetworkError(error) { throw error }
+            }
+            if isLastAttempt { throw lastError }
+            try? await Task.sleep(nanoseconds: Self.backoffNanoseconds(for: attempt))
+        }
+        throw lastError
+    }
+
+    private static func backoffNanoseconds(for attempt: Int) -> UInt64 {
+        UInt64(300_000_000 * (attempt + 1))  // 0.3s, 0.6s, ...
+    }
+
+    private static func isRetryableNetworkError(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return false }
+        switch urlError.code {
+        case .timedOut, .networkConnectionLost, .cannotConnectToHost,
+             .dnsLookupFailed, .cannotFindHost, .resourceUnavailable:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func isRetryableStatus(_ code: Int) -> Bool {
+        code == 429 || (500...599).contains(code)
+    }
+
+    /// True when `error` is `SefariaError.noText` — used to distinguish "the text genuinely
+    /// doesn't exist" from a masked network/decoding failure when unwrapping combined fetches.
+    private func isNoText(_ error: Error) -> Bool {
+        if case SefariaError.noText = error { return true }
+        return false
+    }
 
     // MARK: - Public API
 
     /// Fetches Hebrew and English segments in parallel with explicit lang parameters.
     /// Uses lang=he → json["he"] and lang=en → json["text"] so each is unambiguous.
     func fetchBoth(ref: String) async throws -> (hebrew: [String], english: [String]) {
-        async let heFetch = (try? fetchSingleLang(ref: ref, lang: "he"))
-        async let enFetch = (try? fetchSingleLang(ref: ref, lang: "en"))
-        let (he, en) = await (heFetch, enFetch)
-        let heSegs = he ?? []
-        let enSegs = en ?? []
-        if heSegs.isEmpty && enSegs.isEmpty { throw SefariaError.noText }
-        return (heSegs, enSegs)
+        async let heResult = fetchSingleLangResult(ref: ref, lang: "he")
+        async let enResult = fetchSingleLangResult(ref: ref, lang: "en")
+        let (heRes, enRes) = await (heResult, enResult)
+
+        let heSegs = (try? heRes.get()) ?? []
+        let enSegs = (try? enRes.get()) ?? []
+        if !heSegs.isEmpty || !enSegs.isEmpty {
+            return (heSegs, enSegs)
+        }
+
+        // Both sides came back empty. Rather than blanket-report "no text" (which is what a
+        // network timeout, a blocked/challenged request, or a bad JSON response all look like
+        // once swallowed), surface whichever underlying failure isn't itself a genuine "no text"
+        // — that's the actual cause, and it's what needs fixing or reporting.
+        for result in [heRes, enRes] {
+            if case .failure(let error) = result, !isNoText(error) { throw error }
+        }
+        throw SefariaError.noText
+    }
+
+    private func fetchSingleLangResult(ref: String, lang: String) async -> Result<[String], Error> {
+        do { return .success(try await fetchSingleLang(ref: ref, lang: lang)) }
+        catch { return .failure(error) }
+    }
+
+    /// Fetches Hebrew and English from a single request, preserving structural alignment.
+    ///
+    /// Sefaria commentary texts are depth-3: outer array = one entry per mishnah/verse/halakha,
+    /// inner array = paragraphs within that entry.  Hebrew typically has 1 inner paragraph per
+    /// entry while the English translation may have several.  Naively flattening both and then
+    /// pairing positionally produces misalignment whenever inner counts differ.
+    ///
+    /// This method pairs at the *outer* level first.  When the inner paragraph counts for a
+    /// given outer element differ between languages it joins the minority side into one string,
+    /// giving one aligned entry per outer element regardless of English verbosity.
+    /// Returns `(he, en, outerIndices)` where `outerIndices[i]` is the 0-based outer-array
+    /// position (e.g. mishnah number) that paragraph `i` belongs to.  Callers can use this
+    /// to display a per-mishnah label instead of a sequential paragraph counter.
+    func fetchBothAligned(ref: String) async throws -> (he: [String], en: [String], outerIndices: [Int]) {
+        let url = try buildURL(ref: ref, lang: "en")
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await dataWithRetry(from: url)
+        } catch {
+            throw SefariaError.networkError(error)
+        }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw SefariaError.decodingError(status: (response as? HTTPURLResponse)?.statusCode)
+        }
+        if let errMsg = json["error"] as? String {
+            throw SefariaError.networkError(
+                NSError(domain: "Sefaria", code: 0,
+                        userInfo: [NSLocalizedDescriptionKey: errMsg]))
+        }
+        guard let heVal = json["he"], let enVal = json["text"] else {
+            throw SefariaError.noText
+        }
+
+        var heSegs: [String] = []
+        var enSegs: [String] = []
+        var outerIndices: [Int] = []
+
+        let heArr = heVal as? [Any]
+        let enArr = enVal as? [Any]
+
+        if let heArr, let enArr {
+            if heArr.count == enArr.count {
+                // Same outer count — pair per outer element, joining minority inner side.
+                for i in 0..<heArr.count {
+                    let hInner = flattenTextValue(heArr[i])
+                        .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                    let eInner = flattenTextValue(enArr[i])
+                        .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                    let before = heSegs.count
+                    alignedAppend(hInner: hInner, eInner: eInner, into: &heSegs, en: &enSegs)
+                    let added = heSegs.count - before
+                    outerIndices.append(contentsOf: repeatElement(i, count: added))
+                }
+            } else if enArr.isEmpty {
+                // No English translation — iterate over Hebrew structure, empty English.
+                for i in 0..<heArr.count {
+                    let hInner = flattenTextValue(heArr[i])
+                        .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                    let before = heSegs.count
+                    alignedAppend(hInner: hInner, eInner: [], into: &heSegs, en: &enSegs)
+                    let added = heSegs.count - before
+                    outerIndices.append(contentsOf: repeatElement(i, count: added))
+                }
+            } else if heArr.isEmpty {
+                // No Hebrew translation — iterate over English structure, empty Hebrew.
+                for i in 0..<enArr.count {
+                    let eInner = flattenTextValue(enArr[i])
+                        .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                    let before = heSegs.count
+                    alignedAppend(hInner: [], eInner: eInner, into: &heSegs, en: &enSegs)
+                    let added = heSegs.count - before
+                    outerIndices.append(contentsOf: repeatElement(i, count: added))
+                }
+            } else {
+                // Outer counts differ and both non-zero (e.g. intro: 1 he vs 7 en at top level).
+                // Flatten each side fully, then apply the same minority-join logic once.
+                let hInner = flattenTextValue(heArr)
+                    .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                let eInner = flattenTextValue(enArr)
+                    .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                let before = heSegs.count
+                alignedAppend(hInner: hInner, eInner: eInner, into: &heSegs, en: &enSegs)
+                let added = heSegs.count - before
+                outerIndices.append(contentsOf: repeatElement(0, count: added))
+            }
+        } else {
+            // Scalar values — fall back to flat lists.
+            heSegs = flattenTextValue(heVal)
+                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            enSegs = flattenTextValue(enVal)
+                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            outerIndices = Array(0..<heSegs.count)
+        }
+
+        guard !heSegs.isEmpty || !enSegs.isEmpty else { throw SefariaError.noText }
+        return (heSegs, enSegs, outerIndices)
+    }
+
+    /// Appends aligned (he, en) pairs to the output arrays.
+    /// When inner paragraph counts match, pairs directly.
+    /// When one side has more paragraphs, joins it into a single string paired with the minority.
+    /// When both sides have multiple paragraphs but different counts, pairs up to min then
+    /// appends extras with an empty partner.
+    private func alignedAppend(hInner: [String], eInner: [String],
+                                into heSegs: inout [String], en enSegs: inout [String]) {
+        guard !hInner.isEmpty || !eInner.isEmpty else { return }
+        if hInner.count == eInner.count {
+            for j in 0..<hInner.count { heSegs.append(hInner[j]); enSegs.append(eInner[j]) }
+        } else if eInner.isEmpty {
+            // No English at all — each Hebrew paragraph is its own entry.
+            for h in hInner { heSegs.append(h); enSegs.append("") }
+        } else if hInner.isEmpty {
+            // No Hebrew at all — each English paragraph is its own entry.
+            for e in eInner { heSegs.append(""); enSegs.append(e) }
+        } else if hInner.count == 1 {
+            // 1 Hebrew para, multiple English: join English into one entry.
+            heSegs.append(hInner[0])
+            enSegs.append(eInner.joined(separator: " "))
+        } else if eInner.count == 1 {
+            // Multiple Hebrew paras, 1 English: join Hebrew into one entry.
+            heSegs.append(hInner.joined(separator: " "))
+            enSegs.append(eInner[0])
+        } else {
+            // Both > 1 but different counts: pair up to min, extras get empty partner.
+            let minCount = min(hInner.count, eInner.count)
+            for j in 0..<minCount { heSegs.append(hInner[j]); enSegs.append(eInner[j]) }
+            for j in minCount..<hInner.count { heSegs.append(hInner[j]); enSegs.append("") }
+            for j in minCount..<eInner.count { heSegs.append(""); enSegs.append(eInner[j]) }
+        }
     }
 
     /// Fetches a single language's text segments.
@@ -55,14 +263,14 @@ final class SefariaTextClient {
     /// Low-level single-language fetch. lang="he" → json["he"], lang="en" → json["text"].
     private func fetchSingleLang(ref: String, lang: String) async throws -> [String] {
         let url = try buildURL(ref: ref, lang: lang)
-        let (data, _): (Data, URLResponse)
+        let (data, response): (Data, URLResponse)
         do {
-            (data, _) = try await session.data(from: url)
+            (data, response) = try await dataWithRetry(from: url)
         } catch {
             throw SefariaError.networkError(error)
         }
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw SefariaError.decodingError
+            throw SefariaError.decodingError(status: (response as? HTTPURLResponse)?.statusCode)
         }
         if let errMsg = json["error"] as? String {
             throw SefariaError.networkError(
@@ -125,11 +333,12 @@ final class SefariaTextClient {
         let refA = "\(tractate.sefariaName) \(daf)a"
         let refB = "\(tractate.sefariaName) \(daf)b"
 
-        async let pairA = (try? fetchBoth(ref: refA))
-        async let pairB = (try? fetchBoth(ref: refB))
+        async let resultA = fetchBothResult(ref: refA)
+        async let resultB = fetchBothResult(ref: refB)
+        let (pairAResult, pairBResult) = await (resultA, resultB)
 
-        let segsA = await pairA
-        let segsB = await pairB
+        let segsA = try? pairAResult.get()
+        let segsB = try? pairBResult.get()
 
         var segments: [TextSegment] = []
 
@@ -152,8 +361,17 @@ final class SefariaTextClient {
         }
 
         let validSegments = segments.filter { $0.isAmudBMarker || !$0.hebrewHTML.isEmpty || !$0.englishHTML.isEmpty }
-        guard !validSegments.isEmpty else { throw SefariaError.noText }
-        return validSegments
+        if !validSegments.isEmpty { return validSegments }
+
+        for result in [pairAResult, pairBResult] {
+            if case .failure(let error) = result, !isNoText(error) { throw error }
+        }
+        throw SefariaError.noText
+    }
+
+    private func fetchBothResult(ref: String) async -> Result<(hebrew: [String], english: [String]), Error> {
+        do { return .success(try await fetchBoth(ref: ref)) }
+        catch { return .failure(error) }
     }
 
     // MARK: - Tosefta fetch
@@ -207,7 +425,7 @@ final class SefariaTextClient {
         let name = tractate.name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
                    ?? tractate.name
         guard let url = URL(string: "https://www.sefaria.org/api/shape/Jerusalem%20Talmud%20\(name)"),
-              let (data, _) = try? await session.data(from: url),
+              let (data, _) = try? await dataWithRetry(from: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
               let first = json.first,
               let chapters = first["chapters"] as? [[Any]] else {
@@ -232,9 +450,9 @@ final class SefariaTextClient {
               let url = URL(string: "https://www.sefaria.org/api/links/\(encoded)") else {
             throw SefariaError.invalidURL
         }
-        let (data, _) = try await session.data(from: url)
+        let (data, response) = try await dataWithRetry(from: url)
         guard let links = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            throw SefariaError.decodingError
+            throw SefariaError.decodingError(status: (response as? HTTPURLResponse)?.statusCode)
         }
         // Filter by index_title; "ref" is the Midrash passage ref (not "anchor_ref" which is the Torah back-ref)
         let matching = links.filter { link in
@@ -323,7 +541,7 @@ final class SefariaTextClient {
     private func fetchRaavadLang(raavadRef: String, langKey: String) async -> [[String]] {
         let lang = langKey == "he" ? "he" : "en"
         guard let url = try? buildURL(ref: raavadRef, lang: lang) else { return [] }
-        guard let (data, _) = try? await session.data(from: url),
+        guard let (data, _) = try? await dataWithRetry(from: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               json["error"] == nil,
               let arr = json[langKey == "he" ? "he" : "text"] as? [Any] else { return [] }

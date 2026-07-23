@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import com.anytorah.api.SefariaTextClient
 import com.anytorah.models.TextDisplayMode
 import com.anytorah.models.TextSegment
+import androidx.compose.ui.platform.LocalConfiguration
 import com.anytorah.ui.theme.LocalAnyTorahColors
 
 
@@ -73,9 +74,11 @@ fun TextContentPanel(
     // Tablet/wide screens:    +2 compensation
     val hebrewFontFamily = if (isTanakh) notoSerifFamily else frankRuhlFamily
     val frankRuhlOffset = if (isTanakh) 0f else 2f   // Frank Ruhl runs smaller — static compensation
-    val heFontSize = (9f + fontSizeLevel * 2f + frankRuhlOffset).coerceAtLeast(10f)
-    val enFontSize = (7f + fontSizeLevel * 2f).coerceAtLeast(10f)
-    val enBothFontSize = (6f + fontSizeLevel * 2f).coerceAtLeast(10f)
+    val isTablet = LocalConfiguration.current.smallestScreenWidthDp >= 600
+    val tabletBoost = if (isTablet) 8f else 0f
+    val heFontSize = (9f + fontSizeLevel * 2f + frankRuhlOffset + tabletBoost + if (isTablet) 1f else 0f).coerceAtLeast(10f)
+    val enFontSize = (7f + fontSizeLevel * 2f + tabletBoost).coerceAtLeast(10f)
+    val enBothFontSize = (6f + fontSizeLevel * 2f + tabletBoost).coerceAtLeast(10f)
 
     // Scroll to verse — waits for the target row's measured position.
     LaunchedEffect(scrollToVerse, segments) {
@@ -230,15 +233,15 @@ private fun SegmentRow(
                         }
                     }
                 }
-            }
-        }
 
-        if (hasRaavad) {
-            HorizontalDivider(
-                modifier = Modifier.padding(top = 6.dp),
-                color = colors.appForeground.copy(alpha = 0.25f)
-            )
-            RaavadBlock(segment = segment, displayMode = displayMode, heFontSize = heFontSize, enFontSize = enBothFontSize)
+                if (hasRaavad) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(top = 6.dp),
+                        color = colors.appForeground.copy(alpha = 0.25f)
+                    )
+                    RaavadBlock(segment = segment, displayMode = displayMode, heFontSize = heFontSize, enFontSize = enBothFontSize)
+                }
+            }
         }
 
         HorizontalDivider(

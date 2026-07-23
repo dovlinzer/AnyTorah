@@ -1099,7 +1099,8 @@ enum class CommentaryType(val id: String, val displayName: String) {
 
     private fun biurHalakhaRef(mainRef: String): String {
         val num = Regex("""\d+$""").find(mainRef)?.value ?: "1"
-        return "Biur Halakha $num"
+        // Biur Halakha is depth-3 (Siman → Seif → Comment); bare siman ref returns only seif 1.
+        return "Biur Halakha $num:1-50"
     }
 
     // MARK: - SA combined-book refs
@@ -1208,8 +1209,11 @@ enum class CommentaryType(val id: String, val displayName: String) {
  * A single item in the displayed commentary list.
  */
 sealed class CommentaryEntry {
-    /** A regular commentary segment. [index] counts only text entries (skips headers). */
-    data class Text(val index: Int, val he: String, val en: String) : CommentaryEntry()
+    /** A regular commentary segment.
+     *  [index] is the sequential position.
+     *  [label] overrides the displayed number when non-null (e.g. mishnah number so all
+     *  paragraphs on the same mishnah share a label). */
+    data class Text(val index: Int, val label: Int? = null, val he: String, val en: String) : CommentaryEntry()
     /** Subtle recension separator — used only for Tosafot Rid multi-recension dividers. */
     data class RecensionHeader(val label: String) : CommentaryEntry()
     /** Prominent book-section separator — used when a commentator combines two distinct

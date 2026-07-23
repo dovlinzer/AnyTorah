@@ -59,6 +59,51 @@ private extension UIFont {
     }
 }
 
+// MARK: - ScrollView gesture tuning
+
+/// Walks up the UIView hierarchy from an anchor view to find the nearest UIScrollView
+/// and sets `isScrollEnabled` to match `enabled`. When scrolling is disabled the scroll
+/// view drops out of gesture competition entirely, allowing subview UITextViews to handle
+/// long-press drag-handle text selection without interference.
+struct ScrollEnabledModifier: ViewModifier {
+    let enabled: Bool
+    func body(content: Content) -> some View {
+        content.background(ScrollEnabledTuner(enabled: enabled))
+    }
+}
+
+private struct ScrollEnabledTuner: UIViewRepresentable {
+    let enabled: Bool
+
+    func makeUIView(context: Context) -> UIView {
+        let v = UIView()
+        v.backgroundColor = .clear
+        v.isUserInteractionEnabled = false
+        return v
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        DispatchQueue.main.async {
+            var responder: UIView? = uiView
+            while let r = responder {
+                if let sv = r as? UIScrollView {
+                    sv.isScrollEnabled = enabled
+                    return
+                }
+                responder = r.superview
+            }
+        }
+    }
+}
+
+extension View {
+    /// Toggles scrolling on the nearest ancestor UIScrollView.
+    /// Pass `false` to disable scrolling and allow UITextView drag-handle selection.
+    func scrollEnabled(_ enabled: Bool) -> some View {
+        modifier(ScrollEnabledModifier(enabled: enabled))
+    }
+}
+
 // MARK: - UIApplication first-responder helper
 
 private extension UIResponder {

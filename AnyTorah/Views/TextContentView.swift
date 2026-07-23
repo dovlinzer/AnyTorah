@@ -9,6 +9,8 @@ struct TextContentView: View {
     let fg: Color
     /// When true, renders main text one font step larger (used when side panels are open).
     var fontBoost: Bool = false
+    /// When true, ScrollView scrolling is disabled and segments render via UITextView for drag-handle selection.
+    var textSelectionMode: Bool = false
     /// When non-nil, scroll so this 1-based verse number is at the top after segments load.
     @Binding var scrollToVerse: Int?
     /// When true, scroll to the amud-B marker in the text.
@@ -29,7 +31,8 @@ struct TextContentView: View {
                         } else {
                             SegmentRow(seg: seg, displayMode: displayMode,
                                        labelStyle: category.segmentLabelStyle, fg: fg,
-                                       fontBoost: fontBoost)
+                                       fontBoost: fontBoost,
+                                       textSelectionMode: textSelectionMode)
                                 .id(seg.id)   // explicit id required for scrollTo
                         }
                     }
@@ -42,6 +45,7 @@ struct TextContentView: View {
             // fire when the binding flips to a new non-nil / true value. Because load()
             // sets the flag *after* assigning segments (same sync block), segments are
             // already populated when the task body runs — no race with layout.
+            .scrollEnabled(!textSelectionMode)
             .task(id: scrollToAmudB) {
                 guard scrollToAmudB, !segments.isEmpty else { return }
                 guard let marker = segments.first(where: { $0.isAmudBMarker }) else {
@@ -113,6 +117,7 @@ private struct SegmentRow: View {
     let labelStyle: SegmentLabelStyle
     let fg: Color
     var fontBoost: Bool = false
+    var textSelectionMode: Bool = false
 
     @AppStorage("useWhiteBackground") private var useWhiteBackground: Bool = false
     @AppStorage("anyTorahFontSize") private var fontSizeLevel: Double = 0
@@ -121,7 +126,8 @@ private struct SegmentRow: View {
     private var fontBoostPoints: CGFloat { fontBoost ? 2 : 0 }
 
     private var scaledBodySize: CGFloat {
-        max(10, UIFont.preferredFont(forTextStyle: .body).pointSize + CGFloat(fontSizeLevel) * 2 - 4)
+        let offset: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 6 : -4
+        return max(10, UIFont.preferredFont(forTextStyle: .body).pointSize + CGFloat(fontSizeLevel) * 2 + offset)
     }
 
     /// Amber (dark bg) or dark indigo (white bg) for editorial/bold words
@@ -156,19 +162,19 @@ private struct SegmentRow: View {
                             .padding(.vertical, 2)
                         englishView
                     }
+
+                    if seg.raavadHe != nil || seg.raavadEn != nil {
+                        Divider()
+                            .background(fg.opacity(0.25))
+                            .padding(.top, 2)
+                        raavadBlock
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 if labelOnRight {
                     labelView
                 }
-            }
-
-            if seg.raavadHe != nil || seg.raavadEn != nil {
-                Divider()
-                    .background(fg.opacity(0.25))
-                    .padding(.top, 6)
-                raavadBlock
             }
         }
         .padding(.vertical, 6)
@@ -214,13 +220,21 @@ private struct SegmentRow: View {
 
     @ViewBuilder
     private var hebrewView: some View {
-        // SwiftUI Text correctly renders Frank Ruhl Libre for Hebrew.
-        // UITextView substitutes the system Hebrew font for RTL character runs
-        // regardless of the explicit NSAttributedString font attribute.
-        styledHebrew(seg.hebrewHTML, fg: fg.opacity(0.95))
-            .lineSpacing(7)
-            .multilineTextAlignment(.trailing)
+        if textSelectionMode {
+            SelectableTextView(attributed: .hebrewBody(
+                html: seg.hebrewHTML, fg: UIColor(fg.opacity(0.95)),
+                extraPoints: fontBoostPoints))
             .frame(maxWidth: .infinity, alignment: .trailing)
+        } else {
+            // SwiftUI Text correctly renders Frank Ruhl Libre for Hebrew.
+            // UITextView substitutes the system Hebrew font for RTL character runs
+            // regardless of the explicit NSAttributedString font attribute.
+            styledHebrew(seg.hebrewHTML, fg: fg.opacity(0.95))
+                .textSelection(.enabled)   // must be before .frame() — layout wrappers break selection
+                .lineSpacing(7)
+                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
     }
 
     /// Builds a `Text` by parsing `<rf>…</rf>` small-marker spans.
@@ -283,26 +297,29 @@ private struct SegmentRow: View {
         return result
     }
 
+    @ViewBuilder
     private var englishView: some View {
-        // For Tanakh main text, strip bold content (lemas / footnote anchors that repeat
-        // the source text before the translation) and render everything as plain fg.
-        // For Talmud and Mishnah, keep amber editorial color to distinguish text types.
-        // For Rambam / SA, keep bold content visible but use fg color (no amber).
+        // For Tanakh main text, strip bold content (lemas / footnote anchors).
+        // For Talmud and Mishnah, keep amber editorial color for Aramaic/Hebrew term highlights.
+        // For Rambam / SA, keep bold content but render it in fg color (no amber).
         let html = (labelStyle == .verse)
             ? SefariaTextClient.stripBoldContent(seg.englishHTML)
             : seg.englishHTML
-        let boldUIColor = (labelStyle == .none || labelStyle == .mishnah || labelStyle == .halakha)
-            ? UIColor(editorialColor)
-            : UIColor(fg)
-        return SelectableTextView(attributed: .englishBody(
-            html: html,
-            fg: UIColor(fg),
-            editorialColor: boldUIColor,
-            lineSpacing: 5,
-            extraPoints: fontBoostPoints - 1
-        ))
-        .id("en-\(fontSizeLevel)-\(fontBoost)")
-        .frame(maxWidth: .infinity, alignment: .leading)
+        let boldColor: Color = (labelStyle == .none || labelStyle == .mishnah || labelStyle == .halakha)
+            ? editorialColor : fg
+        if textSelectionMode {
+            SelectableTextView(attributed: .englishBody(
+                html: html, fg: UIColor(fg.opacity(0.95)),
+                editorialColor: UIColor(boldColor),
+                extraPoints: fontBoostPoints))
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            styledEnglish(html, fg: fg, editorialColor: boldColor)
+                .textSelection(.enabled)   // must be before .frame()
+                .font(.system(size: max(10, scaledBodySize + fontBoostPoints - 1)))
+                .lineSpacing(5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     /// Renders bold tags as editorial-colored text (Aramaic/Hebrew terms in Steinsaltz etc).

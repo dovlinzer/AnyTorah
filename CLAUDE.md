@@ -266,7 +266,10 @@ Some commentaries map to multiple Sefaria refs that get fetched and interleaved,
 | `maharsha` | Agadot-only tractates: single ref; all others: Chidushei Halachot + Chidushei Agadot with Hebrew headers (חידושי הלכות / חידושי אגדות). Agadot-only tractates: Nazir, Zevachim, Arakhin, Temurah, Keritot, Meilah, Tamid |
 | `rAbbiAkivaEiger` | Gilyon HaShas + Chiddushei RAE with Hebrew headers, except tractates where Chiddushim is missing: Sotah, Sanhedrin, Horayot, Menachot, Bekhorot, Arakhin, Keritot, Meilah, Niddah |
 
-**Critical:** `introRef` (prepend intro text at chapter 1) is only attempted when `versions.count == 1` (iOS) / `versions.size == 1` (Android) **and `category != .shulchanArukh`**. Multi-version commentaries AND all SA commentaries skip the intro fetch. Sefaria interprets "Commentary on Shulchan Arukh, Section, Introduction" as returning siman-1 content — calling `introRef` for SA doubles the first siman's commentary entries.
+**Critical:** `introRef` (prepend intro text at chapter 1) is only attempted when `versions.count == 1` (iOS) / `versions.size == 1` (Android) **and `category` is not `.shulchanArukh`, `.mishnah`, or `.rambam`**. Multi-version commentaries, SA, Mishnah, and Rambam commentaries all skip the intro fetch:
+- SA: Sefaria returns siman-1 content for "Introduction" refs, duplicating the first siman.
+- Mishnah: Sefaria returns ch.1 mishnah-1 content for "Introduction" refs.
+- Rambam: Sefaria returns halakha-1 content for "Introduction" refs (confirmed on Maggid Mishneh / Nizkei Mamon).
 
 ### Commentary availability filtering
 
@@ -375,7 +378,7 @@ Some commentaries map to multiple Sefaria refs that get fetched and interleaved,
 - `commentaryPoolGroupLabels: [String?]` — parallel to `commentaryPoolGrouped`; section headers; `nil` = no header. Talmud labels: "Rishonim — Rashi-style", "Rishonim — Chiddushim", "Rishonim — Tosafot-style", "Acharonim", "Acharonim — Additional". Rambam labels: "Classic Commentaries", "Later Acharonim".
 - `availableCommentaries: [CommentaryType]` — the 3 active slots
 
-**Intro fetch:** `loadCommentary()` prepends an intro section at the first chapter/daf. Only triggered when `isAtFirstSection == true` AND `versions.count == 1` (single-version commentaries) AND `category != .shulchanArukh`. Multi-version and SA commentaries are explicitly excluded.
+**Intro fetch:** `loadCommentary()` prepends an intro section at the first chapter/daf. Only triggered when `isAtFirstSection == true` AND `versions.count == 1` AND `category` is not `.shulchanArukh`, `.mishnah`, or `.rambam`. Sefaria's "Introduction" pseudo-ref returns chapter-1 content for Mishnah and Rambam commentaries, duplicating the first entry.
 
 **Slot persistence (Android):** Commentary slot assignments are persisted as a comma-separated `String` keyed `"commentarySlots_$contextKey"` in SharedPreferences — **not** as a `StringSet`. `StringSet` is unordered and silently shuffles slot positions on restart. Read with `getString`; split on `","` and map through `CommentaryType.fromId()`.
 
@@ -385,11 +388,15 @@ Some commentaries map to multiple Sefaria refs that get fetched and interleaved,
 
 ```swift
 enum CommentaryEntry {
-    case text(index: Int, he: String, en: String)
+    case text(index: Int, label: Int?, he: String, en: String)
     case recensionHeader(String)  // e.g. "מהדורא קמא" — visual divider between Tosafot Rid recensions
     case bookDivider(String)      // prominent separator when one commentator combines two distinct books
 }
 ```
+
+`label` overrides the sequential display number. It is set to the `outerIndices` value (0-based outer array position) for Mishnah, Rambam, and Tanakh categories, so the displayed number matches the mishnah/halakha/verse being commented on rather than a sequential paragraph counter. `CommentarySegmentView` displays `label + 1` when `label` is non-nil. The no-label factory `CommentaryEntry.text(index:he:en:)` exists for call sites that don't need it.
+
+**Why this matters for sparse commentaries:** Kesef Mishneh and similar commentaries skip many halakhot. Without `outerIndices` labels, a commentary on halakha 5 would display as entry "1" because the 4 preceding empty entries are filtered out. With labels, it correctly shows "5".
 
 ---
 
@@ -568,9 +575,23 @@ When `attributedText` changes inside `updateUIView`, SwiftUI does **not** re-run
 
 **Fix**: attach `.id("he-\(fontSizeLevel)")` / `.id("en-\(fontSizeLevel)")` to every `SelectableTextView` call. When `fontSizeLevel` changes SwiftUI treats the view as a new identity, destroys the old `UITextView`, calls `makeUIView` + `sizeThatFits` fresh, and the layout updates immediately.
 
-Applied to:
-- `hebrewView` and `englishView` in `SegmentRow` (`TextContentView.swift`)
-- `hebrewContentView()` and all English `SelectableTextView` calls in `CommentarySegmentView` (`CommentaryPanelView.swift`)
+**Current status**: `SelectableTextView` (UITextView) is now only used in `SelectableTextView.swift` itself (dead code). All views use SwiftUI `Text` + Font.custom. The `.id()` trick is no longer needed and has been removed.
+
+### 11. Commentary amud B scroll — use `@State` counter + `.task(id:)`, not `DispatchQueue`
+
+When a commentator changes while on amud B, `panel.loadVersion` increments after entries are set. A `@State private var pendingAmudBScroll: Int` in `CommentaryPanelView` is incremented by `.onChange(of: panel.loadVersion)` when `talmudAmud == 1`. A `.task(id: pendingAmudBScroll)` inside `ScrollViewReader` then captures a fresh proxy, sleeps 150 ms for layout, and calls `scrollToAmudBHeader`. Using `DispatchQueue.main.asyncAfter` was broken because the captured `proxy` is stale by the time the closure runs.
+
+### 12. UITextView inside SwiftUI ScrollView blocks custom Hebrew fonts AND text selection
+
+`UITextView` silently overrides custom `NSAttributedString` font attributes for RTL runs (using system Hebrew font instead of Frank Ruhl Libre). Additionally, UITextView's long-press gesture for selection conflicts with SwiftUI's `ScrollView` gesture recognizers. **Fix**: use `SwiftUI Text + Font.custom(...)` for all Hebrew. Then `.textSelection(.enabled)` on the `ScrollView` enables drag-handle selection for both Hebrew and English automatically.
+
+### 13. Talmud amud (א/ב) not persisted when switching via in-reader buttons (iOS)
+
+The in-reader amud buttons (`talmudTextAmudButton`) set `vm.talmudAmud` directly without calling `load()`, so `saveState()` was never triggered. On iOS, `talmudAmud` has a `didSet { if !isRestoring { saveState(for: .talmud) } }` to persist on every change. Android is unaffected — its `talmudAmud` setter writes to SharedPreferences directly on every assignment.
+
+### 14. Raavad block must be inside the text column, not the outer VStack/Column
+
+`RaavadBlock` / `raavadBlock` must be placed **inside** the inner text `VStack`/`Column` (the one that holds Hebrew/English content), not in the outer container alongside the `HStack`/`Row`. Placing it outside means it spans the full width, extending past the halakha-number label. Inside the content column, it naturally aligns with the Rambam text.
 
 ---
 

@@ -15,6 +15,8 @@ struct CommentaryPanelView: View {
 
     /// Index of the slot whose picker sheet is currently open (nil = closed).
     @State private var replacingSlotIndex: Int? = nil
+    /// When true, ScrollView scrolling is disabled so UITextView can handle drag-handle selection.
+    @State private var textSelectionMode: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,6 +33,20 @@ struct CommentaryPanelView: View {
             } else if panel.commentaryEntries.isEmpty {
                 emptyView
             } else {
+                if textSelectionMode {
+                    HStack {
+                        Text("Text selection — scroll disabled")
+                            .font(.caption2)
+                            .foregroundStyle(fg.opacity(0.7))
+                        Spacer()
+                        Button("Done") { textSelectionMode = false }
+                            .font(.caption2.bold())
+                            .foregroundStyle(fg)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .background(fg.opacity(0.08))
+                }
                 commentaryScrollView
             }
         }
@@ -52,51 +68,61 @@ struct CommentaryPanelView: View {
     // MARK: - Commentary Tabs
 
     private var commentaryTabs: some View {
-        HStack(spacing: 0) {
-            ForEach(vm.effectiveCommentaries(for: panel).indices, id: \.self) { idx in
-                let commentary = vm.effectiveCommentaries(for: panel)[idx]
-                let isSelected = panel.selectedCommentary == commentary
-                Button {
-                    if isSelected {
-                        // Tap the active tab → open slot-replacement picker (if pool exists).
-                        if vm.hasExpandedCommentaryPool {
-                            replacingSlotIndex = idx
+        HStack(spacing: 8) {
+            HStack(spacing: 0) {
+                ForEach(vm.effectiveCommentaries(for: panel).indices, id: \.self) { idx in
+                    let commentary = vm.effectiveCommentaries(for: panel)[idx]
+                    let isSelected = panel.selectedCommentary == commentary
+                    Button {
+                        if isSelected {
+                            // Tap the active tab → open slot-replacement picker (if pool exists).
+                            if vm.hasExpandedCommentaryPool {
+                                replacingSlotIndex = idx
+                            }
+                        } else {
+                            panel.selectedCommentary = commentary
+                            Task { await vm.loadCommentary(into: panel) }
                         }
-                    } else {
-                        panel.selectedCommentary = commentary
-                        Task { await vm.loadCommentary(into: panel) }
-                    }
-                } label: {
-                    HStack(spacing: 3) {
-                        Text(saHebrewMode ? commentary.hebrewDisplayName : commentary.displayName)
-                            .font(.footnote.bold())
-                            .foregroundStyle(fg)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-                        // Chevron hints that the active tab is tappable to swap.
-                        if isSelected && vm.hasExpandedCommentaryPool {
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(fg.opacity(0.5))
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text(saHebrewMode ? commentary.hebrewDisplayName : commentary.displayName)
+                                .font(.footnote.bold())
+                                .foregroundStyle(fg)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                            // Chevron hints that the active tab is tappable to swap.
+                            if isSelected && vm.hasExpandedCommentaryPool {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundStyle(fg.opacity(0.5))
+                            }
                         }
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(isSelected ? fg.opacity(0.22) : Color.clear)
+                        )
+                        .frame(maxWidth: .infinity)
                     }
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(isSelected ? fg.opacity(0.22) : Color.clear)
-                    )
-                    .frame(maxWidth: .infinity)
                 }
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(fg.opacity(0.18), lineWidth: 0.5)
+            )
+            .environment(\.layoutDirection, saHebrewMode ? .rightToLeft : .leftToRight)
+
+            Button {
+                textSelectionMode.toggle()
+            } label: {
+                Image(systemName: textSelectionMode ? "cursor.rays" : "text.cursor")
+                    .font(.system(size: 15))
+                    .foregroundStyle(textSelectionMode ? fg : fg.opacity(0.45))
+            }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(fg.opacity(0.18), lineWidth: 0.5)
-        )
-        .environment(\.layoutDirection, saHebrewMode ? .rightToLeft : .leftToRight)
         .padding(.horizontal, 12)
         .padding(.bottom, 6)
     }
@@ -176,16 +202,18 @@ struct CommentaryPanelView: View {
                     let mode = vm.displayMode
                     ForEach(Array(panel.commentaryEntries.enumerated()), id: \.offset) { offset, entry in
                         switch entry {
-                        case .text(let idx, let he, let en):
+                        case .text(let idx, let lbl, let he, let en):
                             let labelPrefix: String? = saStyle.map { s in
                                 "\(s.open)\(SefariaTextClient.saHebrewLetter(idx + 1))\(s.close) "
                             }
                             CommentarySegmentView(
-                                index: idx, hebrewHTML: he, englishHTML: en,
+                                index: idx, displayIndex: lbl.map { $0 + 1 },
+                                hebrewHTML: he, englishHTML: en,
                                 displayMode: mode, fg: fg, saLabelPrefix: labelPrefix,
                                 saLabelIsSmall: saLabelIsSmall,
                                 useRashiFont: useRashiFont && (panel.selectedCommentary == .rashiTanakh
-                                           || panel.selectedCommentary == .rashiTalmud))
+                                           || panel.selectedCommentary == .rashiTalmud),
+                                textSelectionMode: textSelectionMode)
                         case .recensionHeader(let label):
                             RecensionHeaderView(label: label, fg: fg)
                                 .id("header_\(offset)")
@@ -199,6 +227,7 @@ struct CommentaryPanelView: View {
                 .padding(.vertical, 8)
                 .textSelection(.enabled)
             }
+            .scrollEnabled(!textSelectionMode)
             .onChange(of: vm.commentaryScrollToAmudB) { _, newValue in
                 guard newValue else { return }
                 scrollToAmudBHeader(in: panel.commentaryEntries, proxy: proxy)
@@ -208,6 +237,20 @@ struct CommentaryPanelView: View {
                 guard newValue else { return }
                 withAnimation { proxy.scrollTo("commentary_top", anchor: .top) }
                 vm.commentaryScrollToAmudA = false
+            }
+            .onChange(of: panel.selectedCommentary) { _, _ in
+                textSelectionMode = false
+            }
+            // When a new commentary loads while already on amud B, scroll to עמוד ב׳.
+            // .task(id:) fires both on first appearance of the view (when loading completes
+            // and commentaryScrollView re-enters the hierarchy) AND whenever loadVersion
+            // changes while the view is already showing (instant cache-hit loads).
+            // onChange(of: panel.loadVersion) was NOT sufficient because commentaryScrollView
+            // is hidden during loading, so the onChange handler was never registered in time.
+            .task(id: panel.loadVersion) {
+                guard vm.talmudAmud == 1, !panel.commentaryEntries.isEmpty else { return }
+                try? await Task.sleep(for: .milliseconds(200))
+                scrollToAmudBHeader(in: panel.commentaryEntries, proxy: proxy)
             }
         }
         // ScrollViewReader doesn't propagate flexible sizing to SwiftUI's VStack layout
@@ -334,14 +377,24 @@ private struct CommentarySlotPicker: View {
             .map { $0.element })
     }
 
-    /// The selectable options grouped by section; each group has other-slots filtered out.
-    private var optionGroups: [[CommentaryType]] {
-        vm.commentaryPoolGrouped.map { group in
-            group.filter { !otherSlots.contains($0) }
-        }.filter { !$0.isEmpty }
+    /// The selectable options grouped by section, with other-slot entries and empty groups removed.
+    /// Labels are computed in the same pass so indices always align.
+    private var optionGroupsAndLabels: ([[CommentaryType]], [String?]) {
+        let sourceLabels = vm.commentaryPoolGroupLabels
+        var groups: [[CommentaryType]] = []
+        var labels: [String?] = []
+        for (idx, group) in vm.commentaryPoolGrouped.enumerated() {
+            let filtered = group.filter { !otherSlots.contains($0) }
+            if !filtered.isEmpty {
+                groups.append(filtered)
+                labels.append(idx < sourceLabels.count ? sourceLabels[idx] : nil)
+            }
+        }
+        return (groups, labels)
     }
 
-    private var groupLabels: [String?] { vm.commentaryPoolGroupLabels }
+    private var optionGroups: [[CommentaryType]] { optionGroupsAndLabels.0 }
+    private var groupLabels: [String?] { optionGroupsAndLabels.1 }
 
     var body: some View {
         NavigationStack {
@@ -387,6 +440,8 @@ private struct CommentarySlotPicker: View {
 
 private struct CommentarySegmentView: View {
     let index: Int
+    /// Override for the displayed number. When set, shown instead of `index + 1`.
+    var displayIndex: Int? = nil
     let hebrewHTML: String
     let englishHTML: String
     let displayMode: TextDisplayMode
@@ -399,9 +454,10 @@ private struct CommentarySegmentView: View {
     /// UITextView silently substitutes the system Hebrew font for any custom font, so SwiftUI
     /// Text + Font.custom is the only reliable path for custom Hebrew scripts.
     var useRashiFont: Bool = false
+    /// When true, renders text via UITextView (SelectableTextView) for drag-handle selection.
+    /// The parent ScrollView must have isScrollEnabled = false to avoid gesture conflicts.
+    var textSelectionMode: Bool = false
 
-    /// Observing this causes the view to re-render when the font size changes,
-    /// which forces SelectableTextView to rebuild its attributed strings with the new scale.
     @AppStorage("anyTorahFontSize") private var fontSizeLevel: Double = 0
 
     /// Number appears on right when Hebrew is shown (mirrors main text label position).
@@ -410,7 +466,7 @@ private struct CommentarySegmentView: View {
     }
 
     private var numberLabel: some View {
-        Text("\(index + 1)")
+        Text("\(displayIndex ?? (index + 1))")
             .font(.caption2.monospacedDigit())
             .foregroundStyle(fg.opacity(0.4))
             .frame(width: 20, alignment: labelOnRight ? .leading : .trailing)
@@ -435,37 +491,101 @@ private struct CommentarySegmentView: View {
         return prefix + stripped
     }
 
-    /// Renders Hebrew commentary text. When `saLabelIsSmall` is true and a prefix is present,
-    /// the prefix renders at a smaller size (Taz/OC, PT/YD+EH+CM). All other prefixes
-    /// render at the same callout size as the commentary body.
-    ///
-    /// When `useRashiFont` is set, uses SwiftUI Text + Noto Rashi Hebrew, bypassing UITextView
-    /// (which overrides custom Hebrew fonts with the system font at the CoreText level).
+    /// Renders Hebrew commentary text using SwiftUI Text + Font.custom, which correctly
+    /// applies Frank Ruhl Libre / Noto Rashi Hebrew. UITextView (SelectableTextView) was
+    /// replaced because it silently overrides custom fonts on RTL runs and causes gesture
+    /// conflicts with the parent SwiftUI ScrollView that block drag-handle text selection.
     @ViewBuilder
     private func hebrewContentView(_ raw: String) -> some View {
-        if useRashiFont {
-            rashiHebrewText(raw)
-                .lineSpacing(4)
-                .multilineTextAlignment(.trailing)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-        } else {
+        if textSelectionMode {
+            // UITextView gives drag-handle selection; scroll conflict is gone because
+            // the parent ScrollView has isScrollEnabled = false in selection mode.
+            // UITextView ignores custom fonts on RTL runs so Rashi/Frank Ruhl won't render,
+            // but selection fidelity matters more than font fidelity in this mode.
             SelectableTextView(attributed: .hebrewCallout(
                 html: raw,
                 prefix: saLabelPrefix ?? "",
                 prefixIsSmall: saLabelIsSmall,
-                fg: UIColor(fg.opacity(0.88)),
-                lineSpacing: 4
+                fg: UIColor(fg.opacity(0.88))
             ))
-            .id("he-\(fontSizeLevel)")   // force UITextView recreation on font size change
             .frame(maxWidth: .infinity, alignment: .trailing)
+        } else if useRashiFont {
+            rashiHebrewText(raw)
+                .textSelection(.enabled)   // must be before .frame()
+                .lineSpacing(4)
+                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        } else {
+            hebrewCommentaryText(raw)
+                .textSelection(.enabled)   // must be before .frame() — layout wrappers break selection
+                .lineSpacing(4)
+                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 
+    /// Builds a SwiftUI `Text` for Hebrew commentary using Frank Ruhl Libre.
+    /// Handles `<rf>` small-size spans (SA sequential-marker labels) and optional
+    /// SA letter prefix with optional small-size rendering.
+    private func hebrewCommentaryText(_ raw: String) -> Text {
+        let base = UIFont.preferredFont(forTextStyle: .body).pointSize
+        let offset: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 3 : -3
+        let size = max(10, base + CGFloat(fontSizeLevel) * 2 + offset)
+        let heFont = Font.system(size: size)
+        let smFont = Font.system(size: max(10, size - 5))
+        let color  = fg.opacity(0.88)
+
+        // Prefix span: SA sequential-marker label, optionally at small size.
+        let prefixText: Text? = saLabelPrefix.map { p in
+            let pFont: Font = saLabelIsSmall ? smFont : heFont
+            return Text("\u{200F}" + p).font(pFont).foregroundColor(color)
+        }
+
+        // Parse <rf> spans (SA inline bracket markers rendered at small size).
+        let htmlWithRlm = "\u{200F}" + raw
+        let rfPattern = #"<rf>(.*?)</rf>"#
+
+        func bodyText() -> Text {
+            guard let regex = try? NSRegularExpression(pattern: rfPattern) else {
+                return Text(SefariaTextClient.processedHebrew(htmlWithRlm)).font(heFont).foregroundColor(color)
+            }
+            let ns = htmlWithRlm as NSString
+            let matches = regex.matches(in: htmlWithRlm, range: NSRange(location: 0, length: ns.length))
+            guard !matches.isEmpty else {
+                return Text(SefariaTextClient.processedHebrew(htmlWithRlm)).font(heFont).foregroundColor(color)
+            }
+            var result = Text("")
+            var lastEnd = 0
+            for match in matches {
+                if match.range.location > lastEnd {
+                    let chunk = ns.substring(with: NSRange(location: lastEnd,
+                                                           length: match.range.location - lastEnd))
+                    let plain = SefariaTextClient.processedHebrew(chunk)
+                    if !plain.isEmpty { result = result + Text(plain).font(heFont).foregroundColor(color) }
+                }
+                if let r = Range(match.range(at: 1), in: htmlWithRlm) {
+                    let marker = SefariaTextClient.stripHTML(String(htmlWithRlm[r]))
+                    if !marker.isEmpty { result = result + Text(marker).font(smFont).foregroundColor(color) }
+                }
+                lastEnd = match.range.location + match.range.length
+            }
+            if lastEnd < ns.length {
+                let chunk = ns.substring(with: NSRange(location: lastEnd, length: ns.length - lastEnd))
+                let plain = SefariaTextClient.processedHebrew(chunk)
+                if !plain.isEmpty { result = result + Text(plain).font(heFont).foregroundColor(color) }
+            }
+            return result
+        }
+
+        let body = bodyText()
+        return prefixText.map { $0 + body } ?? body
+    }
+
     /// Builds a SwiftUI `Text` for Rashi commentary Hebrew using Noto Rashi Hebrew.
-    /// Uses the callout scale + app font size setting (same scale as SelectableTextView path).
     private func rashiHebrewText(_ raw: String) -> Text {
         let base = UIFont.preferredFont(forTextStyle: .body).pointSize
-        let size = max(10, base + CGFloat(fontSizeLevel) * 2 - 8)
+        let offset: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 2 : -6
+        let size = max(10, base + CGFloat(fontSizeLevel) * 2 + offset)
         let rashiFont = Font.custom("NotoRashiHebrew-Regular", size: size)
         let color = fg.opacity(0.88)
         let processed = SefariaTextClient.processedHebrew("\u{200F}" + raw)
@@ -478,6 +598,26 @@ private struct CommentarySegmentView: View {
                  + Text(processed).font(rashiFont).foregroundColor(color)
         }
         return Text(processed).font(rashiFont).foregroundColor(color)
+    }
+
+    /// English commentary text as a SwiftUI view. Plain text (HTML already stripped by callers).
+    /// SwiftUI Text is used instead of UITextView so .textSelection(.enabled) on the parent
+    /// ScrollView enables drag-handle selection without gesture conflicts.
+    @ViewBuilder
+    private func englishCommentaryView(_ text: String) -> some View {
+        let enOffset: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 3 : -3
+        let size = max(10, UIFont.preferredFont(forTextStyle: .body).pointSize + CGFloat(fontSizeLevel) * 2 + enOffset)
+        if textSelectionMode {
+            SelectableTextView(attributed: .englishCallout(text: text, fg: UIColor(fg.opacity(0.88))))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            Text(text)
+                .textSelection(.enabled)   // must be before .frame()
+                .font(.system(size: size))
+                .foregroundStyle(fg.opacity(0.88))
+                .lineSpacing(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     var body: some View {
@@ -498,23 +638,11 @@ private struct CommentarySegmentView: View {
                         hebrewContentView(cleanHe)
                     } else {
                         // Fallback to English if no Hebrew
-                        SelectableTextView(attributed: .englishCallout(
-                            text: enText(cleanEn),
-                            fg: UIColor(fg.opacity(0.88)),
-                            lineSpacing: 4
-                        ))
-                        .id("en-\(fontSizeLevel)")
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        englishCommentaryView(enText(cleanEn))
                     }
                 case .translation:
                     if !cleanEn.isEmpty {
-                        SelectableTextView(attributed: .englishCallout(
-                            text: enText(cleanEn),
-                            fg: UIColor(fg.opacity(0.88)),
-                            lineSpacing: 4
-                        ))
-                        .id("en-\(fontSizeLevel)")
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        englishCommentaryView(enText(cleanEn))
                     } else {
                         hebrewContentView(cleanHe)
                     }
@@ -528,13 +656,7 @@ private struct CommentarySegmentView: View {
                     if !cleanEn.isEmpty {
                         // English NEVER gets the prefix in BOTH mode — the Hebrew line
                         // already carries the letter label.
-                        SelectableTextView(attributed: .englishCallout(
-                            text: SefariaTextClient.stripHTML(cleanEn),
-                            fg: UIColor(fg.opacity(0.88)),
-                            lineSpacing: 4
-                        ))
-                        .id("en-\(fontSizeLevel)")
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        englishCommentaryView(SefariaTextClient.stripHTML(cleanEn))
                     }
                 }
             }
