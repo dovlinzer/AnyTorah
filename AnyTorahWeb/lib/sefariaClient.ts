@@ -928,8 +928,32 @@ export function processedHebrewWithMarkers(html: string, showTrop: boolean = fal
   const withPlaceholders = html.replace(MARKER_TAG_RE, (_m, slot: string, text: string) => {
     const i = markers.length;
     markers.push(`<span class="sa-mark sa-mark-${slot}">${text}</span>`);
-    return ` MK${i} `;
+    return `\uE000MK${i}\uE000`;
   });
   const stripped = processedHebrew(withPlaceholders, showTrop);
-  return stripped.replace(/ MK(\d+) /g, (_m, i: string) => markers[Number(i)] ?? "");
+  return stripped.replace(/\uE000MK(\d+)\uE000/g, (_m, i: string) => markers[Number(i)] ?? "");
+}
+
+const BOLD_TAG_RE = /<(?:b|strong)>([\s\S]*?)<\/(?:b|strong)>/g;
+
+/**
+ * Like stripHTML, but converts `<b>`/`<strong>` spans into `<span class="en-editorial">\u2026</span>`
+ * instead of discarding the tags. Ported from native's styledEnglish (TextContentView.swift):
+ * Sefaria's Talmud/Mishnah English translations bold the "glue" words a translator added that
+ * aren't direct translations of the source (Steinsaltz-style), and native renders those in an
+ * editorial color (amber on dark bg / indigo on light bg via `--accent`, see globals.css)
+ * instead of literal bold weight \u2014 bold weight alone reads as emphasis, not as "this word isn't
+ * really in the source," which is what the color is for. Must be rendered with
+ * dangerouslySetInnerHTML; everything else in the returned string is plain-texted exactly as
+ * stripHTML would produce.
+ */
+export function processedEnglishWithBold(html: string): string {
+  const spans: string[] = [];
+  const withPlaceholders = html.replace(BOLD_TAG_RE, (_m, inner: string) => {
+    const i = spans.length;
+    spans.push(`<span class="en-editorial">${stripHTML(inner)}</span>`);
+    return `\uE000B${i}\uE000`;
+  });
+  const stripped = stripHTML(withPlaceholders);
+  return stripped.replace(/\uE000B(\d+)\uE000/g, (_m, i: string) => spans[Number(i)] ?? "");
 }

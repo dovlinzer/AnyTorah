@@ -77,6 +77,11 @@ export function getChapterUnitLabel(category: ReaderCategory): string {
   }
 }
 
+/** Exact Sefaria title for a Talmud tractate — needed to key the daf-image lookup. */
+export function getTalmudSefariaName(index: number): string | undefined {
+  return TextCatalog.allTalmudTractates.find((t) => t.id === index)?.sefariaName;
+}
+
 export function getCategoryDisplayName(category: ReaderCategory): string {
   switch (category) {
     case "tanakh": return "Tanakh";

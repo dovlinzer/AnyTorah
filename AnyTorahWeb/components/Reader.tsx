@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { TextDisplayMode, TextSegment } from "@/lib/textModels";
 import type { CommentaryType } from "@/lib/commentaryTypes";
 import { getPoolInfo, computeEffectiveSlots, type ReaderCategory } from "@/lib/commentaryPools";
@@ -10,9 +10,12 @@ import {
   getChapterMax,
   getChapterUnitLabel,
   getCategoryDisplayName,
+  getTalmudSefariaName,
 } from "@/lib/categoryCatalog";
 import CommentaryPanel from "@/components/CommentaryPanel";
 import SASimanPicker from "@/components/SASimanPicker";
+import DafImagePanel from "@/components/DafImagePanel";
+import { loadTalmudPages, hasPages as hasTalmudPages, type TalmudPages } from "@/lib/talmudPages";
 
 interface ChapterResponse {
   ref: string;
@@ -49,16 +52,29 @@ function storeSlots(contextKey: string, slots: CommentaryType[]) {
   }
 }
 
-// Font size: -2..+2, each step ±2px from base, matching native's anyTorahFontSize scheme.
-const FONT_SIZE_STORAGE_KEY = "anytorah:fontSizeLevel";
-const FONT_SIZE_MIN = -2;
-const FONT_SIZE_MAX = 2;
-const FONT_SIZE_LABELS = ["Smallest", "Small", "Default", "Large", "Largest"];
+// Font size: -1..+4, each step ±2px from base. Text and commentary are sized independently
+// (some users want commentary smaller/larger than the main text, not locked together).
+// Range is intentionally asymmetric vs. native's -2..+2: user feedback was that native's
+// smallest was too small (floor raised from -2 to -1) and the largest wasn't big enough
+// (ceiling raised from +2 to +4).
+const MAIN_FONT_SIZE_KEY = "anytorah:fontSizeLevel";
+const COMMENTARY_FONT_SIZE_KEY = "anytorah:commentaryFontSizeLevel";
+const FONT_SIZE_MIN = -1;
+const FONT_SIZE_MAX = 4;
+const FONT_SIZE_LEVELS = [-1, 0, 1, 2, 3, 4];
+const FONT_SIZE_LABELS: Record<number, string> = {
+  [-1]: "Small",
+  0: "Default",
+  1: "Large",
+  2: "Larger",
+  3: "Largest",
+  4: "Max",
+};
 
-function loadFontSizeLevel(): number {
+function loadFontSizeLevel(key: string): number {
   if (typeof window === "undefined") return 0;
   try {
-    const raw = window.localStorage.getItem(FONT_SIZE_STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     const n = raw === null ? NaN : parseInt(raw, 10);
     return Number.isFinite(n) ? clamp(n, FONT_SIZE_MIN, FONT_SIZE_MAX) : 0;
   } catch {
@@ -66,36 +82,156 @@ function loadFontSizeLevel(): number {
   }
 }
 
-function storeFontSizeLevel(level: number) {
+function storeFontSizeLevel(key: string, level: number) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(FONT_SIZE_STORAGE_KEY, String(level));
+    window.localStorage.setItem(key, String(level));
   } catch {
     // localStorage unavailable — font size choice just won't persist.
   }
 }
 
-/** Small-A…large-A control with 5 tappable dots, matching native's font-size setting. */
-function FontSizeControl({ level, onChange }: { level: number; onChange: (n: number) => void }) {
+const SHOW_DAF_IMAGE_KEY = "anytorah:showDafImage";
+
+function loadShowDafImage(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(SHOW_DAF_IMAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function storeShowDafImage(show: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SHOW_DAF_IMAGE_KEY, show ? "1" : "0");
+  } catch {
+    // localStorage unavailable — toggle just won't persist.
+  }
+}
+
+// Panel layout: which side the daf-image column sits on (it always gets the flexible/big
+// share of space; the digital text always takes the fixed/narrow share when daf image is
+// shown), plus drag-resizable widths for the text-vs-daf narrow slot and the commentary panel.
+const DAF_POSITION_KEY = "anytorah:dafPosition";
+const NARROW_WIDTH_KEY = "anytorah:narrowPanelWidth";
+const COMMENTARY_WIDTH_KEY = "anytorah:commentaryWidth";
+const NARROW_WIDTH_DEFAULT = 420;
+const COMMENTARY_WIDTH_DEFAULT = 380;
+const PANEL_WIDTH_MIN = 260;
+const PANEL_WIDTH_MAX = 800;
+
+type DafPosition = "left" | "middle";
+
+function loadDafPosition(): DafPosition {
+  if (typeof window === "undefined") return "middle";
+  try {
+    return window.localStorage.getItem(DAF_POSITION_KEY) === "left" ? "left" : "middle";
+  } catch {
+    return "middle";
+  }
+}
+
+function storeDafPosition(pos: DafPosition) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(DAF_POSITION_KEY, pos);
+  } catch {
+    // localStorage unavailable — position choice just won't persist.
+  }
+}
+
+function loadStoredWidth(key: string, fallback: number): number {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    const n = raw === null ? NaN : parseInt(raw, 10);
+    return Number.isFinite(n) ? clamp(n, PANEL_WIDTH_MIN, PANEL_WIDTH_MAX) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function storeWidth(key: string, px: number) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, String(px));
+  } catch {
+    // localStorage unavailable — width choice just won't persist.
+  }
+}
+
+/** Draggable vertical divider between two panels; reports the raw pointer-X delta per move. */
+function ResizeHandle({ onDrag }: { onDrag: (deltaX: number) => void }) {
+  const draggingRef = useRef(false);
+  const lastXRef = useRef(0);
+
+  useEffect(() => {
+    function handleMove(e: MouseEvent) {
+      if (!draggingRef.current) return;
+      const delta = e.clientX - lastXRef.current;
+      lastXRef.current = e.clientX;
+      onDrag(delta);
+    }
+    function handleUp() {
+      draggingRef.current = false;
+    }
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [onDrag]);
+
+  return (
+    <div
+      onMouseDown={(e) => {
+        draggingRef.current = true;
+        lastXRef.current = e.clientX;
+      }}
+      role="separator"
+      aria-orientation="vertical"
+      className="mx-1 w-1.5 shrink-0 cursor-col-resize self-stretch rounded transition-colors hover:bg-[var(--accent)]"
+      style={{ background: "var(--border)" }}
+    />
+  );
+}
+
+/**
+ * Small-A…large-A control with tappable dots. `label` is used for aria-labels/tooltips only —
+ * the visible caption lives above the group (see ControlGroup) so Text and Commentary read as
+ * two clearly separate sections rather than repeating the word on every pill.
+ */
+function FontSizeControl({
+  label,
+  level,
+  onChange,
+}: {
+  label: string;
+  level: number;
+  onChange: (n: number) => void;
+}) {
   return (
     <div className="flex items-center gap-2 rounded-full border border-border px-3 py-1.5">
       <button
         onClick={() => onChange(clamp(level - 1, FONT_SIZE_MIN, FONT_SIZE_MAX))}
         disabled={level <= FONT_SIZE_MIN}
-        aria-label="Decrease font size"
+        aria-label={`Decrease ${label} font size`}
         className="text-xs opacity-70 transition-opacity hover:opacity-100 disabled:opacity-25"
       >
         A
       </button>
       <div className="flex items-center gap-1">
-        {[-2, -1, 0, 1, 2].map((d) => {
-          const size = 5 + (d + 2) * 2;
+        {FONT_SIZE_LEVELS.map((d) => {
+          const size = 5 + (d - FONT_SIZE_MIN) * 2;
           return (
             <button
               key={d}
               onClick={() => onChange(d)}
-              aria-label={`Font size: ${FONT_SIZE_LABELS[d + 2]}`}
-              title={FONT_SIZE_LABELS[d + 2]}
+              aria-label={`${label} font size: ${FONT_SIZE_LABELS[d]}`}
+              title={FONT_SIZE_LABELS[d]}
               className="rounded-full"
               style={{
                 width: size,
@@ -110,7 +246,7 @@ function FontSizeControl({ level, onChange }: { level: number; onChange: (n: num
       <button
         onClick={() => onChange(clamp(level + 1, FONT_SIZE_MIN, FONT_SIZE_MAX))}
         disabled={level >= FONT_SIZE_MAX}
-        aria-label="Increase font size"
+        aria-label={`Increase ${label} font size`}
         className="text-base opacity-70 transition-opacity hover:opacity-100 disabled:opacity-25"
       >
         A
@@ -158,6 +294,43 @@ const DISPLAY_MODES: { mode: TextDisplayMode; label: string }[] = [
   { mode: "translation", label: "A" },
 ];
 
+/** Hebrew/English/both toggle — one instance for the main text, one for commentary. */
+function DisplayModePill({
+  mode,
+  onChange,
+}: {
+  mode: TextDisplayMode;
+  onChange: (m: TextDisplayMode) => void;
+}) {
+  return (
+    <div className="flex overflow-hidden rounded-full border border-border text-sm">
+      {DISPLAY_MODES.map(({ mode: m, label }) => (
+        <button
+          key={m}
+          onClick={() => onChange(m)}
+          className="px-3 py-1.5 transition-colors"
+          style={mode === m ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A labeled cluster of controls — "Text" or "Commentary" sits inline before its pills (not
+ * above them) so the whole group stays a single line and lines up with the rest of the toolbar.
+ */
+function ControlGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs opacity-60">{label}</span>
+      {children}
+    </div>
+  );
+}
+
 type Selection = Record<ReaderCategory, { index: number; chapter: number }>;
 
 const INITIAL_SELECTION: Selection = {
@@ -171,21 +344,79 @@ const INITIAL_SELECTION: Selection = {
 export default function Reader() {
   const [category, setCategory] = useState<ReaderCategory>("tanakh");
   const [selection, setSelection] = useState<Selection>(INITIAL_SELECTION);
-  const [displayMode, setDisplayMode] = useState<TextDisplayMode>("both");
-  const [fontSizeLevel, setFontSizeLevelState] = useState(0);
-  useEffect(() => setFontSizeLevelState(loadFontSizeLevel()), []);
-  const setFontSizeLevel = (level: number) => {
-    setFontSizeLevelState(level);
-    storeFontSizeLevel(level);
+  // Text and commentary each get their own Hebrew/English/both toggle — some users want to
+  // read the main text in "both" but skim commentary in English-only, or vice versa.
+  const [textDisplayMode, setTextDisplayMode] = useState<TextDisplayMode>("both");
+  const [commentaryDisplayMode, setCommentaryDisplayMode] = useState<TextDisplayMode>("both");
+  const [mainFontSizeLevel, setMainFontSizeLevelState] = useState(0);
+  const [commentaryFontSizeLevel, setCommentaryFontSizeLevelState] = useState(0);
+  useEffect(() => {
+    setMainFontSizeLevelState(loadFontSizeLevel(MAIN_FONT_SIZE_KEY));
+    setCommentaryFontSizeLevelState(loadFontSizeLevel(COMMENTARY_FONT_SIZE_KEY));
+  }, []);
+  const setMainFontSizeLevel = (level: number) => {
+    setMainFontSizeLevelState(level);
+    storeFontSizeLevel(MAIN_FONT_SIZE_KEY, level);
   };
-  const mainHebrewFontPx = 20 + fontSizeLevel * 2;
-  const mainEnglishFontPx = 16 + fontSizeLevel * 2;
+  const setCommentaryFontSizeLevel = (level: number) => {
+    setCommentaryFontSizeLevelState(level);
+    storeFontSizeLevel(COMMENTARY_FONT_SIZE_KEY, level);
+  };
+  const mainHebrewFontPx = 20 + mainFontSizeLevel * 2;
+  // Gemara English reads as too large relative to the Hebrew at the shared base size — one
+  // step (2px) smaller specifically for Talmud, not the other categories.
+  const mainEnglishFontPx = 16 + mainFontSizeLevel * 2 - (category === "talmud" ? 2 : 0);
 
   const { index, chapter } = selection[category];
   const groups = useMemo(() => getCategoryGroups(category), [category]);
   const chapterMin = getChapterMin(category, index);
   const chapterMax = getChapterMax(category, index);
   const chapterUnit = getChapterUnitLabel(category);
+
+  // Scanned daf image — shown as its own column alongside the digital text (Talmud only).
+  const [talmudPages, setTalmudPages] = useState<TalmudPages | null>(null);
+  const [showDafImage, setShowDafImageState] = useState(false);
+  useEffect(() => setShowDafImageState(loadShowDafImage()), []);
+  const setShowDafImage = (show: boolean) => {
+    setShowDafImageState(show);
+    storeShowDafImage(show);
+  };
+  useEffect(() => {
+    if (category === "talmud" && !talmudPages) {
+      loadTalmudPages().then(setTalmudPages);
+    }
+  }, [category, talmudPages]);
+  const talmudTractateName = category === "talmud" ? getTalmudSefariaName(index) : undefined;
+  const dafImageAvailable =
+    !!talmudTractateName && !!talmudPages && hasTalmudPages(talmudPages, talmudTractateName);
+  const showDaf = category === "talmud" && showDafImage && dafImageAvailable && !!talmudTractateName;
+
+  const [dafPosition, setDafPositionState] = useState<DafPosition>("middle");
+  const [narrowWidth, setNarrowWidthState] = useState(NARROW_WIDTH_DEFAULT);
+  const [commentaryWidth, setCommentaryWidthState] = useState(COMMENTARY_WIDTH_DEFAULT);
+  useEffect(() => {
+    setDafPositionState(loadDafPosition());
+    setNarrowWidthState(loadStoredWidth(NARROW_WIDTH_KEY, NARROW_WIDTH_DEFAULT));
+    setCommentaryWidthState(loadStoredWidth(COMMENTARY_WIDTH_KEY, COMMENTARY_WIDTH_DEFAULT));
+  }, []);
+  const setDafPosition = (pos: DafPosition) => {
+    setDafPositionState(pos);
+    storeDafPosition(pos);
+  };
+  const adjustNarrowWidth = (deltaX: number) => {
+    setNarrowWidthState((w) => {
+      const next = clamp(w + deltaX, PANEL_WIDTH_MIN, PANEL_WIDTH_MAX);
+      storeWidth(NARROW_WIDTH_KEY, next);
+      return next;
+    });
+  };
+  const adjustCommentaryWidth = (deltaX: number) => {
+    setCommentaryWidthState((w) => {
+      const next = clamp(w - deltaX, PANEL_WIDTH_MIN, PANEL_WIDTH_MAX);
+      storeWidth(COMMENTARY_WIDTH_KEY, next);
+      return next;
+    });
+  };
 
   const handleIndexChange = (id: number) => {
     setSelection((s) => ({ ...s, [category]: { index: id, chapter: getChapterMin(category, id) } }));
@@ -267,7 +498,9 @@ export default function Reader() {
   }, [category, talmudAmud, data]);
 
   return (
-    <div className="mx-auto flex h-screen w-full max-w-6xl flex-col px-4 py-6">
+    <div
+      className={`mx-auto flex h-screen w-full flex-col px-4 py-6 ${showDaf ? "max-w-[100rem]" : "max-w-6xl"}`}
+    >
       <header className="mb-6 flex shrink-0 items-center justify-between">
         <h1 className="text-xl font-semibold tracking-tight" style={{ color: "var(--accent)" }}>
           AnyTorah
@@ -336,26 +569,65 @@ export default function Reader() {
           </div>
         )}
 
-        <div className="ml-auto flex items-center gap-3">
-          <FontSizeControl level={fontSizeLevel} onChange={setFontSizeLevel} />
-        </div>
+        {category === "talmud" && dafImageAvailable && (
+          <button
+            onClick={() => setShowDafImage(!showDafImage)}
+            className="rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+            style={showDafImage ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+          >
+            {showDafImage ? "Hide daf image" : "Show daf image"}
+          </button>
+        )}
 
-        <div className="flex overflow-hidden rounded-full border border-border text-sm">
-          {DISPLAY_MODES.map(({ mode, label }) => (
-            <button
-              key={mode}
-              onClick={() => setDisplayMode(mode)}
-              className="px-3 py-1.5 transition-colors"
-              style={displayMode === mode ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {showDaf && (
+          <div className="flex items-center gap-1 rounded-full border border-border px-1 py-1 text-sm">
+            <span className="pl-2 text-xs opacity-60">Daf</span>
+            {(["left", "middle"] as const).map((pos) => (
+              <button
+                key={pos}
+                onClick={() => setDafPosition(pos)}
+                className="rounded-full px-2.5 py-1 transition-colors"
+                style={
+                  dafPosition === pos ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined
+                }
+              >
+                {pos === "left" ? "Left" : "Middle"}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex-1" />
+
+        <ControlGroup label="Text">
+          <DisplayModePill mode={textDisplayMode} onChange={setTextDisplayMode} />
+          <FontSizeControl label="Text" level={mainFontSizeLevel} onChange={setMainFontSizeLevel} />
+        </ControlGroup>
+
+        <div className="flex-1" />
+
+        <ControlGroup label="Commentary">
+          <DisplayModePill mode={commentaryDisplayMode} onChange={setCommentaryDisplayMode} />
+          <FontSizeControl label="Commentary" level={commentaryFontSizeLevel} onChange={setCommentaryFontSizeLevel} />
+        </ControlGroup>
       </div>
 
-      <div className="flex min-h-0 flex-1 gap-4">
-        <div ref={textContainerRef} className="min-h-0 flex-1 overflow-y-auto pr-1">
+      <div className="flex min-h-0 flex-1">
+        {showDaf && dafPosition === "left" && (
+          <>
+            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card p-2">
+              <DafImagePanel tractateSefariaName={talmudTractateName!} daf={chapter} side={talmudAmud} />
+            </div>
+            {/* Text sits to the right of this handle, so dragging right shrinks it. */}
+            <ResizeHandle onDrag={(delta) => adjustNarrowWidth(-delta)} />
+          </>
+        )}
+
+        <div
+          ref={textContainerRef}
+          className={`min-h-0 min-w-0 overflow-y-auto pr-1 ${showDaf ? "flex-none" : "flex-1"}`}
+          style={showDaf ? { width: narrowWidth } : undefined}
+        >
           {loading && <p className="py-8 text-center text-sm opacity-60">Loading…</p>}
           {error && <p className="py-8 text-center text-sm text-red-500">{error}</p>}
           {!loading && !error && data && (
@@ -370,14 +642,14 @@ export default function Reader() {
                       <div className="h-px flex-1 bg-border" />
                     </div>
                   ) : (
-                    <div key={seg.id} className={`flex gap-3 ${displayMode !== "translation" ? "flex-row-reverse" : ""}`}>
+                    <div key={seg.id} className={`flex gap-3 ${textDisplayMode !== "translation" ? "flex-row-reverse" : ""}`}>
                       {seg.label && (
                         <span className="mt-1.5 w-5 shrink-0 text-right text-xs tabular-nums opacity-50">
                           {seg.label}
                         </span>
                       )}
                       <div className="flex-1 space-y-1.5">
-                        {(displayMode === "source" || displayMode === "both") && seg.hebrewHTML && (
+                        {(textDisplayMode === "source" || textDisplayMode === "both") && seg.hebrewHTML && (
                           category === "shulchanArukh" ? (
                             // SA Hebrew carries <span class="sa-mark sa-mark-N"> spans for its
                             // inline commentary-marker brackets (see processedHebrewWithMarkers)
@@ -405,13 +677,25 @@ export default function Reader() {
                             </p>
                           )
                         )}
-                        {(displayMode === "translation" || displayMode === "both") && seg.englishHTML && (
-                          <p
-                            className="leading-relaxed opacity-90"
-                            style={{ fontSize: mainEnglishFontPx, whiteSpace: "pre-line" }}
-                          >
-                            {seg.englishHTML}
-                          </p>
+                        {(textDisplayMode === "translation" || textDisplayMode === "both") && seg.englishHTML && (
+                          category === "talmud" || category === "mishnah" ? (
+                            // Carries <span class="en-editorial"> for Sefaria's bolded "glue"
+                            // words (see processedEnglishWithBold) — everything else in this
+                            // string is plain-texted server-side, so this is safe despite the
+                            // raw HTML, matching the SA-Hebrew case above.
+                            <p
+                              className="leading-relaxed opacity-90"
+                              style={{ fontSize: mainEnglishFontPx, whiteSpace: "pre-line" }}
+                              dangerouslySetInnerHTML={{ __html: seg.englishHTML }}
+                            />
+                          ) : (
+                            <p
+                              className="leading-relaxed opacity-90"
+                              style={{ fontSize: mainEnglishFontPx, whiteSpace: "pre-line" }}
+                            >
+                              {seg.englishHTML}
+                            </p>
+                          )
                         )}
                       </div>
                     </div>
@@ -422,19 +706,35 @@ export default function Reader() {
           )}
         </div>
 
-        <div className="min-h-0 w-[380px] shrink-0 overflow-hidden rounded-lg border border-border bg-card">
+        {showDaf && dafPosition === "middle" && (
+          <>
+            {/* Text sits to the left of this handle, so dragging right grows it. */}
+            <ResizeHandle onDrag={(delta) => adjustNarrowWidth(delta)} />
+            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card p-2">
+              <DafImagePanel tractateSefariaName={talmudTractateName!} daf={chapter} side={talmudAmud} />
+            </div>
+          </>
+        )}
+
+        {/* Commentary sits to the right of this handle, so dragging right shrinks it. */}
+        <ResizeHandle onDrag={(delta) => adjustCommentaryWidth(delta)} />
+
+        <div
+          className="min-h-0 shrink-0 overflow-hidden rounded-lg border border-border bg-card"
+          style={{ width: commentaryWidth }}
+        >
           <CommentaryPanel
             category={category}
             index={index}
             chapter={chapter}
-            displayMode={displayMode}
+            displayMode={commentaryDisplayMode}
             poolInfo={poolInfo}
             slots={slots}
             effectiveSlots={effectiveSlots}
             onSlotsChange={setSlots}
             talmudAmud={category === "talmud" ? talmudAmud : undefined}
             mainSegmentCount={category === "rambam" ? data?.segments.length : undefined}
-            fontSizeLevel={fontSizeLevel}
+            fontSizeLevel={commentaryFontSizeLevel}
           />
         </div>
       </div>

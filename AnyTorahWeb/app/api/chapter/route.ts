@@ -6,6 +6,8 @@ import {
   SefariaNoTextError,
   processedHebrew,
   processedHebrewWithMarkers,
+  processedEnglishWithBold,
+  stripBoldContent,
   stripHTML,
 } from "@/lib/sefariaClient";
 import { displayName, type CommentaryType } from "@/lib/commentaryTypes";
@@ -14,16 +16,27 @@ import { contentSegment } from "@/lib/textModels";
 import { rambamIntroductions } from "@/lib/rambamIntroductions";
 import { TextCatalog } from "@/lib/textCatalog";
 
-// v1 rendering strips HTML to plain text rather than reproducing Sefaria's inline styling
-// (footnotes, bold) — except Shulchan Arukh's Hebrew, which keeps its inline commentary-marker
-// spans (see processedHebrewWithMarkers) so the client can style each commentator's brackets
-// distinctly. The client renders SA Hebrew with dangerouslySetInnerHTML accordingly.
+// v1 rendering strips HTML to plain text rather than reproducing Sefaria's inline styling,
+// with two exceptions carried over from native: Shulchan Arukh's Hebrew keeps its inline
+// commentary-marker spans (see processedHebrewWithMarkers) so the client can style each
+// commentator's brackets distinctly, and Talmud/Mishnah's English keeps its bold "glue word"
+// spans (see processedEnglishWithBold) so the client can color them instead of stripping the
+// distinction entirely. Tanakh's English drops bold content outright (native: those bold marks
+// are lemma/footnote anchors, not a translation-glue distinction, so there's nothing worth
+// keeping). Both exceptions render via dangerouslySetInnerHTML on the client.
+function englishProcessor(category: TextCategory): (html: string) => string {
+  if (category === "tanakh") return stripBoldContent;
+  if (category === "talmud" || category === "mishnah") return processedEnglishWithBold;
+  return stripHTML;
+}
+
 function plainText(segments: TextSegment[], category: TextCategory): TextSegment[] {
   const hebrewFn = category === "shulchanArukh" ? processedHebrewWithMarkers : processedHebrew;
+  const englishFn = englishProcessor(category);
   return segments.map((seg) => ({
     ...seg,
     hebrewHTML: hebrewFn(seg.hebrewHTML),
-    englishHTML: stripHTML(seg.englishHTML),
+    englishHTML: englishFn(seg.englishHTML),
   }));
 }
 

@@ -72,3 +72,15 @@ body {
   color: var(--accent);
   opacity: 0.75;
 }
+
+/*
+ * Talmud/Mishnah English: Sefaria bolds "glue" words a translator added that aren't direct
+ * translations of the source (Steinsaltz-style). Native renders these in an editorial color
+ * instead of bold weight — bold reads as emphasis, not as "this word isn't really there in the
+ * source." Reuses --accent, which is already the same amber(dark)/indigo(light) split native
+ * uses for this exact purpose (see globals.css light/dark blocks above).
+ */
+.en-editorial {
+  color: var(--accent);
+  font-weight: 400;
+}

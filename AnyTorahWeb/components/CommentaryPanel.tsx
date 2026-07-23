@@ -32,9 +32,17 @@ export default function CommentaryPanel({
   talmudAmud?: "a" | "b";
   /** Rambam only — real halakha count of the current chapter, needed for its depth-3 fix. */
   mainSegmentCount?: number;
-  /** -2..+2, each step ±2px from the base 14px; inherited by all entry text below. */
+  /**
+   * Same -1..+4 range as the main text's font-size control. Hebrew and English get different
+   * base sizes (20px / 16px, matching the main text) rather than one shared size — at equal
+   * pixel size, the Hebrew font (Frank Ruhl Libre) reads visually smaller than the English one,
+   * so a single shared base made Hebrew commentary look mismatched against English commentary,
+   * and made "max" here look smaller than the main text's "max" even at the same level.
+   */
   fontSizeLevel: number;
 }) {
+  const hebrewFontPx = 20 + fontSizeLevel * 2;
+  const englishFontPx = 16 + fontSizeLevel * 2;
   const [activeIndex, setActiveIndex] = useState(0);
   const [openSlotIndex, setOpenSlotIndex] = useState<number | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -151,11 +159,7 @@ export default function CommentaryPanel({
         </div>
       )}
 
-      <div
-        ref={contentRef}
-        className="flex-1 space-y-3 overflow-y-auto p-3"
-        style={{ fontSize: 14 + fontSizeLevel * 2 }}
-      >
+      <div ref={contentRef} className="flex-1 space-y-3 overflow-y-auto p-3 text-sm">
         {loading && <p className="py-6 text-center opacity-60">Loading…</p>}
         {error && <p className="py-6 text-center text-red-500">{error}</p>}
         {!loading && !error && entries && entries.length === 0 && (
@@ -218,12 +222,19 @@ export default function CommentaryPanel({
                 {labelNode}
                 <div className="flex-1 space-y-1">
                   {(displayMode === "source" || displayMode === "both") && entry.he && (
-                    <p dir="rtl" lang="he" className="leading-relaxed" style={{ fontFamily: "var(--font-hebrew)" }}>
+                    <p
+                      dir="rtl"
+                      lang="he"
+                      className="leading-relaxed"
+                      style={{ fontFamily: "var(--font-hebrew)", fontSize: hebrewFontPx }}
+                    >
                       {entry.he}
                     </p>
                   )}
                   {(displayMode === "translation" || displayMode === "both") && entry.en && (
-                    <p className="leading-relaxed opacity-90">{entry.en}</p>
+                    <p className="leading-relaxed opacity-90" style={{ fontSize: englishFontPx }}>
+                      {entry.en}
+                    </p>
                   )}
                 </div>
               </div>
