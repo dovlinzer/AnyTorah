@@ -283,7 +283,7 @@ function CommitInput({
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-      className="w-16 rounded border border-border bg-background px-2 py-1 text-center text-sm"
+      className="w-16 shrink-0 rounded border border-border bg-background px-2 py-1 text-center text-sm"
     />
   );
 }
@@ -318,13 +318,18 @@ function DisplayModePill({
   );
 }
 
+/** Thin vertical rule separating the Text and Commentary control groups. */
+function VerticalDivider() {
+  return <div className="h-8 w-px shrink-0 self-center bg-border" />;
+}
+
 /**
  * A labeled cluster of controls — "Text" or "Commentary" sits inline before its pills (not
  * above them) so the whole group stays a single line and lines up with the rest of the toolbar.
  */
 function ControlGroup({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex shrink-0 items-center gap-2">
       <span className="text-xs opacity-60">{label}</span>
       {children}
     </div>
@@ -499,7 +504,7 @@ export default function Reader() {
 
   return (
     <div
-      className={`mx-auto flex h-screen w-full flex-col px-4 py-6 ${showDaf ? "max-w-[100rem]" : "max-w-6xl"}`}
+      className={`mx-auto flex h-screen w-full flex-col px-4 py-6 ${showDaf ? "max-w-[100rem]" : "max-w-7xl"}`}
     >
       <header className="mb-6 flex shrink-0 items-center justify-between">
         <h1 className="text-xl font-semibold tracking-tight" style={{ color: "var(--accent)" }}>
@@ -519,11 +524,11 @@ export default function Reader() {
         </div>
       </header>
 
-      <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3">
+      <div className="mb-4 flex shrink-0 flex-nowrap items-center gap-3 overflow-x-auto rounded-lg border border-border bg-card p-3">
         <select
           value={index}
           onChange={(e) => handleIndexChange(Number(e.target.value))}
-          className="rounded border border-border bg-background px-2 py-1 text-sm"
+          className="shrink-0 rounded border border-border bg-background px-2 py-1 text-sm"
         >
           {groups.map((group) =>
             group.name ? (
@@ -539,23 +544,23 @@ export default function Reader() {
             ),
           )}
         </select>
-        <span className="text-sm opacity-60">{chapterUnit}</span>
+        <span className="shrink-0 text-sm opacity-60">{chapterUnit}</span>
         <CommitInput value={chapter} min={chapterMin} max={chapterMax} onCommit={handleChapterChange} />
-        <span className="text-xs opacity-50">
+        <span className="shrink-0 text-xs opacity-50">
           {chapterMin === 1 ? `of ${chapterMax}` : `${chapterMin}–${chapterMax}`}
         </span>
 
         {category === "shulchanArukh" && (
           <button
             onClick={() => setSimanPickerOpen(true)}
-            className="rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
           >
             Browse simanim…
           </button>
         )}
 
         {category === "talmud" && (
-          <div className="flex overflow-hidden rounded-full border border-border text-sm">
+          <div className="flex shrink-0 overflow-hidden rounded-full border border-border text-sm">
             {(["a", "b"] as const).map((a) => (
               <button
                 key={a}
@@ -572,15 +577,15 @@ export default function Reader() {
         {category === "talmud" && dafImageAvailable && (
           <button
             onClick={() => setShowDafImage(!showDafImage)}
-            className="rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
             style={showDafImage ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
           >
-            {showDafImage ? "Hide daf image" : "Show daf image"}
+            {showDafImage ? "Hide daf" : "Show daf"}
           </button>
         )}
 
         {showDaf && (
-          <div className="flex items-center gap-1 rounded-full border border-border px-1 py-1 text-sm">
+          <div className="flex shrink-0 items-center gap-1 rounded-full border border-border px-1 py-1 text-sm">
             <span className="pl-2 text-xs opacity-60">Daf</span>
             {(["left", "middle"] as const).map((pos) => (
               <button
@@ -597,14 +602,12 @@ export default function Reader() {
           </div>
         )}
 
-        <div className="flex-1" />
-
         <ControlGroup label="Text">
           <DisplayModePill mode={textDisplayMode} onChange={setTextDisplayMode} />
           <FontSizeControl label="Text" level={mainFontSizeLevel} onChange={setMainFontSizeLevel} />
         </ControlGroup>
 
-        <div className="flex-1" />
+        <VerticalDivider />
 
         <ControlGroup label="Commentary">
           <DisplayModePill mode={commentaryDisplayMode} onChange={setCommentaryDisplayMode} />
