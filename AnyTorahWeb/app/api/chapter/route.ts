@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   fetchChapter,
   fetchFullDaf,
+  fetchTosefta,
+  fetchYerushalmi,
+  fetchYerushalmiHalakhaCount,
   ref as buildRef,
   SefariaNoTextError,
   processedHebrew,
@@ -54,6 +57,9 @@ export async function GET(request: NextRequest) {
   // Only meaningful for Shulchan Arukh (drives the inline commentary-marker brackets in the
   // main text), but harmless to accept generically.
   const commentariesParam = searchParams.get("commentaries");
+  // Tosefta (mishnah) / Yerushalmi (talmud) subcategories — see AnyTorahWeb CLAUDE.md.
+  const subcategoryParam = searchParams.get("subcategory");
+  const halakhaParam = searchParams.get("halakha");
 
   if (!categoryParam || !VALID_CATEGORIES.includes(categoryParam as TextCategory)) {
     return NextResponse.json({ error: "Missing or invalid category" }, { status: 400 });
@@ -69,6 +75,34 @@ export async function GET(request: NextRequest) {
     : [];
 
   try {
+    // Tosefta reuses the Mishnah tractate picker (index is a global MishnahTractate id).
+    if (category === "mishnah" && subcategoryParam === "tosefta") {
+      const tractate = TextCatalog.allMishnahTractates.find((t) => t.id === index);
+      if (!tractate) return NextResponse.json({ error: "Unknown tractate" }, { status: 400 });
+      const segments = await fetchTosefta(tractate, chapter);
+      return NextResponse.json({
+        ref: `Tosefta ${tractate.name} ${chapter}`,
+        segments: plainText(segments, category),
+      });
+    }
+    // Yerushalmi's tractate list is filtered from Mishnah's (index is a global MishnahTractate
+    // id, not a TalmudTractate id) and adds a halakha dimension within each chapter. The shape
+    // (halakha count) is returned alongside the content so the client's halakha stepper can
+    // size itself without a second round trip.
+    if (category === "talmud" && subcategoryParam === "yerushalmi") {
+      const tractate = TextCatalog.allMishnahTractates.find((t) => t.id === index);
+      if (!tractate) return NextResponse.json({ error: "Unknown tractate" }, { status: 400 });
+      const halakha = Number(halakhaParam) || 1;
+      const [segments, halakhaCount] = await Promise.all([
+        fetchYerushalmi(tractate, chapter, halakha),
+        fetchYerushalmiHalakhaCount(tractate, chapter),
+      ]);
+      return NextResponse.json({
+        ref: `Jerusalem Talmud ${tractate.name} ${chapter}:${halakha}`,
+        segments: plainText(segments, category),
+        halakhaCount,
+      });
+    }
     if (category === "talmud") {
       const segments = await fetchFullDaf(index, chapter);
       return NextResponse.json({ ref: buildRef("talmud", index, chapter), segments: plainText(segments, category) });

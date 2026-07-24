@@ -40,6 +40,12 @@ them before changing anything here.
   (`category === "talmud" && dafImageAvailable`).
 - **Labels**: `ControlGroup` label text switches to `טקסט`/`מפרשים`; `FontSizeControl`'s
   decrease/increase buttons render `א` instead of `A` (`hebrewMode` prop on both).
+- **Auto-defaults on toggle**: `setHebrewMode` (`Reader.tsx`) also resets Reverse Navigation
+  Direction and both Text/Commentary display modes to that direction's default — ON → reverse
+  nav + Hebrew-only (`"source"`) for both; OFF → standard nav + both-language (`"both"`) for
+  both. Just defaults: each of the three can still be changed independently afterward without
+  the next `hebrewMode` toggle silently overwriting the user's choice — only toggling
+  `hebrewMode` itself resets them.
 
 ## Navigation: Arrow Keys, Chevrons, and Reverse Navigation Direction
 
@@ -67,6 +73,80 @@ modal is open.
   `+1` regardless of the setting. The boundary-hiding logic (`hideLeftChevron`/`hideRightChevron`
   in `Reader.tsx`) swaps which of `atReadingStart`/`atReadingEnd` each visual side checks when
   reversed, so the correct chevron still disappears at the start/end of a book/tractate.
+
+## Tosefta / Yerushalmi (peer top-level tabs)
+
+Top-level tabs: `Tanakh, Mishnah, Tosefta, Bavli, Yerushalmi, Rambam, Shulchan Arukh`. Tosefta and
+Yerushalmi are genuine peer categories in the UI (`ReaderCategory` in `lib/commentaryPools.ts` is
+now its own 7-value union, no longer derived from `TextCategory`), each with independent
+`selection` state — not toggles nested inside Mishnah/Talmud the way native models them.
+Displayed as "Bavli" (not "Talmud") now that Yerushalmi is its own tab.
+
+Under the hood, Sefaria fetch mechanics still only know about 5 categories + a subcategory flag
+(mirroring native's `MishnahSubcategory`/`TalmudSubcategory`). `fetchCategoryFor(category)` in
+`lib/commentaryPools.ts` translates the UI category: Tosefta → `{fetchCategory: "mishnah",
+subcategory: "tosefta"}`, Yerushalmi → `{fetchCategory: "talmud", subcategory: "yerushalmi"}`,
+everything else → identity. **Every render decision keyed on the underlying fetch mechanism must
+go through `fetchCategoryFor`, not the raw `category`** — e.g. the bold "glue word" English
+styling and the Talmud-specific font-size trim use `isBoldEnglishCategory`/`fetchCategory ===
+"talmud"` in `Reader.tsx`, not `category === "talmud"` directly. A real bug shipped once from
+checking `category === "talmud"` directly there: it silently excluded Yerushalmi (whose
+`category` is literally `"yerushalmi"`) and rendered raw `<span class="en-editorial">` tags as
+visible text instead of styling them.
+
+- **Tosefta** reuses Mishnah's tractate list unfiltered (`getCategoryGroups` case `"tosefta"` in
+  `lib/categoryCatalog.ts`), with `count: Math.max(1, t.toseftaChapters)`. A tractate with 0
+  Tosefta chapters is still selectable and just shows a 1-chapter range with empty content —
+  deliberately not filtered out, matching native's design.
+- **Yerushalmi** has its own tractate list, filtered from Mishnah's sedarim to
+  `yerushalmiChapters > 0` (not Talmud's Bavli list) — mirrors native's `yerushalmiSedarim`.
+  Tractate ids are global `MishnahTractate` ids, not `TalmudTractate` ids. Adds a halakha
+  dimension within each chapter (`selection.yerushalmi.halakha`); `/api/chapter`'s response
+  includes `halakhaCount` sized via `fetchYerushalmiHalakhaCount`, folding native's separate
+  shape-lookup into the same request instead of a second round trip. No daf image, no amud
+  toggle — both guards are just `category === "talmud"`, which now excludes Yerushalmi
+  automatically since it's a different category value.
+- Commentary pools/availability/ref-building (`toseftaPool`/`yerushalmiPool`,
+  `isAvailableForTosefta`/`isAvailableForYerushalmi`, ref-building in `sefariaRef`) were already
+  present in `lib/commentaryTypes.ts` since Phase 1's mechanical port of native's `CommentaryType`
+  enum, unused until now. This feature only had to wire up `getPoolInfo` (`lib/commentaryPools.ts`),
+  the API routes' `subcategory` query param, and `depthFixedRef`/`loadCommentaryEntries`'s
+  `isTosefta`/`isYerushalmi` flags in `lib/sefariaClient.ts` (Tosefta commentary needs the same
+  `:1-200` depth-3 range fix as Mishnah's depth-3 commentary list; Yerushalmi doesn't, since its
+  ref already targets one specific halakha, not a whole chapter).
+- **Bookmarks**: `Bookmark.halakha?` (optional, `lib/bookmarks.ts`) round-trips Yerushalmi's
+  extra dimension; `findBookmark`/`buildDisplayTitle`/`buildSubtitle` all take it as a plain
+  optional param now that category alone (not a subcategory flag) distinguishes Tosefta/Mishnah
+  and Yerushalmi/Bavli.
+
+## Shulchan Arukh siman header split
+
+Sefaria bakes each siman's printed title (e.g. "הלכות ציצית ועטיפתו. ובו יז סעיפים:") into the
+start of seif 1's Hebrew as a `<b>...</b>` block, with no parallel sentence in the English
+translation — confirmed directly against the API, not assumed. `splitSimanHeader` in
+`lib/sefariaClient.ts` (called from `fetchChapter`'s SA branch, only for `i === 0`) pulls that out
+into its own `TextSegment` with `label: null` (no seif number — it isn't one), before the real
+seif 1 renders normally with its usual label "1" and inline commentary markers.
+
+## Rambam chapter 0 ("Header")
+
+Rambam works with a bundled mitzvot-list header expose a synthetic chapter 0 (see
+`getChapterMin`/`rambamIntroductions`). Chapter 0 renders as the word "Header"/"כותרת" everywhere
+a chapter number would otherwise show: the toolbar's chapter box (`category === "rambam" &&
+chapter === 0` special-case in `Reader.tsx`), the chapter-picker modal's row for value 0
+(`NumberPickerModal`'s `labelFor` prop), and the "min–max" range caption, which for Rambam always
+shows the explicit `1–N` range (never "of N") so it's clear real chapters start at 1. Using
+`numeral(0)` directly for any of these would silently render as an empty string in Hebrew mode —
+`toHebrewNumeral(0)` returns `""` — which is what originally exposed this as a bug.
+
+## NumberPickerModal — no "Go" button
+
+The quick-jump text field at the top has no separate "Go" button — Enter still commits it
+(`commitJump`), and clicking a row in the list below (the far more common path) already navigates
+immediately on click, no extra step. Deliberately did **not** wire `onBlur` to auto-commit as an
+alternative: blur fires before a different row's own `onClick` when the user clicks it, so an
+onBlur-commit would fire `onSelect` twice in a race (once with the stale jump-field value, once
+from the actual row click) — Enter-to-submit avoids that entirely.
 
 ## YCT Branding
 

@@ -12,15 +12,32 @@ import {
   mishnahPool,
   rambamGrouped,
   saPool,
+  toseftaPool,
+  yerushalmiPool,
   isAvailableForTanakhBook,
   isAvailableForTalmud,
   isAvailableForMishnah,
   isAvailableForRambam,
+  isAvailableForTosefta,
+  isAvailableForYerushalmi,
 } from "./commentaryTypes";
 import { TextCatalog } from "./textCatalog";
 import type { TextCategory } from "./textModels";
 
-export type ReaderCategory = Exclude<TextCategory, "midrash">;
+// Tosefta and Yerushalmi are first-class top-level tabs in the UI, but under the hood they
+// piggyback on Mishnah's/Talmud's Sefaria-fetch mechanics (ref format, HTML processing, depth-3
+// fixes) via the existing category+subcategory contract in sefariaClient.ts/the API routes.
+export type ReaderCategory = "tanakh" | "mishnah" | "tosefta" | "talmud" | "yerushalmi" | "rambam" | "shulchanArukh";
+
+/** Translates a UI-level ReaderCategory into the underlying TextCategory (+ subcategory flag)
+ *  that sefariaClient.ts and the API routes understand. */
+export function fetchCategoryFor(
+  category: ReaderCategory,
+): { fetchCategory: TextCategory; subcategory?: "tosefta" | "yerushalmi" } {
+  if (category === "tosefta") return { fetchCategory: "mishnah", subcategory: "tosefta" };
+  if (category === "yerushalmi") return { fetchCategory: "talmud", subcategory: "yerushalmi" };
+  return { fetchCategory: category };
+}
 
 export interface PoolInfo {
   /** Identifies the commentary "context" (e.g. tanakh:torah, sa:1) — slots reset when this changes. */
@@ -107,6 +124,17 @@ export function getPoolInfo(category: ReaderCategory, index: number): PoolInfo {
         fallbackCandidates: TALMUD_FALLBACK_CANDIDATES,
       };
     }
+    case "yerushalmi": {
+      const isAvailable = (t: CommentaryType) => isAvailableForYerushalmi(t, index);
+      return {
+        contextKey: "yerushalmi",
+        defaultSlots: ["peneiMoshe", "mareyHaPanim", "ohrLayesharim"],
+        groups: [yerushalmiPool],
+        groupLabels: [null],
+        isAvailable,
+        fallbackCandidates: yerushalmiPool,
+      };
+    }
     case "mishnah": {
       const sederIndex = TextCatalog.mishnahSedarim.findIndex((s) => s.tractates.some((t) => t.id === index));
       const defaultSlots: CommentaryType[] = ["rambamMishnah", "bartenura", "tosafotYomTov"];
@@ -117,6 +145,18 @@ export function getPoolInfo(category: ReaderCategory, index: number): PoolInfo {
         groupLabels: [null],
         isAvailable: (t) => isAvailableForMishnah(t, sederIndex, index),
         fallbackCandidates: defaultSlots,
+      };
+    }
+    case "tosefta": {
+      const isAvailable = (t: CommentaryType) => isAvailableForTosefta(t, index);
+      const defaultSlots: CommentaryType[] = ["briefCommentary", "toseftaKifshutah"];
+      return {
+        contextKey: "tosefta",
+        defaultSlots,
+        groups: [toseftaPool],
+        groupLabels: [null],
+        isAvailable,
+        fallbackCandidates: toseftaPool,
       };
     }
     case "rambam": {

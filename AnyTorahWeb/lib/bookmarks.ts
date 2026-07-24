@@ -18,6 +18,8 @@ export interface Bookmark {
   category: ReaderCategory;
   index: number;
   chapter: number;
+  /** Yerushalmi only — halakha within the chapter. */
+  halakha?: number;
 }
 
 const STORAGE_KEY = "anytorah:bookmarks";
@@ -49,14 +51,19 @@ function getItemName(category: ReaderCategory, index: number): string {
   return "";
 }
 
-/** Short label for the passage itself, e.g. "Berakhot daf 2" — used as the default bookmark name. */
-export function buildDisplayTitle(category: ReaderCategory, index: number, chapter: number): string {
+/** Short label for the passage itself, e.g. "Berakhot daf 2" — used as the default bookmark
+ *  name. Yerushalmi gets its own chapter:halakha formatting (e.g. "Peah 2:4"). */
+export function buildDisplayTitle(category: ReaderCategory, index: number, chapter: number, halakha?: number): string {
+  if (category === "yerushalmi") {
+    const halakhaStr = halakha && halakha > 1 ? `:${halakha}` : "";
+    return `${getItemName(category, index)} ${chapter}${halakhaStr}`;
+  }
   return `${getItemName(category, index)} ${getChapterUnitLabel(category)} ${chapter}`;
 }
 
-/** Full label shown in bookmark lists, e.g. "Talmud · Berakhot daf 2". */
-export function buildSubtitle(category: ReaderCategory, index: number, chapter: number): string {
-  return `${getCategoryDisplayName(category)} · ${buildDisplayTitle(category, index, chapter)}`;
+/** Full label shown in bookmark lists, e.g. "Bavli · Berakhot daf 2" / "Yerushalmi · Peah 2:4". */
+export function buildSubtitle(category: ReaderCategory, index: number, chapter: number, halakha?: number): string {
+  return `${getCategoryDisplayName(category)} · ${buildDisplayTitle(category, index, chapter, halakha)}`;
 }
 
 export function findBookmark(
@@ -64,8 +71,15 @@ export function findBookmark(
   category: ReaderCategory,
   index: number,
   chapter: number,
+  halakha?: number,
 ): Bookmark | undefined {
-  return bookmarks.find((b) => b.category === category && b.index === index && b.chapter === chapter);
+  return bookmarks.find(
+    (b) =>
+      b.category === category &&
+      b.index === index &&
+      b.chapter === chapter &&
+      (b.halakha ?? undefined) === (halakha ?? undefined),
+  );
 }
 
 export function matchesQuery(b: Bookmark, query: string): boolean {

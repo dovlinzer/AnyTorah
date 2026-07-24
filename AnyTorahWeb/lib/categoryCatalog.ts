@@ -5,7 +5,6 @@ import { TextCatalog } from "./textCatalog";
 import type { ReaderCategory } from "./commentaryPools";
 import { rambamIntroductions } from "./rambamIntroductions";
 import { stripNikud } from "./hebrewUtils";
-import { textCategoryMeta } from "./textModels";
 
 export interface CategoryItem {
   id: number;
@@ -36,11 +35,33 @@ export function getCategoryGroups(category: ReaderCategory, hebrewMode = false):
         name: displayName(s.name, s.hebrewName, hebrewMode),
         items: s.tractates.map((t) => ({ id: t.id, name: displayName(t.name, t.hebrewName, hebrewMode), count: t.chapters })),
       }));
+    case "tosefta":
+      // Reuses Mishnah's tractate list unfiltered (same picker as Mishnah) — a tractate with
+      // toseftaChapters === 0 is still selectable, just floors the range at 1 chapter.
+      return TextCatalog.mishnahSedarim.map((s) => ({
+        name: displayName(s.name, s.hebrewName, hebrewMode),
+        items: s.tractates.map((t) => ({
+          id: t.id,
+          name: displayName(t.name, t.hebrewName, hebrewMode),
+          count: Math.max(1, t.toseftaChapters),
+        })),
+      }));
     case "talmud":
       return TextCatalog.talmudSedarim.map((s) => ({
         name: displayName(s.name, s.hebrewName, hebrewMode),
         items: s.tractates.map((t) => ({ id: t.id, name: displayName(t.name, t.hebrewName, hebrewMode), count: t.endDaf })),
       }));
+    case "yerushalmi":
+      // Filtered subset of Mishnah's tractates (only those with yerushalmiChapters > 0), not
+      // Talmud's Bavli list — mirrors native's yerushalmiSedarim/yerushalmiTractateCandidates.
+      return TextCatalog.mishnahSedarim
+        .map((s) => ({
+          name: displayName(s.name, s.hebrewName, hebrewMode),
+          items: s.tractates
+            .filter((t) => t.yerushalmiChapters > 0)
+            .map((t) => ({ id: t.id, name: displayName(t.name, t.hebrewName, hebrewMode), count: t.yerushalmiChapters })),
+        }))
+        .filter((g) => g.items.length > 0);
     case "rambam":
       return TextCatalog.rambamSefarim.map((s) => ({
         name: displayName(s.name, s.hebrewName, hebrewMode),
@@ -101,12 +122,14 @@ export function getTalmudSefariaName(index: number): string | undefined {
 }
 
 export function getCategoryDisplayName(category: ReaderCategory, hebrewMode = false): string {
-  if (hebrewMode) return stripNikud(textCategoryMeta[category].hebrewName);
   switch (category) {
-    case "tanakh": return "Tanakh";
-    case "mishnah": return "Mishnah";
-    case "talmud": return "Talmud";
-    case "rambam": return "Rambam";
-    case "shulchanArukh": return "Shulchan Arukh";
+    case "tanakh": return hebrewMode ? "תנ״ך" : "Tanakh";
+    case "mishnah": return hebrewMode ? "משנה" : "Mishnah";
+    case "tosefta": return hebrewMode ? "תוספתא" : "Tosefta";
+    // Displayed as "Bavli" (not "Talmud") now that Yerushalmi is its own peer tab.
+    case "talmud": return hebrewMode ? "בבלי" : "Bavli";
+    case "yerushalmi": return hebrewMode ? "ירושלמי" : "Yerushalmi";
+    case "rambam": return hebrewMode ? "רמב״ם" : "Rambam";
+    case "shulchanArukh": return hebrewMode ? "שולחן ערוך" : "Shulchan Arukh";
   }
 }

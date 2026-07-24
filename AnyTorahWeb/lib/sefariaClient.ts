@@ -417,7 +417,7 @@ export async function fetchTosefta(tractate: MishnahTractate, chapter: number): 
 /** Removes Yerushalmi footnote markers and footnote text from raw HTML. Hebrew has none. */
 export function stripYerushalmiFootnotes(html: string): string {
   // Pass 1: strip footnote markers — simple, no nesting issues.
-  let s = html.replace(/<sup[^>]*class="footnote-marker"[^>]*>[\s\S]*?<\/sup>/gi, "");
+  const s = html.replace(/<sup[^>]*class="footnote-marker"[^>]*>[\s\S]*?<\/sup>/gi, "");
 
   // Pass 2: strip <i class="footnote">…</i> blocks depth-first so nested <i> tags inside
   // the footnote body don't confuse the scan.
@@ -553,6 +553,20 @@ export async function fetchMidrashByVerse(
 
 // MARK: - Chapter fetch (Tanakh, Mishnah, Rambam, SA)
 
+/**
+ * Splits a Shulchan Arukh siman's leading bold title (e.g. "הלכות ציצית ועטיפתו. ובו יז
+ * סעיפים:") out of seif 1's Hebrew HTML into its own header line. Sefaria bakes the printed
+ * siman title into the very start of seif 1's Hebrew as a `<b>...</b>` block for every siman —
+ * confirmed directly against the API — with no parallel sentence in the English translation, so
+ * this only ever applies to the Hebrew side. Returns null (leaving seif 1 untouched) when the
+ * text doesn't start with a bold block, rather than assuming the pattern always holds.
+ */
+function splitSimanHeader(rawHeHtml: string): { header: string; rest: string } | null {
+  const m = rawHeHtml.match(/^\s*<b>([\s\S]*?)<\/b>\s*/);
+  if (!m) return null;
+  return { header: m[1], rest: rawHeHtml.slice(m[0].length) };
+}
+
 export async function fetchChapter(
   category: TextCategory,
   bookOrTractateIndex: number,
@@ -579,6 +593,17 @@ export async function fetchChapter(
       const label = segmentLabel(labelStyle, i + 1);
       let heText = he[i] ?? "";
       const enText = en[i] ?? "";
+      if (i === 0) {
+        const split = splitSimanHeader(heText);
+        if (split) {
+          // Sefaria bakes the printed siman title into the start of seif 1's Hebrew as a
+          // <b>...</b> block, with no parallel sentence in the English translation — give it
+          // its own header line (no seif number — it isn't one) rather than running it together
+          // with seif 1's actual text.
+          segments.push(contentSegment(i, split.header, "", null));
+          heText = split.rest;
+        }
+      }
       heText = processCommentaryMarkers(heText, bookOrTractateIndex, selectedCommentaries, sharedCounters);
       segments.push(contentSegment(i, heText, enText, label));
     }
@@ -690,13 +715,21 @@ function depthFixedRef(
   category: TextCategory,
   type: CommentaryType,
   mainSegmentCount?: number,
+  isTosefta = false,
+  isYerushalmi = false,
 ): string {
-  if (category === "tanakh" || category === "talmud") return `${ref}:1-200`;
+  if (category === "tanakh") return `${ref}:1-200`;
+  // Yerushalmi refs already target one specific halakha (chapter:halakha) — no range needed,
+  // and appending one would produce an invalid ref. Only Bavli gets the amud-level range.
+  if (category === "talmud" && !isYerushalmi) return `${ref}:1-200`;
   if (category === "rambam") {
     const n = mainSegmentCount && mainSegmentCount > 0 ? mainSegmentCount : 40;
     return `${ref}:1-${n}`;
   }
   if (category === "shulchanArukh" && type === "shakh") return `${ref}:1-100`;
+  // Tosefta Kifshutah / Brief Commentary are depth-3 (Chapter → Mishnah → Comment) — same fix
+  // as the Mishnah depth-3 list below, but keyed on subcategory rather than commentary type.
+  if (category === "mishnah" && isTosefta) return `${ref}:1-200`;
   if (category === "mishnah" && MISHNAH_DEPTH3_TYPES.has(type)) return `${ref}:1-20`;
   return ref;
 }
@@ -739,6 +772,8 @@ export async function loadCommentaryEntries(
   category: TextCategory,
   secondMainRef?: string,
   mainSegmentCount?: number,
+  isTosefta = false,
+  isYerushalmi = false,
 ): Promise<CommentaryEntry[]> {
   const useOuterLabel = category === "tanakh" || category === "mishnah" || category === "rambam";
   const entries: CommentaryEntry[] = [];
@@ -756,7 +791,9 @@ export async function loadCommentaryEntries(
       // fetchFullDaf for the main text, where a fetch failure is still a real error.)
       let aligned: { he: string[]; en: string[]; outerIndices: number[] };
       try {
-        aligned = await fetchBothAligned(depthFixedRef(version.ref, category, type, mainSegmentCount));
+        aligned = await fetchBothAligned(
+          depthFixedRef(version.ref, category, type, mainSegmentCount, isTosefta, isYerushalmi),
+        );
       } catch {
         continue;
       }

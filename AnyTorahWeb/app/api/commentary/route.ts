@@ -29,6 +29,9 @@ export async function GET(request: NextRequest) {
   const indexParam = searchParams.get("index");
   const chapterParam = searchParams.get("chapter");
   const typeParam = searchParams.get("type");
+  // Tosefta (mishnah) / Yerushalmi (talmud) subcategories — see AnyTorahWeb CLAUDE.md.
+  const subcategoryParam = searchParams.get("subcategory");
+  const halakhaParam = searchParams.get("halakha");
 
   if (!categoryParam || !VALID_CATEGORIES.includes(categoryParam as TextCategory)) {
     return NextResponse.json({ error: "Missing or invalid category" }, { status: 400 });
@@ -46,6 +49,31 @@ export async function GET(request: NextRequest) {
   // ref) — there's nothing to fetch commentary against, matching native's empty-currentRef skip.
   if (category === "rambam" && chapter === 0) {
     return NextResponse.json({ entries: [] });
+  }
+  if (category === "mishnah" && subcategoryParam === "tosefta") {
+    const tractate = TextCatalog.allMishnahTractates.find((t) => t.id === index);
+    if (!tractate) return NextResponse.json({ error: "Unknown tractate" }, { status: 400 });
+    const mainRef = `Tosefta ${tractate.name} ${chapter}`;
+    try {
+      const entries = await loadCommentaryEntries(typeParam, mainRef, "mishnah", undefined, undefined, true, false);
+      return NextResponse.json({ entries: plainText(entries) });
+    } catch (error) {
+      console.error("commentary fetch failed", error);
+      return NextResponse.json({ error: "Failed to fetch commentary from Sefaria" }, { status: 502 });
+    }
+  }
+  if (category === "talmud" && subcategoryParam === "yerushalmi") {
+    const tractate = TextCatalog.allMishnahTractates.find((t) => t.id === index);
+    if (!tractate) return NextResponse.json({ error: "Unknown tractate" }, { status: 400 });
+    const halakha = Number(halakhaParam) || 1;
+    const mainRef = `Jerusalem Talmud ${tractate.name} ${chapter}:${halakha}`;
+    try {
+      const entries = await loadCommentaryEntries(typeParam, mainRef, "talmud", undefined, undefined, false, true);
+      return NextResponse.json({ entries: plainText(entries) });
+    } catch (error) {
+      console.error("commentary fetch failed", error);
+      return NextResponse.json({ error: "Failed to fetch commentary from Sefaria" }, { status: 502 });
+    }
   }
   // Rambam's depth-3 fix needs the real halakha count of the current chapter (see
   // loadCommentaryEntries / depthFixedRef) — passed from the main chapter fetch the client

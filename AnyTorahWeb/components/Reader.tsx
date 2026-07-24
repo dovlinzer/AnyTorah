@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { TextDisplayMode, TextSegment } from "@/lib/textModels";
 import type { CommentaryType } from "@/lib/commentaryTypes";
-import { getPoolInfo, computeEffectiveSlots, type ReaderCategory } from "@/lib/commentaryPools";
+import { getPoolInfo, computeEffectiveSlots, fetchCategoryFor, type ReaderCategory } from "@/lib/commentaryPools";
 import {
   getCategoryGroups,
   getChapterMin,
@@ -43,9 +43,11 @@ import {
 interface ChapterResponse {
   ref: string;
   segments: TextSegment[];
+  /** Yerushalmi only — total halakhot in the current chapter, sizes the halakha stepper. */
+  halakhaCount?: number;
 }
 
-const READER_CATEGORIES: ReaderCategory[] = ["tanakh", "mishnah", "talmud", "rambam", "shulchanArukh"];
+const READER_CATEGORIES: ReaderCategory[] = ["tanakh", "mishnah", "tosefta", "talmud", "yerushalmi", "rambam", "shulchanArukh"];
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(Math.max(n, min), max);
@@ -483,12 +485,14 @@ function ControlGroup({
   );
 }
 
-type Selection = Record<ReaderCategory, { index: number; chapter: number }>;
+type Selection = Record<ReaderCategory, { index: number; chapter: number; halakha?: number }>;
 
 const INITIAL_SELECTION: Selection = {
   tanakh: { index: 0, chapter: 1 },
   mishnah: { index: 0, chapter: 1 },
+  tosefta: { index: 0, chapter: 1 },
   talmud: { index: 0, chapter: getChapterMin("talmud", 0) },
+  yerushalmi: { index: 0, chapter: 1, halakha: 1 },
   rambam: { index: 0, chapter: getChapterMin("rambam", 0) },
   shulchanArukh: { index: 0, chapter: 1 },
 };
@@ -496,12 +500,18 @@ const INITIAL_SELECTION: Selection = {
 export default function Reader() {
   const [category, setCategory] = useState<ReaderCategory>("tanakh");
   const [selection, setSelection] = useState<Selection>(INITIAL_SELECTION);
+  // Tosefta and Yerushalmi are their own top-level tabs (peers of Mishnah/Talmud, not toggles
+  // within them), each with independent selection state in `selection` above — Yerushalmi's
+  // tractate list is filtered from Mishnah's (see getCategoryGroups), not Talmud's Bavli list.
+  const isYerushalmi = category === "yerushalmi";
+
+  // Halakha count for the current Yerushalmi chapter — comes back from /api/chapter alongside
+  // the content (folds native's separate fetchYerushalmiHalakhaCount shape lookup into one
+  // request). Defaults to 1 so the stepper never shows an empty range before the first fetch.
+  const [halakhaCount, setHalakhaCount] = useState(1);
+
   const [hebrewMode, setHebrewModeState] = useState(false);
   useEffect(() => setHebrewModeState(loadHebrewMode()), []);
-  const setHebrewMode = (on: boolean) => {
-    setHebrewModeState(on);
-    storeHebrewMode(on);
-  };
   // Persistent dedication line above the header — independent of DedicationBanner's once-a-day
   // popup, which only ever shows the message once; this stays visible for as long as a
   // dedication is active.
@@ -522,6 +532,17 @@ export default function Reader() {
   // read the main text in "both" but skim commentary in English-only, or vice versa.
   const [textDisplayMode, setTextDisplayMode] = useState<TextDisplayMode>("both");
   const [commentaryDisplayMode, setCommentaryDisplayMode] = useState<TextDisplayMode>("both");
+  // Toggling RTL/Hebrew mode also resets reverse navigation and both display modes to that
+  // direction's default — ON: reverse nav + Hebrew-only text/commentary; OFF: standard nav +
+  // both-language text/commentary. These stay just defaults: each can still be changed
+  // independently afterward without Hebrew mode fighting the user's choice on the next toggle.
+  const setHebrewMode = (on: boolean) => {
+    setHebrewModeState(on);
+    storeHebrewMode(on);
+    setReverseNavigation(on);
+    setTextDisplayMode(on ? "source" : "both");
+    setCommentaryDisplayMode(on ? "source" : "both");
+  };
   const [mainFontSizeLevel, setMainFontSizeLevelState] = useState(0);
   const [commentaryFontSizeLevel, setCommentaryFontSizeLevelState] = useState(0);
   useEffect(() => {
@@ -536,10 +557,16 @@ export default function Reader() {
     setCommentaryFontSizeLevelState(level);
     storeFontSizeLevel(COMMENTARY_FONT_SIZE_KEY, level);
   };
+  // The underlying Sefaria-fetch mechanics for Tosefta/Yerushalmi piggyback on Mishnah's/
+  // Talmud's (see fetchCategoryFor) — several rendering decisions below key off that shared
+  // fetch category rather than the literal UI tab, matching what the API actually returns.
+  const { fetchCategory, subcategory } = fetchCategoryFor(category);
+  const isBoldEnglishCategory = fetchCategory === "talmud" || fetchCategory === "mishnah";
+
   const mainHebrewFontPx = fontSizePx(20, mainFontSizeLevel);
   // Gemara English reads as too large relative to the Hebrew at the shared base size — one
-  // step (2px) smaller specifically for Talmud, not the other categories.
-  const mainEnglishFontPx = fontSizePx(16, mainFontSizeLevel) - (category === "talmud" ? 2 : 0);
+  // step (2px) smaller specifically for Talmud/Yerushalmi, not the other categories.
+  const mainEnglishFontPx = fontSizePx(16, mainFontSizeLevel) - (fetchCategory === "talmud" ? 2 : 0);
   const mainLineHeight = fontSizeLineHeight(mainFontSizeLevel);
   // Base gaps (16px between verses, 6px between a verse's Hebrew/English lines) scaled by the
   // same font-size level so the *inter-segment* rhythm tightens/loosens alongside the text
@@ -548,7 +575,7 @@ export default function Reader() {
   const mainSegmentGap = 16 * fontSizeSpacingScale(mainFontSizeLevel);
   const mainLineGap = 6 * fontSizeSpacingScale(mainFontSizeLevel);
 
-  const { index, chapter } = selection[category];
+  const { index, chapter, halakha } = selection[category];
   const groups = useMemo(() => getCategoryGroups(category, hebrewMode), [category, hebrewMode]);
   const chapterMin = getChapterMin(category, index);
   const chapterMax = getChapterMax(category, index);
@@ -568,6 +595,8 @@ export default function Reader() {
       loadTalmudPages().then(setTalmudPages);
     }
   }, [category, talmudPages]);
+  // Scanned Vilna Shas images are Bavli-only — "talmud" no longer covers Yerushalmi, which is
+  // its own category now, so this is already excluded automatically.
   const talmudTractateName = category === "talmud" ? getTalmudSefariaName(index) : undefined;
   const dafImageAvailable =
     !!talmudTractateName && !!talmudPages && hasTalmudPages(talmudPages, talmudTractateName);
@@ -601,14 +630,23 @@ export default function Reader() {
   };
 
   const handleIndexChange = (id: number) => {
-    setSelection((s) => ({ ...s, [category]: { index: id, chapter: getChapterMin(category, id) } }));
+    setSelection((s) => ({
+      ...s,
+      [category]: { index: id, chapter: getChapterMin(category, id), halakha: category === "yerushalmi" ? 1 : undefined },
+    }));
   };
   const handleChapterChange = useCallback(
     (c: number) => {
-      setSelection((s) => ({ ...s, [category]: { ...s[category], chapter: c } }));
+      setSelection((s) => ({
+        ...s,
+        [category]: { ...s[category], chapter: c, halakha: category === "yerushalmi" ? 1 : s[category].halakha },
+      }));
     },
     [category],
   );
+  const handleYerushalmiHalakhaChange = useCallback((h: number) => {
+    setSelection((s) => ({ ...s, yerushalmi: { ...s.yerushalmi, halakha: h } }));
+  }, []);
 
   // Commentary slots live here (not inside CommentaryPanel) because Shulchan Arukh's main text
   // needs to know the current selection to render matching inline commentary-marker brackets.
@@ -640,19 +678,28 @@ export default function Reader() {
   const [error, setError] = useState<string | null>(null);
 
   const commentariesKey = category === "shulchanArukh" ? slots.join(",") : "";
+  const halakhaValue = halakha ?? 1;
+  const subcategoryQuery = subcategory ? `&subcategory=${subcategory}` : "";
+  const halakhaQuery = subcategory === "yerushalmi" ? `&halakha=${halakhaValue}` : "";
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
     const commentariesQuery = commentariesKey ? `&commentaries=${commentariesKey}` : "";
-    fetch(`/api/chapter?category=${category}&index=${index}&chapter=${chapter}${commentariesQuery}`, {
-      signal: controller.signal,
-    })
+    fetch(
+      `/api/chapter?category=${fetchCategory}&index=${index}&chapter=${chapter}${commentariesQuery}${subcategoryQuery}${halakhaQuery}`,
+      { signal: controller.signal },
+    )
       .then(async (res) => {
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? "Failed to load text");
         setData(json);
+        if (isYerushalmi) {
+          const count = typeof json.halakhaCount === "number" && json.halakhaCount > 0 ? json.halakhaCount : 1;
+          setHalakhaCount(count);
+          if (halakhaValue > count) handleYerushalmiHalakhaChange(count);
+        }
       })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
@@ -661,7 +708,8 @@ export default function Reader() {
       })
       .finally(() => setLoading(false));
     return () => controller.abort();
-  }, [category, index, chapter, commentariesKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchCategory, index, chapter, commentariesKey, subcategoryQuery, halakhaQuery]);
 
   // Talmud amud a/b jump — scroll-only (both amudim are always loaded together). Resets to
   // "a" on every new daf/tractate/category, matching the expectation that a daf opens at 2a —
@@ -682,6 +730,7 @@ export default function Reader() {
 
   const [simanPickerOpen, setSimanPickerOpen] = useState(false);
   const [numberPickerOpen, setNumberPickerOpen] = useState(false);
+  const [halakhaPickerOpen, setHalakhaPickerOpen] = useState(false);
 
   // Bookmarks (+ phase-1 notes, stored as a field on the bookmark — see lib/bookmarks.ts).
   const [bookmarks, setBookmarksState] = useState<Bookmark[]>([]);
@@ -689,8 +738,8 @@ export default function Reader() {
   const [bookmarkEditOpen, setBookmarkEditOpen] = useState(false);
   const [bookmarkListOpen, setBookmarkListOpen] = useState(false);
   const currentBookmark = useMemo(
-    () => findBookmark(bookmarks, category, index, chapter),
-    [bookmarks, category, index, chapter],
+    () => findBookmark(bookmarks, category, index, chapter, halakha),
+    [bookmarks, category, index, chapter, halakha],
   );
 
   const handleSaveBookmark = (name: string, notes: string) => {
@@ -703,10 +752,11 @@ export default function Reader() {
               name,
               notes,
               createdAt: new Date().toISOString(),
-              subtitle: buildSubtitle(category, index, chapter),
+              subtitle: buildSubtitle(category, index, chapter, halakha),
               category,
               index,
               chapter,
+              halakha,
             },
             ...list,
           ];
@@ -727,7 +777,7 @@ export default function Reader() {
 
   const handleNavigateBookmark = (b: Bookmark) => {
     setCategory(b.category);
-    setSelection((s) => ({ ...s, [b.category]: { index: b.index, chapter: b.chapter } }));
+    setSelection((s) => ({ ...s, [b.category]: { index: b.index, chapter: b.chapter, halakha: b.halakha } }));
     setBookmarkListOpen(false);
   };
 
@@ -789,14 +839,14 @@ export default function Reader() {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       if (e.altKey || e.metaKey || e.ctrlKey) return;
-      if (simanPickerOpen || numberPickerOpen) return;
+      if (simanPickerOpen || numberPickerOpen || halakhaPickerOpen) return;
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       stepReading(e.key === "ArrowRight" ? 1 : -1);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [category, chapter, chapterMin, chapterMax, talmudAmud, simanPickerOpen, numberPickerOpen, stepReading]);
+  }, [category, chapter, chapterMin, chapterMax, talmudAmud, simanPickerOpen, numberPickerOpen, halakhaPickerOpen, stepReading]);
 
   useEffect(() => {
     if (category !== "talmud") return;
@@ -895,8 +945,19 @@ export default function Reader() {
               ),
             )}
           </select>
+
           <span className="shrink-0 text-sm opacity-60">{chapterUnit}</span>
-          {hebrewMode ? (
+          {category === "rambam" && chapter === 0 ? (
+            // Rambam's synthetic chapter 0 is the work's bundled mitzvot-list header, not a real
+            // chapter — show a text label instead of "0" (which also renders as an empty string
+            // in Hebrew numeral form).
+            <button
+              onClick={() => setNumberPickerOpen(true)}
+              className="shrink-0 rounded border border-border bg-background px-2 py-1 text-center text-sm"
+            >
+              {hebrewMode ? "כותרת" : "Header"}
+            </button>
+          ) : hebrewMode ? (
             <button
               onClick={() => setNumberPickerOpen(true)}
               className="shrink-0 rounded border border-border bg-background px-2 py-1 text-center text-sm tabular-nums"
@@ -917,10 +978,49 @@ export default function Reader() {
             </>
           )}
           <span className="shrink-0 text-xs opacity-50">
-            {chapterMin === 1
-              ? hebrewMode ? `מתוך ${numeral(chapterMax)}` : `of ${chapterMax}`
-              : `${numeral(chapterMin)}–${numeral(chapterMax)}`}
+            {/* Rambam's chapterMin of 0 is the synthetic Header, not a real chapter — always show
+                the explicit 1–N range there so it's clear real chapters start at 1, not "of N"
+                (which would read ambiguously against the Header sitting just before chapter 1). */}
+            {category === "rambam" && chapterMin === 0
+              ? `${numeral(1)}–${numeral(chapterMax)}`
+              : chapterMin === 1
+                ? hebrewMode ? `מתוך ${numeral(chapterMax)}` : `of ${chapterMax}`
+                : `${numeral(chapterMin)}–${numeral(chapterMax)}`}
           </span>
+
+          {isYerushalmi && (
+            <>
+              <span className="shrink-0 text-sm opacity-60">:</span>
+              {hebrewMode ? (
+                <button
+                  onClick={() => setHalakhaPickerOpen(true)}
+                  className="shrink-0 rounded border border-border bg-background px-2 py-1 text-center text-sm tabular-nums"
+                >
+                  {numeral(halakhaValue)}
+                </button>
+              ) : (
+                <>
+                  <CommitInput
+                    value={halakhaValue}
+                    min={1}
+                    max={halakhaCount}
+                    onCommit={handleYerushalmiHalakhaChange}
+                  />
+                  <button
+                    onClick={() => setHalakhaPickerOpen(true)}
+                    aria-label="Browse halakhot"
+                    title="Browse halakhot"
+                    className="shrink-0 rounded-full border border-border px-2 py-1 text-xs opacity-70 transition-opacity hover:opacity-100"
+                  >
+                    ▾
+                  </button>
+                </>
+              )}
+              <span className="shrink-0 text-xs opacity-50">
+                {hebrewMode ? `מתוך ${numeral(halakhaCount)}` : `of ${halakhaCount}`}
+              </span>
+            </>
+          )}
 
           {category === "shulchanArukh" && (
             <button
@@ -1065,7 +1165,7 @@ export default function Reader() {
                           )
                         )}
                         {(textDisplayMode === "translation" || textDisplayMode === "both") && seg.englishHTML && (
-                          category === "talmud" || category === "mishnah" ? (
+                          isBoldEnglishCategory ? (
                             // Carries <span class="en-editorial"> for Sefaria's bolded "glue"
                             // words (see processedEnglishWithBold) — everything else in this
                             // string is plain-texted server-side, so this is safe despite the
@@ -1125,6 +1225,7 @@ export default function Reader() {
             mainSegmentCount={category === "rambam" ? data?.segments.length : undefined}
             fontSizeLevel={commentaryFontSizeLevel}
             hebrewMode={hebrewMode}
+            halakha={isYerushalmi ? halakha : undefined}
           />
         </div>
       </div>
@@ -1154,14 +1255,30 @@ export default function Reader() {
           }}
           onClose={() => setNumberPickerOpen(false)}
           hebrewMode={hebrewMode}
+          labelFor={category === "rambam" ? (n) => (n === 0 ? (hebrewMode ? "כותרת" : "Header") : undefined) : undefined}
+        />
+      )}
+
+      {halakhaPickerOpen && (
+        <NumberPickerModal
+          min={1}
+          max={halakhaCount}
+          current={halakhaValue}
+          label={hebrewMode ? "בחר הלכה" : "Select halakha"}
+          onSelect={(n) => {
+            handleYerushalmiHalakhaChange(n);
+            setHalakhaPickerOpen(false);
+          }}
+          onClose={() => setHalakhaPickerOpen(false)}
+          hebrewMode={hebrewMode}
         />
       )}
 
       {bookmarkEditOpen && (
         <BookmarkEditModal
           existing={currentBookmark ?? null}
-          defaultName={buildDisplayTitle(category, index, chapter)}
-          subtitle={buildSubtitle(category, index, chapter)}
+          defaultName={buildDisplayTitle(category, index, chapter, halakha)}
+          subtitle={buildSubtitle(category, index, chapter, halakha)}
           onSave={handleSaveBookmark}
           onDelete={() => currentBookmark && handleDeleteBookmark(currentBookmark)}
           onClose={() => setBookmarkEditOpen(false)}

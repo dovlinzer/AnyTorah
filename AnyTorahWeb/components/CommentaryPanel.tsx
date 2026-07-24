@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { type CommentaryType, displayName, hebrewDisplayName, hasInlineSAMarkers } from "@/lib/commentaryTypes";
-import type { ReaderCategory, PoolInfo } from "@/lib/commentaryPools";
+import { fetchCategoryFor, type ReaderCategory, type PoolInfo } from "@/lib/commentaryPools";
 import { saHebrewLetter, SA_SLOT_STYLES, type TextDisplayMode, type CommentaryEntry } from "@/lib/textModels";
 import { fontSizePx, fontSizeLineHeight, fontSizeSpacingScale } from "@/lib/fontSizeLevels";
 
@@ -19,12 +19,15 @@ export default function CommentaryPanel({
   mainSegmentCount,
   fontSizeLevel,
   hebrewMode = false,
+  halakha,
 }: {
   category: ReaderCategory;
   index: number;
   chapter: number;
   displayMode: TextDisplayMode;
   poolInfo: PoolInfo;
+  /** Yerushalmi only — halakha within the chapter. */
+  halakha?: number;
   /** The user's raw slot assignments — what the swap picker writes to and persists. */
   slots: CommentaryType[];
   /** slots with any context-unavailable entry substituted for a fallback — what's shown/fetched. */
@@ -79,10 +82,13 @@ export default function CommentaryPanel({
     const controller = new AbortController();
     setLoading(true);
     setError(null);
+    const { fetchCategory, subcategory } = fetchCategoryFor(category);
     const mainCountQuery =
       category === "rambam" && mainSegmentCount ? `&mainCount=${mainSegmentCount}` : "";
+    const subcategoryQuery = subcategory ? `&subcategory=${subcategory}` : "";
+    const halakhaQuery = subcategory === "yerushalmi" && halakha ? `&halakha=${halakha}` : "";
     fetch(
-      `/api/commentary?category=${category}&index=${index}&chapter=${chapter}&type=${activeType}${mainCountQuery}`,
+      `/api/commentary?category=${fetchCategory}&index=${index}&chapter=${chapter}&type=${activeType}${mainCountQuery}${subcategoryQuery}${halakhaQuery}`,
       { signal: controller.signal },
     )
       .then(async (res) => {
@@ -100,7 +106,7 @@ export default function CommentaryPanel({
     // mainSegmentCount arrives asynchronously (after Reader's own chapter fetch resolves) —
     // include it so Rambam re-fetches once the real halakha count is known, rather than
     // fetching once with a stale/undefined count and never correcting.
-  }, [category, index, chapter, activeType, mainSegmentCount]);
+  }, [category, index, chapter, activeType, mainSegmentCount, halakha]);
 
   useEffect(() => {
     if (category !== "talmud") return;

@@ -19,6 +19,7 @@ export default function NumberPickerModal({
   onClose,
   hebrewMode = false,
   label,
+  labelFor,
 }: {
   min: number;
   max: number;
@@ -27,6 +28,9 @@ export default function NumberPickerModal({
   onClose: () => void;
   hebrewMode?: boolean;
   label: string;
+  /** Overrides the displayed label for specific values (e.g. Rambam's chapter 0 → "Header").
+   *  Falls back to the normal numeral when it returns undefined. */
+  labelFor?: (n: number) => string | undefined;
 }) {
   const activeRef = useRef<HTMLButtonElement>(null);
   const [jumpValue, setJumpValue] = useState(String(current));
@@ -43,8 +47,10 @@ export default function NumberPickerModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const numeral = (n: number) => (hebrewMode ? toHebrewNumeral(n) : String(n));
+  const numeral = (n: number) => labelFor?.(n) ?? (hebrewMode ? toHebrewNumeral(n) : String(n));
 
+  // No "Go" button — typing a value and pressing Enter commits it immediately; clicking a row
+  // below (the more common path) already navigates on click with no extra step either.
   const commitJump = () => {
     const n = parseInt(jumpValue, 10);
     if (Number.isFinite(n) && n >= min && n <= max) onSelect(n);
@@ -78,12 +84,6 @@ export default function NumberPickerModal({
             max={max}
             className="w-16 shrink-0 rounded border border-border bg-background px-2 py-1 text-center text-sm"
           />
-          <button
-            onClick={commitJump}
-            className="shrink-0 rounded-full border border-border px-3 py-1 text-xs transition-colors hover:border-[var(--accent)]"
-          >
-            {hebrewMode ? "עבור" : "Go"}
-          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-2">
