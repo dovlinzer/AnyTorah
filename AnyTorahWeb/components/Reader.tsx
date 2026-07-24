@@ -820,8 +820,8 @@ export default function Reader() {
             <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "var(--accent)" }}>
               AnyTorah
             </h1>
-            {/* Exact copy from native's SplashView.swift ("Powered by YCT and Sefaria", italic, 55% opacity). */}
-            <p className="text-sm italic" style={{ opacity: 0.55 }}>
+            {/* Matches the YCT logo's own tagline color. */}
+            <p className="text-sm italic" style={{ color: "#007cea" }}>
               Powered by YCT and Sefaria
             </p>
           </div>
