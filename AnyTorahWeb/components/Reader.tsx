@@ -501,7 +501,7 @@ export default function Reader() {
     setHebrewModeState(on);
     storeHebrewMode(on);
   };
-  // Persistent dedication line under the header — independent of DedicationBanner's once-a-day
+  // Persistent dedication line above the header — independent of DedicationBanner's once-a-day
   // popup, which only ever shows the message once; this stays visible for as long as a
   // dedication is active.
   const [dedication, setDedication] = useState<Dedication | null>(null);
@@ -804,6 +804,12 @@ export default function Reader() {
     <div
       className={`mx-auto flex h-screen w-full flex-col px-4 py-6 ${showDaf ? "max-w-[100rem]" : "max-w-7xl"}`}
     >
+      {dedication && (
+        <p className="mb-2 shrink-0 text-center text-sm italic" style={{ opacity: 0.55 }}>
+          {formattedMessage(dedication)}
+        </p>
+      )}
+
       <header className="mb-6 flex shrink-0 items-center justify-between">
         <div className="flex items-center gap-5">
           {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, no need for next/image */}
@@ -855,10 +861,6 @@ export default function Reader() {
           </button>
         </div>
       </header>
-
-      {dedication && (
-        <p className="mb-3 shrink-0 text-center text-sm opacity-80">{formattedMessage(dedication)}</p>
-      )}
 
       {/* Macro layout (which cluster sits where) never changes with hebrewMode — only each
           cluster's *internal* order mirrors (via dir=rtl on that cluster alone), and labels/names

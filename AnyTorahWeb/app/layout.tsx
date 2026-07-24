@@ -25,6 +25,10 @@ const notoSansHebrew = Noto_Sans_Hebrew({
 });
 
 export const metadata: Metadata = {
+  // Required so the opengraph-image route resolves to an absolute, publicly-reachable URL in
+  // the <meta property="og:image"> tag — without this Next.js defaults to localhost, which
+  // would silently break link-preview unfurling (iMessage/Slack/Twitter) in production.
+  metadataBase: new URL("https://anytorah-web.vercel.app"),
   title: "AnyTorah",
   description: "Browse Tanakh, Mishnah, Talmud, Rambam, and Shulchan Arukh with classical commentaries.",
 };
