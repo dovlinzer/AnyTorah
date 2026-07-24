@@ -85,44 +85,42 @@ margins that make the logo look tiny at any reasonable `height` in `.yct-logo`.
 The "Powered by YCT and Sefaria" caption under the title is copied verbatim (including
 italic/55%-opacity styling) from native's `SplashView.swift`.
 
-## Planned: Bookmarks + Notes (local or account-based)
+## Bookmarks + Notes (phase 1: local storage) — shipped
 
-Not started. Design intent, captured for when this is picked up:
+`lib/bookmarks.ts` (localStorage CRUD, key `anytorah:bookmarks`) + `components/BookmarkEditModal.tsx`
+/ `BookmarkListModal.tsx`, wired into `Reader.tsx`'s header (star toggle + list button next to the
+Hebrew-mode/reverse-nav toggles). Ported from native's `Bookmark.swift`/`BookmarkManager.swift`,
+collapsed to the web reader's already-unified `{category, index, chapter}` selection instead of
+native's separate per-category index fields. Notes are a field on the bookmark object, same as
+native — this is phase 1 of a bigger anchored-notes vision (notes tied to a specific text/
+commentary passage, not just a bookmark-level field); see memory `project_anytorah_web_port` for
+the full staged plan.
 
-- A combined bookmarks + notes feature — a saved location (category/index/chapter, matching
-  native's `Bookmark` struct) optionally carrying a free-text note, rather than two separate
-  features.
-- **Two storage modes, both supported:**
-  1. **Local** — device/browser-only, no account required. Extends the pattern already used for
-     commentary slots (`localStorage`, see `SLOT_STORAGE_PREFIX` in `components/Reader.tsx`).
-     Matches native's on-device UserDefaults/SharedPreferences bookmarks — works out of the box,
-     doesn't sync across devices/browsers.
-  2. **Account-based** — requires signing in; syncs bookmarks/notes/commentator-slot preferences
-     across devices and sessions. Commentator slot preferences should also move into this same
-     signed-in store once it exists, rather than staying local-only forever.
-  - Local should remain available even after accounts ship — not everyone will want to sign in
-    just to save a bookmark. Signing in could offer to import existing local bookmarks.
-- No auth provider or backend chosen yet. The user's other YCT projects (see
-  `project_yct_registrar` in memory) use Supabase — a reasonable default to consider, not a
-  decision made yet.
+**Not yet built:** account-based sync. Local storage works standalone and should remain available
+even once accounts ship — not everyone will want to sign in just to save a bookmark.
 
-## Planned: Daily learning dedication banner
+## Daily learning dedication banner — shipped
 
-Not started. Native has this already (`AnyTorah/API/DedicationService.swift` +
-`Views/DedicationBannerView.swift`, mirrored in `AnyTorahAndroid/.../DedicationDialog.kt`) — port
-the same behavior:
+`lib/dedicationService.ts` (types + `periodTitle`/`formattedMessage`, ported from native's
+`Dedication` struct) + `app/api/dedication/route.ts` (server-side Supabase fetch) +
+`app/api/dedicationPhoto/route.ts` (photo proxy, same pattern as `app/api/dafImage/route.ts` —
+the storage bucket needs the anon-key auth header, a plain `<img>` src can't do that) +
+`components/DedicationBanner.tsx` (shown once per browser/day via `localStorage`, mirroring
+native's "only mark today as checked when a dedication was actually found" quirk).
 
 - Data source: public Supabase table `dedications` (project `zewdazoijdpakugfvnzt`, readable with
   the anon key already in `DedicationService.swift`) — columns `date`, `dedicated_by`,
   `honoree_name`, `period` (`"today"`/`"week"`/`"month"`), `preposition`, `occasion`,
-  `display_text` (optional override), `photo_url`, `status` (`"approved"`), `app`
-  (`"anytorah"`/`"both"`). This table already has live production data — no new backend needed
-  for this feature specifically, independent of the bookmarks/accounts work above.
-- Native fetches once per day (checked against a stored last-checked date so it only shows once),
-  picks the highest-priority active dedication (`today` > `week` > `month`), and shows it as a
-  dismissible banner/sheet on launch with a photo (or fallback icon), title (e.g. "Today's
-  Learning"), and a formatted message ("Today's learning with AnyTorah is dedicated by ___ in
-  honor of ___ ...").
-- For web: show once per browser session (or per day, via `localStorage` date-check like the
-  slot/bookmark local-storage pattern) rather than gating on account state — this doesn't depend
-  on the auth work above and can be built independently, sooner.
+  `display_text` (optional override), `photo_url`, `status` (`"approved"`).
+- **App targeting**: three independent boolean columns — `for_anytorah`, `for_anytorah_web`,
+  `for_anydaf` — replacing an older single `app` text column (`"anytorah"`/`"anydaf"`/`"both"`)
+  that AnyTorah Web used to just inherit from (`app=in.(anytorah,both)`), with no way to target
+  the web app independently of native AnyTorah. Migrated via
+  `AnyDaf/dedication-app-targeting-migration.sql` (run manually in the Supabase SQL editor — no
+  service-role key is available to this codebase to run DDL programmatically). The old `app`
+  column is left in place, unused, after the migration. Web's route filters
+  `for_anytorah_web=eq.true`; the admin submission form (`AnyDaf/dedication-form.html`) now has
+  three independent checkboxes instead of one three-way radio group.
+- **Known quirk (matches native, not a bug):** the `date` column has no timezone, and the
+  "is this active today" check compares in UTC. A `period: "today"` dedication can roll out of
+  its window before local midnight for users west of UTC — same behavior as native.

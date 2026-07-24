@@ -62,7 +62,7 @@ enum DedicationService {
             + "?date=gte.\(startStr)"
             + "&date=lte.\(todayStr)"
             + "&status=eq.approved"
-            + "&app=in.(anytorah,both)"
+            + "&for_anytorah=eq.true"
             + "&select=date,dedicated_by,honoree_name,period,preposition,occasion,display_text,photo_url"
             + "&order=date.desc,id.desc"
             + "&limit=10"

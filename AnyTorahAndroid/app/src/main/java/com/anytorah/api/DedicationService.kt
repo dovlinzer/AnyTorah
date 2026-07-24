@@ -63,7 +63,7 @@ object DedicationService {
                 "?date=gte.$startDate" +
                 "&date=lte.$today" +
                 "&status=eq.approved" +
-                "&app=in.(anytorah,both)" +
+                "&for_anytorah=eq.true" +
                 "&select=date,dedicated_by,honoree_name,period,preposition,occasion,display_text,photo_url" +
                 "&order=date.desc,id.desc" +
                 "&limit=10"

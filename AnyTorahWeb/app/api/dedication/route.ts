@@ -83,7 +83,7 @@ export async function GET() {
     `?date=gte.${formatDate(startDate)}` +
     `&date=lte.${formatDate(today)}` +
     `&status=eq.approved` +
-    `&app=in.(anytorah,both)` +
+    `&for_anytorah_web=eq.true` +
     `&select=date,dedicated_by,honoree_name,period,preposition,occasion,display_text,photo_url` +
     `&order=date.desc,id.desc` +
     `&limit=10`;
