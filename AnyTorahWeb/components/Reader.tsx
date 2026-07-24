@@ -30,7 +30,6 @@ import {
 import BookmarkEditModal from "@/components/BookmarkEditModal";
 import BookmarkListModal from "@/components/BookmarkListModal";
 import { loadTalmudPages, hasPages as hasTalmudPages, type TalmudPages } from "@/lib/talmudPages";
-import { toHebrewNumeral } from "@/lib/textModels";
 import {
   loadBookmarks,
   saveBookmarks,
@@ -39,6 +38,7 @@ import {
   buildSubtitle,
   type Bookmark,
 } from "@/lib/bookmarks";
+import type { YomiToday, YomiResult } from "@/lib/yomiService";
 
 interface ChapterResponse {
   ref: string;
@@ -326,35 +326,87 @@ function FontSizeControl({
 }
 
 /** Number input that only commits (and re-fetches) on blur/Enter, not per keystroke. */
+/**
+ * Always type="text", never type="number" — a native number input can't render non-numeric text
+ * (Rambam's "Header") and, in RTL, also can't be trusted to keep the digits typed left-to-right
+ * (see Hebrew/RTL note below). Digits stay Arabic in every mode: typing Hebrew numerals isn't a
+ * practical input method, matching NumberPickerModal's quick-jump field.
+ *
+ * The click/tap stepper is custom-built (▲/▼) rather than relying on a number input's native
+ * spin buttons, for the same type="text" reason, and its clicks call onCommit immediately (not
+ * just nudging an uncommitted draft) so stepping onto Rambam's chapter 0 shows "Header" right
+ * away instead of a raw "0" that only resolves on a later blur/Enter.
+ */
 function CommitInput({
   value,
   min,
   max,
   onCommit,
+  labelFor,
 }: {
   value: number;
   min: number;
   max: number;
   onCommit: (n: number) => void;
+  /** Overrides the displayed value for specific values (e.g. Rambam's chapter 0 → "Header").
+   *  Falls back to the plain number when it returns undefined. */
+  labelFor?: (n: number) => string | undefined;
 }) {
-  const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
+  const display = (n: number) => labelFor?.(n) ?? String(n);
+  const [draft, setDraft] = useState(display(value));
+  useEffect(() => setDraft(display(value)), [value]);
 
   const commit = () => {
     const n = parseInt(draft, 10);
     if (Number.isFinite(n)) onCommit(clamp(n, min, max));
-    else setDraft(String(value));
+    else setDraft(display(value));
+  };
+
+  const step = (delta: number) => {
+    const n = parseInt(draft, 10);
+    const base = Number.isFinite(n) ? n : value;
+    onCommit(clamp(base + delta, min, max));
   };
 
   return (
-    <input
-      type="number"
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-      className="w-16 shrink-0 rounded border border-border bg-background px-2 py-1 text-center text-sm"
-    />
+    <div className="flex shrink-0 items-stretch overflow-hidden rounded border border-border bg-background">
+      <input
+        type="text"
+        inputMode="numeric"
+        dir="ltr"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          else if (e.key === "ArrowUp") { e.preventDefault(); step(1); }
+          else if (e.key === "ArrowDown") { e.preventDefault(); step(-1); }
+        }}
+        className="w-14 min-w-0 bg-transparent px-2 py-1 text-center text-sm"
+      />
+      <div className="flex flex-col border-l border-border">
+        <button
+          type="button"
+          onClick={() => step(1)}
+          disabled={value >= max}
+          aria-label="Increase"
+          tabIndex={-1}
+          className="flex-1 px-1 text-[9px] leading-none opacity-60 transition-opacity hover:opacity-100 hover:bg-[var(--border)] disabled:opacity-20 disabled:hover:bg-transparent"
+        >
+          ▲
+        </button>
+        <button
+          type="button"
+          onClick={() => step(-1)}
+          disabled={value <= min}
+          aria-label="Decrease"
+          tabIndex={-1}
+          className="flex-1 border-t border-border px-1 text-[9px] leading-none opacity-60 transition-opacity hover:opacity-100 hover:bg-[var(--border)] disabled:opacity-20 disabled:hover:bg-transparent"
+        >
+          ▼
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -427,6 +479,19 @@ function ReverseNavToggle({ on, onChange }: { on: boolean; onChange: (v: boolean
 /** Thin vertical rule separating the Text and Commentary control groups. */
 function VerticalDivider() {
   return <div className="h-8 w-px shrink-0 self-center bg-border" />;
+}
+
+/** Jumps to today's Daf/Mishnah/Rambam Yomi, 929 chapter, or weekly Parsha — one per relevant
+ *  category tab, matching native's TextSelectorView (see AnyTorah/CLAUDE.md's "Yomi" section). */
+function YomiButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm opacity-85 transition-colors hover:border-[var(--accent)] hover:opacity-100"
+    >
+      {label}
+    </button>
+  );
 }
 
 /** Prev/next chevrons overlaid on whichever box sits next to the Commentary panel (see
@@ -522,6 +587,20 @@ export default function Reader() {
       .then((json: { dedication: Dedication | null }) => setDedication(json.dedication))
       .catch(() => {});
   }, []);
+  // Today's Daf/Mishnah/Rambam Yomi + 929 + Parsha — fetched once on mount (the calendar doesn't
+  // depend on the current category; native re-fetches per category tab, but that's only because
+  // it uses the fetch as a lazy per-tab trigger, not because the data itself is category-scoped).
+  const [yomi, setYomi] = useState<YomiToday | null>(null);
+  useEffect(() => {
+    fetch("/api/yomi")
+      .then((res) => res.json())
+      .then((json: YomiToday) => setYomi(json))
+      .catch(() => {});
+  }, []);
+  const jumpToYomi = (r: YomiResult) => {
+    setCategory(r.category);
+    setSelection((s) => ({ ...s, [r.category]: { ...s[r.category], index: r.index, chapter: r.chapter } }));
+  };
   const [reverseNavigation, setReverseNavigationState] = useState(false);
   useEffect(() => setReverseNavigationState(loadReverseNavigation()), []);
   const setReverseNavigation = (on: boolean) => {
@@ -580,7 +659,6 @@ export default function Reader() {
   const chapterMin = getChapterMin(category, index);
   const chapterMax = getChapterMax(category, index);
   const chapterUnit = getChapterUnitLabel(category, hebrewMode);
-  const numeral = (n: number) => (hebrewMode ? toHebrewNumeral(n) : String(n));
 
   // Scanned daf image — shown as its own column alongside the digital text (Talmud only).
   const [talmudPages, setTalmudPages] = useState<TalmudPages | null>(null);
@@ -732,6 +810,17 @@ export default function Reader() {
   const [numberPickerOpen, setNumberPickerOpen] = useState(false);
   const [halakhaPickerOpen, setHalakhaPickerOpen] = useState(false);
 
+  // SA has one picker (the full siman list with descriptions, SASimanPicker) — no separate
+  // bare-number menu. Every other category uses the generic NumberPickerModal.
+  const openChapterPicker = () =>
+    category === "shulchanArukh" ? setSimanPickerOpen(true) : setNumberPickerOpen(true);
+
+  // Rambam's synthetic chapter 0 is the work's bundled mitzvot-list header, not a real chapter —
+  // show a text label instead of "0" (which also renders as an empty string in Hebrew numeral
+  // form, since toHebrewNumeral(0) === "").
+  const rambamChapterLabelFor =
+    category === "rambam" ? (n: number) => (n === 0 ? (hebrewMode ? "כותרת" : "Header") : undefined) : undefined;
+
   // Bookmarks (+ phase-1 notes, stored as a field on the bookmark — see lib/bookmarks.ts).
   const [bookmarks, setBookmarksState] = useState<Bookmark[]>([]);
   useEffect(() => setBookmarksState(loadBookmarks()), []);
@@ -857,6 +946,32 @@ export default function Reader() {
     }
   }, [category, talmudAmud, data]);
 
+  // One Yomi button per relevant tab — Daf Yomi (talmud), Mishnah Yomi (mishnah), Rambam Yomi
+  // (rambam), and two for tanakh (929 + weekly Parsha), matching exactly which jump buttons
+  // native shows (no Yomi concept exists for tosefta/yerushalmi/shulchanArukh).
+  const yomiButtons: { label: string; onClick: () => void }[] = [];
+  if (yomi) {
+    if (category === "talmud" && yomi.daf) {
+      const r = yomi.daf;
+      yomiButtons.push({ label: (hebrewMode ? "דף היומי: " : "Daf Yomi: ") + r.displayLabel, onClick: () => jumpToYomi(r) });
+    } else if (category === "mishnah" && yomi.mishnah) {
+      const r = yomi.mishnah;
+      yomiButtons.push({ label: (hebrewMode ? "משנה יומית: " : "Mishnah Yomi: ") + r.displayLabel, onClick: () => jumpToYomi(r) });
+    } else if (category === "rambam" && yomi.rambam) {
+      const r = yomi.rambam;
+      yomiButtons.push({ label: (hebrewMode ? "רמב״ם יומי: " : "Rambam Yomi: ") + r.displayLabel, onClick: () => jumpToYomi(r) });
+    } else if (category === "tanakh") {
+      if (yomi.tanakh929) {
+        const r = yomi.tanakh929;
+        yomiButtons.push({ label: (hebrewMode ? "929 היום: " : "Today's 929: ") + r.displayLabel, onClick: () => jumpToYomi(r) });
+      }
+      if (yomi.parsha) {
+        const r = yomi.parsha;
+        yomiButtons.push({ label: (hebrewMode ? "פרשה: " : "Parsha: ") + r.name, onClick: () => jumpToYomi(r) });
+      }
+    }
+  }
+
   return (
     <div
       className={`mx-auto flex h-screen w-full flex-col px-4 py-6 ${showDaf ? "max-w-[100rem]" : "max-w-7xl"}`}
@@ -867,8 +982,12 @@ export default function Reader() {
         </p>
       )}
 
-      <header className="mb-6 flex shrink-0 items-center justify-between">
-        <div className="flex items-center gap-5">
+      {/* flex-wrap so the category-tabs/toggle cluster (shrink-0, doesn't compress) drops to its
+          own row instead of the logo/title block being crushed into it — that crushing is what
+          used to cause the two to visually overlap at narrow widths. shrink-0 on the logo block
+          keeps it at natural size on both rows for the same reason. */}
+      <header className="mb-6 flex flex-wrap shrink-0 items-center justify-between gap-y-3">
+        <div className="flex shrink-0 items-center gap-5">
           {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, no need for next/image */}
           <img src="/yct-logo-color.png" alt="YCT" className="yct-logo yct-logo-light" />
           {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, no need for next/image */}
@@ -884,8 +1003,13 @@ export default function Reader() {
             </p>
           </div>
         </div>
-        <div dir={hebrewMode ? "rtl" : "ltr"} className="flex shrink-0 items-center gap-3">
-          <div className="flex overflow-hidden rounded-full border border-border text-sm">
+        {/* max-w-full + overflow-x-auto: once this cluster wraps onto its own row (see the
+            flex-wrap comment above), it's still wider than a narrow viewport on its own — 7
+            category tabs plus the toggles and bookmark buttons. Scroll it internally rather than
+            letting it overflow the whole page horizontally, the same pattern the chapter-selector
+            toolbar below already uses. */}
+        <div dir={hebrewMode ? "rtl" : "ltr"} className="flex max-w-full shrink-0 items-center gap-3 overflow-x-auto">
+          <div className="flex shrink-0 overflow-hidden rounded-full border border-border text-sm">
             {READER_CATEGORIES.map((c) => (
               <button
                 key={c}
@@ -947,88 +1071,40 @@ export default function Reader() {
           </select>
 
           <span className="shrink-0 text-sm opacity-60">{chapterUnit}</span>
-          {category === "rambam" && chapter === 0 ? (
-            // Rambam's synthetic chapter 0 is the work's bundled mitzvot-list header, not a real
-            // chapter — show a text label instead of "0" (which also renders as an empty string
-            // in Hebrew numeral form).
-            <button
-              onClick={() => setNumberPickerOpen(true)}
-              className="shrink-0 rounded border border-border bg-background px-2 py-1 text-center text-sm"
-            >
-              {hebrewMode ? "כותרת" : "Header"}
-            </button>
-          ) : hebrewMode ? (
-            <button
-              onClick={() => setNumberPickerOpen(true)}
-              className="shrink-0 rounded border border-border bg-background px-2 py-1 text-center text-sm tabular-nums"
-            >
-              {numeral(chapter)}
-            </button>
-          ) : (
+          <CommitInput
+            value={chapter}
+            min={chapterMin}
+            max={chapterMax}
+            onCommit={handleChapterChange}
+            labelFor={rambamChapterLabelFor}
+          />
+          <button
+            onClick={openChapterPicker}
+            aria-label={category === "shulchanArukh" ? "Browse simanim" : "Browse chapters"}
+            title={category === "shulchanArukh" ? "Browse simanim" : "Browse chapters"}
+            className="shrink-0 rounded-full border border-border px-2 py-1 text-xs opacity-70 transition-opacity hover:opacity-100"
+          >
+            ▾
+          </button>
+
+          {isYerushalmi && (
             <>
-              <CommitInput value={chapter} min={chapterMin} max={chapterMax} onCommit={handleChapterChange} />
+              <span className="shrink-0 text-sm opacity-60">:</span>
+              <CommitInput
+                value={halakhaValue}
+                min={1}
+                max={halakhaCount}
+                onCommit={handleYerushalmiHalakhaChange}
+              />
               <button
-                onClick={() => setNumberPickerOpen(true)}
-                aria-label="Browse chapters"
-                title="Browse chapters"
+                onClick={() => setHalakhaPickerOpen(true)}
+                aria-label="Browse halakhot"
+                title="Browse halakhot"
                 className="shrink-0 rounded-full border border-border px-2 py-1 text-xs opacity-70 transition-opacity hover:opacity-100"
               >
                 ▾
               </button>
             </>
-          )}
-          <span className="shrink-0 text-xs opacity-50">
-            {/* Rambam's chapterMin of 0 is the synthetic Header, not a real chapter — always show
-                the explicit 1–N range there so it's clear real chapters start at 1, not "of N"
-                (which would read ambiguously against the Header sitting just before chapter 1). */}
-            {category === "rambam" && chapterMin === 0
-              ? `${numeral(1)}–${numeral(chapterMax)}`
-              : chapterMin === 1
-                ? hebrewMode ? `מתוך ${numeral(chapterMax)}` : `of ${chapterMax}`
-                : `${numeral(chapterMin)}–${numeral(chapterMax)}`}
-          </span>
-
-          {isYerushalmi && (
-            <>
-              <span className="shrink-0 text-sm opacity-60">:</span>
-              {hebrewMode ? (
-                <button
-                  onClick={() => setHalakhaPickerOpen(true)}
-                  className="shrink-0 rounded border border-border bg-background px-2 py-1 text-center text-sm tabular-nums"
-                >
-                  {numeral(halakhaValue)}
-                </button>
-              ) : (
-                <>
-                  <CommitInput
-                    value={halakhaValue}
-                    min={1}
-                    max={halakhaCount}
-                    onCommit={handleYerushalmiHalakhaChange}
-                  />
-                  <button
-                    onClick={() => setHalakhaPickerOpen(true)}
-                    aria-label="Browse halakhot"
-                    title="Browse halakhot"
-                    className="shrink-0 rounded-full border border-border px-2 py-1 text-xs opacity-70 transition-opacity hover:opacity-100"
-                  >
-                    ▾
-                  </button>
-                </>
-              )}
-              <span className="shrink-0 text-xs opacity-50">
-                {hebrewMode ? `מתוך ${numeral(halakhaCount)}` : `of ${halakhaCount}`}
-              </span>
-            </>
-          )}
-
-          {category === "shulchanArukh" && (
-            <button
-              onClick={() => setSimanPickerOpen(true)}
-              className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
-            >
-              {hebrewMode ? "עיין בסימנים…" : "Browse simanim…"}
-            </button>
           )}
 
           {category === "talmud" && (
@@ -1046,6 +1122,15 @@ export default function Reader() {
             </div>
           )}
         </div>
+
+        {yomiButtons.length > 0 && <VerticalDivider />}
+        {yomiButtons.length > 0 && (
+          <div dir={hebrewMode ? "rtl" : "ltr"} className="flex shrink-0 items-center gap-2">
+            {yomiButtons.map((b) => (
+              <YomiButton key={b.label} label={b.label} onClick={b.onClick} />
+            ))}
+          </div>
+        )}
 
         {category === "talmud" && dafImageAvailable && hebrewMode && <VerticalDivider />}
 
@@ -1255,7 +1340,7 @@ export default function Reader() {
           }}
           onClose={() => setNumberPickerOpen(false)}
           hebrewMode={hebrewMode}
-          labelFor={category === "rambam" ? (n) => (n === 0 ? (hebrewMode ? "כותרת" : "Header") : undefined) : undefined}
+          labelFor={rambamChapterLabelFor}
         />
       )}
 
