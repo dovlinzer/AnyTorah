@@ -15,8 +15,19 @@ import {
 import CommentaryPanel from "@/components/CommentaryPanel";
 import SASimanPicker from "@/components/SASimanPicker";
 import DafImagePanel from "@/components/DafImagePanel";
+import DedicationBanner from "@/components/DedicationBanner";
+import BookmarkEditModal from "@/components/BookmarkEditModal";
+import BookmarkListModal from "@/components/BookmarkListModal";
 import { loadTalmudPages, hasPages as hasTalmudPages, type TalmudPages } from "@/lib/talmudPages";
 import { toHebrewNumeral } from "@/lib/textModels";
+import {
+  loadBookmarks,
+  saveBookmarks,
+  findBookmark,
+  buildDisplayTitle,
+  buildSubtitle,
+  type Bookmark,
+} from "@/lib/bookmarks";
 
 interface ChapterResponse {
   ref: string;
@@ -651,6 +662,54 @@ export default function Reader() {
 
   const [simanPickerOpen, setSimanPickerOpen] = useState(false);
 
+  // Bookmarks (+ phase-1 notes, stored as a field on the bookmark — see lib/bookmarks.ts).
+  const [bookmarks, setBookmarksState] = useState<Bookmark[]>([]);
+  useEffect(() => setBookmarksState(loadBookmarks()), []);
+  const [bookmarkEditOpen, setBookmarkEditOpen] = useState(false);
+  const [bookmarkListOpen, setBookmarkListOpen] = useState(false);
+  const currentBookmark = useMemo(
+    () => findBookmark(bookmarks, category, index, chapter),
+    [bookmarks, category, index, chapter],
+  );
+
+  const handleSaveBookmark = (name: string, notes: string) => {
+    setBookmarksState((list) => {
+      const next = currentBookmark
+        ? list.map((b) => (b.id === currentBookmark.id ? { ...b, name, notes } : b))
+        : [
+            {
+              id: crypto.randomUUID(),
+              name,
+              notes,
+              createdAt: new Date().toISOString(),
+              subtitle: buildSubtitle(category, index, chapter),
+              category,
+              index,
+              chapter,
+            },
+            ...list,
+          ];
+      saveBookmarks(next);
+      return next;
+    });
+    setBookmarkEditOpen(false);
+  };
+
+  const handleDeleteBookmark = (b: Bookmark) => {
+    setBookmarksState((list) => {
+      const next = list.filter((x) => x.id !== b.id);
+      saveBookmarks(next);
+      return next;
+    });
+    setBookmarkEditOpen(false);
+  };
+
+  const handleNavigateBookmark = (b: Bookmark) => {
+    setCategory(b.category);
+    setSelection((s) => ({ ...s, [b.category]: { index: b.index, chapter: b.chapter } }));
+    setBookmarkListOpen(false);
+  };
+
   // Shared "advance/retreat one reading step" used by both arrow keys and the chevron buttons.
   // For Talmud, a step moves one amud at a time (a→b within a daf, then b→a of the next/previous
   // daf) rather than jumping a whole daf, matching how the text actually scrolls.
@@ -762,6 +821,24 @@ export default function Reader() {
           </div>
           <HebrewModeToggle on={hebrewMode} onChange={setHebrewMode} />
           <ReverseNavToggle on={reverseNavigation} onChange={setReverseNavigation} />
+          <button
+            onClick={() => setBookmarkEditOpen(true)}
+            aria-pressed={!!currentBookmark}
+            aria-label={currentBookmark ? "Edit bookmark" : "Bookmark this location"}
+            title={currentBookmark ? "Edit bookmark" : "Bookmark this location"}
+            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+            style={currentBookmark ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+          >
+            {currentBookmark ? "★" : "☆"}
+          </button>
+          <button
+            onClick={() => setBookmarkListOpen(true)}
+            aria-label="View bookmarks"
+            title="View bookmarks"
+            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+          >
+            🔖{bookmarks.length > 0 ? ` ${bookmarks.length}` : ""}
+          </button>
         </div>
       </header>
 
@@ -1014,6 +1091,28 @@ export default function Reader() {
           hebrewMode={hebrewMode}
         />
       )}
+
+      {bookmarkEditOpen && (
+        <BookmarkEditModal
+          existing={currentBookmark ?? null}
+          defaultName={buildDisplayTitle(category, index, chapter)}
+          subtitle={buildSubtitle(category, index, chapter)}
+          onSave={handleSaveBookmark}
+          onDelete={() => currentBookmark && handleDeleteBookmark(currentBookmark)}
+          onClose={() => setBookmarkEditOpen(false)}
+        />
+      )}
+
+      {bookmarkListOpen && (
+        <BookmarkListModal
+          bookmarks={bookmarks}
+          onNavigate={handleNavigateBookmark}
+          onDelete={handleDeleteBookmark}
+          onClose={() => setBookmarkListOpen(false)}
+        />
+      )}
+
+      <DedicationBanner />
     </div>
   );
 }
