@@ -54,6 +54,7 @@ ContentView  (owns all top-level @State)
 | `API/SefariaTextClient.swift` | Sefaria v2 API client; 100 MB disk cache |
 | `API/YomiService.swift` | Fetches today's Daf/Mishnah/929/Parsha/Rambam from Sefaria calendars |
 | `API/TalmudAudioService.swift` | Resolves YCT Talmud audio URLs from Supabase |
+| `API/DedicationService.swift` | Fetches + decodes the daily/weekly/monthly learning dedication banner |
 | `AudioPlayer.swift` | `AVPlayer` + Now Playing + speed control |
 | `Views/TextSelectorView.swift` | Wheel pickers + Yomi buttons |
 | `Views/TextReaderView.swift` | Header rows, sheet management, picker sheets, audio row |
@@ -70,6 +71,7 @@ ContentView  (owns all top-level @State)
 | `viewmodels/TextReaderViewModel.kt` | All selection state, load, commentary |
 | `ui/screens/TextReaderScreen.kt` | Main reading screen composable + all picker sheets |
 | `ui/screens/TextSelectorScreen.kt` | Category selector composable |
+| `api/DedicationService.kt` | Fetches + decodes the daily/weekly/monthly learning dedication banner |
 
 ---
 
@@ -520,6 +522,32 @@ Stops automatically on daf/tractate change via `.onChange`.
 `bookmark.apply(to: vm)` restores all VM selection state; caller must then call `await vm.load()`.
 
 `BookmarkListView`: searchable/scrollable list sheet, swipe-to-delete, tapping a row navigates and dismisses.
+
+---
+
+## Dedications (daily/weekly/monthly learning banner)
+
+Shown once per day on app launch when an active row exists. Data source: public Supabase table
+`dedications` (project `zewdazoijdpakugfvnzt`, readable with the anon key already embedded in
+`DedicationService.swift`/`.kt`) — columns `date`, `dedicated_by`, `honoree_name`, `period`
+(`"today"`/`"week"`/`"month"`), `preposition`, `occasion`, `display_text` (optional override),
+`photo_url`, `status` (`"approved"`).
+
+- **App targeting**: three independent boolean columns — `for_anytorah`, `for_anydaf`,
+  `for_anytorah_web` — replacing an older single `app` text column (`"anytorah"`/`"anydaf"`/`"both"`)
+  that couldn't target AnyTorah Web independently of native AnyTorah. `DedicationService.swift`/`.kt`
+  here filter `for_anytorah=eq.true`; AnyDaf's native services filter `for_anydaf=eq.true`;
+  AnyTorahWeb's `app/api/dedication/route.ts` filters `for_anytorah_web=eq.true`. Migrated via
+  `AnyDaf/dedication-app-targeting-migration.sql` (run manually in the Supabase SQL editor — no
+  service-role key is available to any of these codebases to run DDL programmatically). The old
+  `app` column is left in place, unused, after the migration.
+- **Admin submission form**: `AnyDaf/dedication-form.html` — a standalone HTML/JS tool (not part
+  of any app build) shared across all three apps, with three independent checkboxes (AnyDaf /
+  AnyTorah / AnyTorah Web) instead of the old three-way radio group.
+- **Known quirk (not a bug):** the `date` column has no timezone, and `isActiveToday` compares in
+  UTC (effectively local via `Calendar.current` — but the stored `date` itself has no offset). A
+  `period: "today"` dedication can roll out of its window before local midnight for users west of
+  UTC. AnyTorahWeb has the same quirk — see its own `CLAUDE.md`.
 
 ---
 
