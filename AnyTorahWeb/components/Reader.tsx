@@ -820,8 +820,9 @@ export default function Reader() {
             <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "var(--accent)" }}>
               AnyTorah
             </h1>
-            {/* Matches the YCT logo's own tagline color. */}
-            <p className="text-sm italic" style={{ color: "#007cea" }}>
+            {/* Matches the YCT logo's own tagline color. -mt-1 tightens the gap to the title so
+                the pairing reads closer to how the logo itself presents the two lines. */}
+            <p className="-mt-1 text-sm italic" style={{ color: "#007cea" }}>
               Powered by YCT and Sefaria
             </p>
           </div>
