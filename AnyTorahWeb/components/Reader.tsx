@@ -14,8 +14,18 @@ import {
 } from "@/lib/categoryCatalog";
 import CommentaryPanel from "@/components/CommentaryPanel";
 import SASimanPicker from "@/components/SASimanPicker";
+import NumberPickerModal from "@/components/NumberPickerModal";
 import DafImagePanel from "@/components/DafImagePanel";
 import DedicationBanner from "@/components/DedicationBanner";
+import { formattedMessage, type Dedication } from "@/lib/dedicationService";
+import {
+  FONT_SIZE_LEVELS,
+  FONT_SIZE_MIN,
+  FONT_SIZE_MAX,
+  FONT_SIZE_LABELS,
+  fontSizePx,
+  fontSizeLineHeight,
+} from "@/lib/fontSizeLevels";
 import BookmarkEditModal from "@/components/BookmarkEditModal";
 import BookmarkListModal from "@/components/BookmarkListModal";
 import { loadTalmudPages, hasPages as hasTalmudPages, type TalmudPages } from "@/lib/talmudPages";
@@ -64,24 +74,11 @@ function storeSlots(contextKey: string, slots: CommentaryType[]) {
   }
 }
 
-// Font size: -1..+4, each step ±2px from base. Text and commentary are sized independently
-// (some users want commentary smaller/larger than the main text, not locked together).
-// Range is intentionally asymmetric vs. native's -2..+2: user feedback was that native's
-// smallest was too small (floor raised from -2 to -1) and the largest wasn't big enough
-// (ceiling raised from +2 to +4).
+// Font size levels (see lib/fontSizeLevels.ts for the shared px/line-height derivation, also
+// used by CommentaryPanel). Text and commentary are sized independently — some users want
+// commentary smaller/larger than the main text, not locked together.
 const MAIN_FONT_SIZE_KEY = "anytorah:fontSizeLevel";
 const COMMENTARY_FONT_SIZE_KEY = "anytorah:commentaryFontSizeLevel";
-const FONT_SIZE_MIN = -1;
-const FONT_SIZE_MAX = 4;
-const FONT_SIZE_LEVELS = [-1, 0, 1, 2, 3, 4];
-const FONT_SIZE_LABELS: Record<number, string> = {
-  [-1]: "Small",
-  0: "Default",
-  1: "Large",
-  2: "Larger",
-  3: "Largest",
-  4: "Max",
-};
 
 function loadFontSizeLevel(key: string): number {
   if (typeof window === "undefined") return 0;
@@ -278,19 +275,24 @@ function FontSizeControl({
   hebrewMode?: boolean;
 }) {
   const letter = hebrewMode ? "א" : "A";
+  // Levels are non-contiguous (see lib/fontSizeLevels.ts), so stepping and an unrecognized
+  // stored level both need to resolve by position in FONT_SIZE_LEVELS, not raw arithmetic ±1.
+  const currentIndex = FONT_SIZE_LEVELS.indexOf(level as (typeof FONT_SIZE_LEVELS)[number]);
+  const clampedIndex = currentIndex === -1 ? 0 : currentIndex;
+  const stepTo = (index: number) => onChange(FONT_SIZE_LEVELS[clamp(index, 0, FONT_SIZE_LEVELS.length - 1)]);
   return (
     <div className="flex items-center gap-2 rounded-full border border-border px-3 py-1.5">
       <button
-        onClick={() => onChange(clamp(level - 1, FONT_SIZE_MIN, FONT_SIZE_MAX))}
-        disabled={level <= FONT_SIZE_MIN}
+        onClick={() => stepTo(clampedIndex - 1)}
+        disabled={clampedIndex <= 0}
         aria-label={`Decrease ${label} font size`}
         className="text-xs opacity-70 transition-opacity hover:opacity-100 disabled:opacity-25"
       >
         {letter}
       </button>
       <div className="flex items-center gap-1">
-        {FONT_SIZE_LEVELS.map((d) => {
-          const size = 5 + (d - FONT_SIZE_MIN) * 2;
+        {FONT_SIZE_LEVELS.map((d, i) => {
+          const size = 5 + i * 2;
           return (
             <button
               key={d}
@@ -309,8 +311,8 @@ function FontSizeControl({
         })}
       </div>
       <button
-        onClick={() => onChange(clamp(level + 1, FONT_SIZE_MIN, FONT_SIZE_MAX))}
-        disabled={level >= FONT_SIZE_MAX}
+        onClick={() => stepTo(clampedIndex + 1)}
+        disabled={clampedIndex >= FONT_SIZE_LEVELS.length - 1}
         aria-label={`Increase ${label} font size`}
         className="text-base opacity-70 transition-opacity hover:opacity-100 disabled:opacity-25"
       >
@@ -499,6 +501,16 @@ export default function Reader() {
     setHebrewModeState(on);
     storeHebrewMode(on);
   };
+  // Persistent dedication line under the header — independent of DedicationBanner's once-a-day
+  // popup, which only ever shows the message once; this stays visible for as long as a
+  // dedication is active.
+  const [dedication, setDedication] = useState<Dedication | null>(null);
+  useEffect(() => {
+    fetch("/api/dedication")
+      .then((res) => res.json())
+      .then((json: { dedication: Dedication | null }) => setDedication(json.dedication))
+      .catch(() => {});
+  }, []);
   const [reverseNavigation, setReverseNavigationState] = useState(false);
   useEffect(() => setReverseNavigationState(loadReverseNavigation()), []);
   const setReverseNavigation = (on: boolean) => {
@@ -523,10 +535,11 @@ export default function Reader() {
     setCommentaryFontSizeLevelState(level);
     storeFontSizeLevel(COMMENTARY_FONT_SIZE_KEY, level);
   };
-  const mainHebrewFontPx = 20 + mainFontSizeLevel * 2;
+  const mainHebrewFontPx = fontSizePx(20, mainFontSizeLevel);
   // Gemara English reads as too large relative to the Hebrew at the shared base size — one
   // step (2px) smaller specifically for Talmud, not the other categories.
-  const mainEnglishFontPx = 16 + mainFontSizeLevel * 2 - (category === "talmud" ? 2 : 0);
+  const mainEnglishFontPx = fontSizePx(16, mainFontSizeLevel) - (category === "talmud" ? 2 : 0);
+  const mainLineHeight = fontSizeLineHeight(mainFontSizeLevel);
 
   const { index, chapter } = selection[category];
   const groups = useMemo(() => getCategoryGroups(category, hebrewMode), [category, hebrewMode]);
@@ -661,6 +674,7 @@ export default function Reader() {
   }, [category, index, chapter]);
 
   const [simanPickerOpen, setSimanPickerOpen] = useState(false);
+  const [numberPickerOpen, setNumberPickerOpen] = useState(false);
 
   // Bookmarks (+ phase-1 notes, stored as a field on the bookmark — see lib/bookmarks.ts).
   const [bookmarks, setBookmarksState] = useState<Bookmark[]>([]);
@@ -761,21 +775,21 @@ export default function Reader() {
   const chevronsOnDaf = showDaf && dafPosition === "middle";
 
   // Arrow-key chapter/daf/siman navigation. Ignored while typing in a field (so ← → still work
-  // for cursor movement in the chapter input/select) or while the siman picker modal is open (it
-  // has its own keyboard handling). Right = next, Left = previous, regardless of hebrewMode —
-  // a fixed UI convention rather than a text-direction-dependent one.
+  // for cursor movement in the chapter input/select) or while the siman/number picker modal is
+  // open (they have their own keyboard handling). Right = next, Left = previous, regardless of
+  // hebrewMode — a fixed UI convention rather than a text-direction-dependent one.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       if (e.altKey || e.metaKey || e.ctrlKey) return;
-      if (simanPickerOpen) return;
+      if (simanPickerOpen || numberPickerOpen) return;
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       stepReading(e.key === "ArrowRight" ? 1 : -1);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [category, chapter, chapterMin, chapterMax, talmudAmud, simanPickerOpen, stepReading]);
+  }, [category, chapter, chapterMin, chapterMax, talmudAmud, simanPickerOpen, numberPickerOpen, stepReading]);
 
   useEffect(() => {
     if (category !== "talmud") return;
@@ -791,22 +805,22 @@ export default function Reader() {
       className={`mx-auto flex h-screen w-full flex-col px-4 py-6 ${showDaf ? "max-w-[100rem]" : "max-w-7xl"}`}
     >
       <header className="mb-6 flex shrink-0 items-center justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-5">
           {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, no need for next/image */}
           <img src="/yct-logo-color.png" alt="YCT" className="yct-logo yct-logo-light" />
           {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, no need for next/image */}
           <img src="/yct-logo-white.png" alt="YCT" className="yct-logo yct-logo-dark" />
           <div>
-            <h1 className="text-xl font-semibold tracking-tight" style={{ color: "var(--accent)" }}>
+            <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "var(--accent)" }}>
               AnyTorah
             </h1>
             {/* Exact copy from native's SplashView.swift ("Powered by YCT and Sefaria", italic, 55% opacity). */}
-            <p className="text-xs italic" style={{ opacity: 0.55 }}>
+            <p className="text-sm italic" style={{ opacity: 0.55 }}>
               Powered by YCT and Sefaria
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-3">
+        <div dir={hebrewMode ? "rtl" : "ltr"} className="flex shrink-0 items-center gap-3">
           <div className="flex overflow-hidden rounded-full border border-border text-sm">
             {READER_CATEGORIES.map((c) => (
               <button
@@ -842,6 +856,10 @@ export default function Reader() {
         </div>
       </header>
 
+      {dedication && (
+        <p className="mb-3 shrink-0 text-center text-sm opacity-80">{formattedMessage(dedication)}</p>
+      )}
+
       {/* Macro layout (which cluster sits where) never changes with hebrewMode — only each
           cluster's *internal* order mirrors (via dir=rtl on that cluster alone), and labels/names
           translate to Hebrew. This keeps every selector in the same place a returning user
@@ -868,7 +886,26 @@ export default function Reader() {
             )}
           </select>
           <span className="shrink-0 text-sm opacity-60">{chapterUnit}</span>
-          <CommitInput value={chapter} min={chapterMin} max={chapterMax} onCommit={handleChapterChange} />
+          {hebrewMode ? (
+            <button
+              onClick={() => setNumberPickerOpen(true)}
+              className="shrink-0 rounded border border-border bg-background px-2 py-1 text-center text-sm tabular-nums"
+            >
+              {numeral(chapter)}
+            </button>
+          ) : (
+            <>
+              <CommitInput value={chapter} min={chapterMin} max={chapterMax} onCommit={handleChapterChange} />
+              <button
+                onClick={() => setNumberPickerOpen(true)}
+                aria-label="Browse chapters"
+                title="Browse chapters"
+                className="shrink-0 rounded-full border border-border px-2 py-1 text-xs opacity-70 transition-opacity hover:opacity-100"
+              >
+                ▾
+              </button>
+            </>
+          )}
           <span className="shrink-0 text-xs opacity-50">
             {chapterMin === 1
               ? hebrewMode ? `מתוך ${numeral(chapterMax)}` : `of ${chapterMax}`
@@ -995,18 +1032,21 @@ export default function Reader() {
                             <p
                               dir="rtl"
                               lang="he"
-                              className="leading-relaxed"
-                              style={{ fontFamily: "var(--font-hebrew)", fontSize: mainHebrewFontPx }}
+                              style={{
+                                fontFamily: "var(--font-hebrew)",
+                                fontSize: mainHebrewFontPx,
+                                lineHeight: mainLineHeight,
+                              }}
                               dangerouslySetInnerHTML={{ __html: seg.hebrewHTML }}
                             />
                           ) : (
                             <p
                               dir="rtl"
                               lang="he"
-                              className="leading-relaxed"
                               style={{
                                 fontFamily: "var(--font-hebrew)",
                                 fontSize: mainHebrewFontPx,
+                                lineHeight: mainLineHeight,
                                 whiteSpace: "pre-line",
                               }}
                             >
@@ -1021,14 +1061,14 @@ export default function Reader() {
                             // string is plain-texted server-side, so this is safe despite the
                             // raw HTML, matching the SA-Hebrew case above.
                             <p
-                              className="leading-relaxed opacity-90"
-                              style={{ fontSize: mainEnglishFontPx, whiteSpace: "pre-line" }}
+                              className="opacity-90"
+                              style={{ fontSize: mainEnglishFontPx, lineHeight: mainLineHeight, whiteSpace: "pre-line" }}
                               dangerouslySetInnerHTML={{ __html: seg.englishHTML }}
                             />
                           ) : (
                             <p
-                              className="leading-relaxed opacity-90"
-                              style={{ fontSize: mainEnglishFontPx, whiteSpace: "pre-line" }}
+                              className="opacity-90"
+                              style={{ fontSize: mainEnglishFontPx, lineHeight: mainLineHeight, whiteSpace: "pre-line" }}
                             >
                               {seg.englishHTML}
                             </p>
@@ -1088,6 +1128,21 @@ export default function Reader() {
             setSimanPickerOpen(false);
           }}
           onClose={() => setSimanPickerOpen(false)}
+          hebrewMode={hebrewMode}
+        />
+      )}
+
+      {numberPickerOpen && (
+        <NumberPickerModal
+          min={chapterMin}
+          max={chapterMax}
+          current={chapter}
+          label={hebrewMode ? `בחר ${chapterUnit}` : `Select ${chapterUnit}`}
+          onSelect={(n) => {
+            handleChapterChange(n);
+            setNumberPickerOpen(false);
+          }}
+          onClose={() => setNumberPickerOpen(false)}
           hebrewMode={hebrewMode}
         />
       )}

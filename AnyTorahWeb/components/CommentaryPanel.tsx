@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { type CommentaryType, displayName, hebrewDisplayName, hasInlineSAMarkers } from "@/lib/commentaryTypes";
 import type { ReaderCategory, PoolInfo } from "@/lib/commentaryPools";
 import { saHebrewLetter, SA_SLOT_STYLES, type TextDisplayMode, type CommentaryEntry } from "@/lib/textModels";
+import { fontSizePx, fontSizeLineHeight } from "@/lib/fontSizeLevels";
 
 export default function CommentaryPanel({
   category,
@@ -34,7 +35,8 @@ export default function CommentaryPanel({
   /** Rambam only — real halakha count of the current chapter, needed for its depth-3 fix. */
   mainSegmentCount?: number;
   /**
-   * Same -1..+4 range as the main text's font-size control. Hebrew and English get different
+   * Same level scheme (lib/fontSizeLevels.ts) as the main text's font-size control. Hebrew and
+   * English get different
    * base sizes (20px / 16px, matching the main text) rather than one shared size — at equal
    * pixel size, the Hebrew font (Frank Ruhl Libre) reads visually smaller than the English one,
    * so a single shared base made Hebrew commentary look mismatched against English commentary,
@@ -46,8 +48,9 @@ export default function CommentaryPanel({
    *  matching native. */
   hebrewMode?: boolean;
 }) {
-  const hebrewFontPx = 20 + fontSizeLevel * 2;
-  const englishFontPx = 16 + fontSizeLevel * 2;
+  const hebrewFontPx = fontSizePx(20, fontSizeLevel);
+  const englishFontPx = fontSizePx(16, fontSizeLevel);
+  const lineHeight = fontSizeLineHeight(fontSizeLevel);
   const [activeIndex, setActiveIndex] = useState(0);
   const [openSlotIndex, setOpenSlotIndex] = useState<number | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -230,14 +233,13 @@ export default function CommentaryPanel({
                     <p
                       dir="rtl"
                       lang="he"
-                      className="leading-relaxed"
-                      style={{ fontFamily: "var(--font-hebrew)", fontSize: hebrewFontPx }}
+                      style={{ fontFamily: "var(--font-hebrew)", fontSize: hebrewFontPx, lineHeight }}
                     >
                       {entry.he}
                     </p>
                   )}
                   {(displayMode === "translation" || displayMode === "both") && entry.en && (
-                    <p className="leading-relaxed opacity-90" style={{ fontSize: englishFontPx }}>
+                    <p className="opacity-90" style={{ fontSize: englishFontPx, lineHeight }}>
                       {entry.en}
                     </p>
                   )}
