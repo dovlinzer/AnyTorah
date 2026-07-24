@@ -270,9 +270,9 @@ const kodashimSeder: MishnahSeder = {
     mt(45, "Temurah", "תְּמוּרָה", "Mishnah Temurah", 7, 4),
     mt(46, "Keritot", "כְּרִיתוֹת", "Mishnah Keritot", 6, 4),
     mt(47, "Meilah", "מְעִילָה", "Mishnah Meilah", 6, 3),
+    mt(50, "Kinnim", "קִנִּים", "Mishnah Kinnim", 3),
     mt(48, "Tamid", "תָּמִיד", "Mishnah Tamid", 7),
     mt(49, "Middot", "מִדּוֹת", "Mishnah Middot", 5),
-    mt(50, "Kinnim", "קִנִּים", "Mishnah Kinnim", 3),
   ],
 };
 
@@ -404,9 +404,9 @@ const kodashimT: TalmudSeder = {
     tt(33, "Temurah", "תְּמוּרָה", "Temurah", 2, 34),
     tt(34, "Keritot", "כְּרִיתוֹת", "Keritot", 2, 28),
     tt(35, "Meilah", "מְעִילָה", "Meilah", 2, 22),
+    tt(38, "Kinnim", "קִנִּים", "Kinnim", 22, 25, true),
     tt(36, "Tamid", "תָּמִיד", "Tamid", 25, 33, true),
     tt(37, "Middot", "מִדּוֹת", "Middot", 34, 37, true),
-    tt(38, "Kinnim", "קִנִּים", "Kinnim", 23, 25, true),
   ],
 };
 

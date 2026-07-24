@@ -23,6 +23,7 @@ import com.anytorah.models.torahVerseCount
 import com.anytorah.models.MishnahTractate
 import com.anytorah.models.SASimanNames
 import com.anytorah.models.TalmudSubcategory
+import com.anytorah.models.TalmudTractate
 import com.anytorah.models.TextCatalog
 import com.anytorah.models.TextCategory
 import com.anytorah.models.TextDisplayMode
@@ -154,7 +155,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
     private val _talmudDaf = mutableIntStateOf(2)
     var talmudDaf: Int
         get() = _talmudDaf.intValue
-        set(v) { _talmudDaf.intValue = v; talmudAmud = 0 }
+        set(v) { _talmudDaf.intValue = v; talmudAmud = defaultAmud(currentTalmudTractate, v) }
 
     // Yerushalmi (uses Mishnah seder structure)
     var yerushalmiSederIndex by mutableIntStateOf(0)
@@ -521,6 +522,18 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
     val talmudTractateCandidates get() = TextCatalog.talmudSedarim.getOrNull(talmudSederIndex)?.tractates ?: emptyList()
     val currentTalmudTractate get() = talmudTractateCandidates.getOrNull(talmudTractateIndexInSeder)
     val globalTalmudTractateIndex get() = currentTalmudTractate?.id ?: 0
+
+    /**
+     * The amud (0 = alef, 1 = bet) a freshly-navigated-to daf should open on. Almost always 0 —
+     * Tamid's startDaf (25) is the one exception: its Gemara (and daf-image scans) only begin
+     * at 25b, since 25a has no content (confirmed empty on Sefaria — "firstAvailableSectionRef":
+     * "Tamid 25b") and no scanned page. Only applies at the tractate's actual startDaf — every
+     * other daf within Tamid still opens at amud alef like normal.
+     */
+    private fun defaultAmud(tractate: TalmudTractate?, daf: Int): Int {
+        if (tractate?.sefariaName == "Tamid" && daf == tractate.startDaf) return 1
+        return 0
+    }
 
     // Yerushalmi — Mishnah seder structure filtered to tractates with Yerushalmi content
     val yerushalmiSedarim get() = TextCatalog.mishnahSedarim.filter { seder -> seder.tractates.any { it.yerushalmiChapters > 0 } }

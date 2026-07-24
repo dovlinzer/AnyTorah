@@ -285,6 +285,92 @@ object SefariaTextClient {
         return runCatching { fetchSingleLang(commentaryRef, "he") }.getOrElse { emptyList() }
     }
 
+    // Kinnim and Middot have no Gemara — Sefaria doesn't index them by daf/amud at all, only as
+    // Mishnah chapters (confirmed live: "Kinnim 23a"/"Middot 34a" both 404). Shekalim has no
+    // Bavli text at all — only Jerusalem Talmud (confirmed live: "Shekalim 2a" 404), though it's
+    // printed and navigable in the Bavli volume/Daf Yomi cycle under Bavli-style daf pagination
+    // regardless. All three tractates are still printed (and navigable in this app) with their
+    // own daf/amud pages, so each daf+amud is mapped to the real ref that actually appears on
+    // that printed page. This is the same mapping already shipped in production in AnyDaf's
+    // SefariaClient.swift/.kt — reused here rather than re-derived, including a user-verified
+    // correction for Kinnim/Middot's exact chapter/mishnah boundaries (Kinnim has content only
+    // on amud alef of each daf — 22a/23a/24a/25a; there is no amud bet content for any Kinnim daf).
+    private val noStandardBavliRefTalmudRefs: Map<String, Map<String, String>> = mapOf(
+        "Shekalim" to mapOf(
+            "2a" to "Jerusalem Talmud Shekalim 1:1:1-5",
+            "2b" to "Jerusalem Talmud Shekalim 1:1:5-10",
+            "3a" to "Jerusalem Talmud Shekalim 1:1:10-2:5",
+            "3b" to "Jerusalem Talmud Shekalim 1:2:5-4:1",
+            "4a" to "Jerusalem Talmud Shekalim 1:4:1-5",
+            "4b" to "Jerusalem Talmud Shekalim 1:4:5-9",
+            "5a" to "Jerusalem Talmud Shekalim 1:4:9-2:1:4",
+            "5b" to "Jerusalem Talmud Shekalim 2:1:4-3:1",
+            "6a" to "Jerusalem Talmud Shekalim 2:3:1-4:1",
+            "6b" to "Jerusalem Talmud Shekalim 2:4:1-5",
+            "7a" to "Jerusalem Talmud Shekalim 2:4:5-5:4",
+            "7b" to "Jerusalem Talmud Shekalim 2:5:4-3:1:3",
+            "8a" to "Jerusalem Talmud Shekalim 3:1:3-2:2",
+            "8b" to "Jerusalem Talmud Shekalim 3:2:2-8",
+            "9a" to "Jerusalem Talmud Shekalim 3:2:8-3:1",
+            "9b" to "Jerusalem Talmud Shekalim 3:3:1-4:1:1",
+            "10a" to "Jerusalem Talmud Shekalim 4:1:1-2:1",
+            "10b" to "Jerusalem Talmud Shekalim 4:2:1-4",
+            "11a" to "Jerusalem Talmud Shekalim 4:2:4-3:2",
+            "11b" to "Jerusalem Talmud Shekalim 4:3:2-4:1",
+            "12a" to "Jerusalem Talmud Shekalim 4:4:1-5",
+            "12b" to "Jerusalem Talmud Shekalim 4:4:5-9",
+            "13a" to "Jerusalem Talmud Shekalim 4:4:9-5:1:3",
+            "13b" to "Jerusalem Talmud Shekalim 5:1:3-12",
+            "14a" to "Jerusalem Talmud Shekalim 5:1:12-21",
+            "14b" to "Jerusalem Talmud Shekalim 5:1:21-3:2",
+            "15a" to "Jerusalem Talmud Shekalim 5:3:2-4:10",
+            "15b" to "Jerusalem Talmud Shekalim 5:4:10-6:1:5",
+            "16a" to "Jerusalem Talmud Shekalim 6:1:5-11",
+            "16b" to "Jerusalem Talmud Shekalim 6:1:11-2:1",
+            "17a" to "Jerusalem Talmud Shekalim 6:2:1-7",
+            "17b" to "Jerusalem Talmud Shekalim 6:2:7-3:3",
+            "18a" to "Jerusalem Talmud Shekalim 6:3:3-4:2",
+            "18b" to "Jerusalem Talmud Shekalim 6:4:2-7",
+            "19a" to "Jerusalem Talmud Shekalim 6:4:7-7:2:1",
+            "19b" to "Jerusalem Talmud Shekalim 7:2:1-7",
+            "20a" to "Jerusalem Talmud Shekalim 7:2:7-3:2",
+            "20b" to "Jerusalem Talmud Shekalim 7:3:2-7",
+            "21a" to "Jerusalem Talmud Shekalim 7:3:7-8:1:1",
+            "21b" to "Jerusalem Talmud Shekalim 8:1:1-3:1",
+            "22a" to "Jerusalem Talmud Shekalim 8:3:1-4:4",
+            "22b" to "Jerusalem Talmud Shekalim 8:4:4",
+        ),
+        // Only amud alef of each daf has content; amud bet is absent (no text) for every Kinnim daf.
+        "Kinnim" to mapOf(
+            "22a" to "Mishnah Kinnim 1",
+            "23a" to "Mishnah Kinnim 2",
+            "24a" to "Mishnah Kinnim 3:1-5",
+            "25a" to "Mishnah Kinnim 3:6",
+        ),
+        "Middot" to mapOf(
+            "34a" to "Mishnah Middot 1:1-4",
+            "34b" to "Mishnah Middot 1:5-9",
+            "35a" to "Mishnah Middot 2:1-3",
+            "35b" to "Mishnah Middot 2:4-6",
+            "36a" to "Mishnah Middot 3",
+            "36b" to "Mishnah Middot 4:1-2",
+            "37a" to "Mishnah Middot 4:3-7",
+            "37b" to "Mishnah Middot 5",
+        ),
+    )
+
+    /**
+     * Builds a Talmud-category ref for one amud, substituting the real ref for tractates that
+     * have no standard Bavli daf ref on Sefaria (see noStandardBavliRefTalmudRefs above). Falls
+     * back to the standard "{tractate} {daf}{amud}" form for every other tractate, including
+     * Tamid (mishnahOnly but has real Gemara from 25b on — only Shekalim/Kinnim/Middot need
+     * substitution).
+     */
+    fun talmudAmudRef(sefariaTractateName: String, daf: Int, amud: String): String {
+        val override = noStandardBavliRefTalmudRefs[sefariaTractateName]?.get("$daf$amud")
+        return override ?: "$sefariaTractateName $daf$amud"
+    }
+
     fun ref(category: TextCategory, bookOrTractateIndex: Int, chapterOrDaf: Int, amud: String? = null): String {
         return when (category) {
             TextCategory.TANAKH -> {
@@ -301,7 +387,7 @@ object SefariaTextClient {
                 val tractate = TextCatalog.allTalmudTractates.find { it.id == bookOrTractateIndex }
                     ?: TextCatalog.allTalmudTractates[0]
                 val a = amud ?: "a"
-                "${tractate.sefariaName} $chapterOrDaf$a"
+                talmudAmudRef(tractate.sefariaName, chapterOrDaf, a)
             }
             TextCategory.RAMBAM -> {
                 val work = TextCatalog.allRambamWorks.find { it.id == bookOrTractateIndex }
@@ -320,8 +406,8 @@ object SefariaTextClient {
     suspend fun fetchFullDaf(tractateIndex: Int, daf: Int): List<TextSegment> = coroutineScope {
         val tractate = TextCatalog.allTalmudTractates.find { it.id == tractateIndex }
             ?: TextCatalog.allTalmudTractates[0]
-        val refA = "${tractate.sefariaName} ${daf}a"
-        val refB = "${tractate.sefariaName} ${daf}b"
+        val refA = talmudAmudRef(tractate.sefariaName, daf, "a")
+        val refB = talmudAmudRef(tractate.sefariaName, daf, "b")
 
         val pairADef = async { runCatching { fetchBoth(refA) } }
         val pairBDef = async { runCatching { fetchBoth(refB) } }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   loadCommentaryEntries,
   ref as buildRef,
+  talmudAmudRef,
   processedHebrew,
   stripHTML,
 } from "@/lib/sefariaClient";
@@ -87,8 +88,8 @@ export async function GET(request: NextRequest) {
   const tractateName = isTalmud
     ? (TextCatalog.allTalmudTractates.find((t) => t.id === index) ?? TextCatalog.allTalmudTractates[0]).sefariaName
     : "";
-  const mainRef = isTalmud ? `${tractateName} ${chapter}a` : buildRef(category, index, chapter);
-  const secondMainRef = isTalmud ? `${tractateName} ${chapter}b` : undefined;
+  const mainRef = isTalmud ? talmudAmudRef(tractateName, chapter, "a") : buildRef(category, index, chapter);
+  const secondMainRef = isTalmud ? talmudAmudRef(tractateName, chapter, "b") : undefined;
 
   try {
     const entries = await loadCommentaryEntries(typeParam, mainRef, category, secondMainRef, mainSegmentCount);

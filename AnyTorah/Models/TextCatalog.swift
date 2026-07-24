@@ -219,9 +219,9 @@ enum TextCatalog {
         mt(45, "Temurah",    "תְּמוּרָה",  "Mishnah Temurah",    7, tosefta:  4),
         mt(46, "Keritot",    "כְּרִיתוֹת", "Mishnah Keritot",    6, tosefta:  4),
         mt(47, "Meilah",     "מְעִילָה",   "Mishnah Meilah",     6, tosefta:  3),
+        mt(50, "Kinnim",     "קִנִּים",    "Mishnah Kinnim",     3),
         mt(48, "Tamid",      "תָּמִיד",    "Mishnah Tamid",      7),
         mt(49, "Middot",     "מִדּוֹת",    "Mishnah Middot",     5),
-        mt(50, "Kinnim",     "קִנִּים",    "Mishnah Kinnim",     3),
     ])]
 
     private static let taharot_seder = [MishnahSeder(id: 5, name: "Taharot", hebrewName: "טָהֳרוֹת", tractates: [
@@ -299,9 +299,9 @@ enum TextCatalog {
         tt(33, "Temurah",   "תְּמוּרָה",   "Temurah",   2,  34),
         tt(34, "Keritot",   "כְּרִיתוֹת",  "Keritot",   2,  28),
         tt(35, "Meilah",    "מְעִילָה",    "Meilah",    2,  22),
+        tt(38, "Kinnim",    "קִנִּים",     "Kinnim",   22,  25, mishnahOnly: true),
         tt(36, "Tamid",     "תָּמִיד",     "Tamid",    25,  33, mishnahOnly: true),
         tt(37, "Middot",    "מִדּוֹת",     "Middot",   34,  37, mishnahOnly: true),
-        tt(38, "Kinnim",    "קִנִּים",     "Kinnim",   23,  25, mishnahOnly: true),
     ])]
 
     private static let taharot_t = [TalmudSeder(id: 5, name: "Taharot", hebrewName: "טָהֳרוֹת", tractates: [

@@ -93,6 +93,21 @@ export function getChapterMin(category: ReaderCategory, index: number): number {
   return 1;
 }
 
+/**
+ * The amud a given daf should default to when freshly navigated to. Almost always "a" — Tamid's
+ * startDaf (25) is the one exception: its Gemara (and daf-image scans) only begin at 25b, since
+ * 25a has no content (confirmed empty on Sefaria — "firstAvailableSectionRef": "Tamid 25b") and
+ * no scanned page. Only applies at the tractate's actual startDaf — every other daf within Tamid
+ * still opens at amud "a" like normal.
+ */
+export function getStartAmud(category: ReaderCategory, index: number, chapter: number): "a" | "b" {
+  if (category === "talmud") {
+    const tractate = TextCatalog.allTalmudTractates.find((t) => t.id === index);
+    if (tractate?.sefariaName === "Tamid" && chapter === tractate.startDaf) return "b";
+  }
+  return "a";
+}
+
 export function getChapterMax(category: ReaderCategory, index: number): number {
   for (const group of getCategoryGroups(category)) {
     const item = group.items.find((i) => i.id === index);

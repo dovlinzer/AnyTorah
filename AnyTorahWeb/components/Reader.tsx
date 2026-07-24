@@ -11,6 +11,7 @@ import {
   getChapterUnitLabel,
   getCategoryDisplayName,
   getTalmudSefariaName,
+  getStartAmud,
 } from "@/lib/categoryCatalog";
 import CommentaryPanel from "@/components/CommentaryPanel";
 import SASimanPicker from "@/components/SASimanPicker";
@@ -805,7 +806,7 @@ export default function Reader() {
   // "a" on every new daf/tractate/category, matching the expectation that a daf opens at 2a —
   // except when stepBackward() below crosses a daf boundary, where it should land on the
   // *previous* daf's amud b instead; skipAmudResetRef lets that one case suppress this reset.
-  const [talmudAmud, setTalmudAmud] = useState<"a" | "b">("a");
+  const [talmudAmud, setTalmudAmud] = useState<"a" | "b">(() => getStartAmud(category, index, chapter));
   const textContainerRef = useRef<HTMLDivElement>(null);
   const amudBRef = useRef<HTMLDivElement>(null);
   const skipAmudResetRef = useRef(false);
@@ -815,7 +816,7 @@ export default function Reader() {
       skipAmudResetRef.current = false;
       return;
     }
-    setTalmudAmud("a");
+    setTalmudAmud(getStartAmud(category, index, chapter));
   }, [category, index, chapter]);
 
   const [simanPickerOpen, setSimanPickerOpen] = useState(false);
@@ -900,7 +901,10 @@ export default function Reader() {
             if (next !== chapter) handleChapterChange(next); // lands on amud "a" via the reset effect
           }
         } else {
-          if (talmudAmud === "b") {
+          // Only step back to this same daf's amud "a" if that amud actually exists — Tamid's
+          // startDaf (25) has no real 25a, so from 25b this must fall through to the prev-daf
+          // branch below instead, which correctly no-ops at chapterMin.
+          if (talmudAmud === "b" && getStartAmud(category, index, chapter) !== "b") {
             setTalmudAmud("a");
           } else {
             const prev = clamp(chapter - 1, chapterMin, chapterMax);
@@ -916,10 +920,13 @@ export default function Reader() {
       const next = clamp(chapter + direction, chapterMin, chapterMax);
       if (next !== chapter) handleChapterChange(next);
     },
-    [category, chapter, chapterMin, chapterMax, talmudAmud, handleChapterChange, reverseNavigation],
+    [category, index, chapter, chapterMin, chapterMax, talmudAmud, handleChapterChange, reverseNavigation],
   );
 
-  const atReadingStart = category === "talmud" ? chapter === chapterMin && talmudAmud === "a" : chapter === chapterMin;
+  const atReadingStart =
+    category === "talmud"
+      ? chapter === chapterMin && talmudAmud === getStartAmud(category, index, chapterMin)
+      : chapter === chapterMin;
   const atReadingEnd = category === "talmud" ? chapter === chapterMax && talmudAmud === "b" : chapter === chapterMax;
   // The left chevron always passes -1 and the right always passes +1 (see stepReading), so which
   // one is a no-op at a boundary swaps along with reverseNavigation.

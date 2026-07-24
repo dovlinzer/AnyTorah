@@ -43,7 +43,19 @@ final class TextReaderViewModel {
         didSet { if !isRestoring { talmudDaf = currentTalmudTractate?.startDaf ?? 2 } }
     }
     var talmudDaf: Int = 2 {
-        didSet { if !isRestoring { talmudAmud = 0 } }
+        didSet { if !isRestoring { talmudAmud = Self.defaultAmud(tractate: currentTalmudTractate, daf: talmudDaf) } }
+    }
+
+    /// The amud (0 = alef, 1 = bet) a freshly-navigated-to daf should open on. Almost always 0 —
+    /// Tamid's startDaf (25) is the one exception: its Gemara (and daf-image scans) only begin
+    /// at 25b, since 25a has no content (confirmed empty on Sefaria — "firstAvailableSectionRef":
+    /// "Tamid 25b") and no scanned page. Only applies at the tractate's actual startDaf — every
+    /// other daf within Tamid still opens at amud alef like normal.
+    private static func defaultAmud(tractate: TalmudTractate?, daf: Int) -> Int {
+        if let tractate, tractate.sefariaName == "Tamid", daf == tractate.startDaf {
+            return 1
+        }
+        return 0
     }
 
     // Yerushalmi — uses Mishnah seder structure, separate navigation state
