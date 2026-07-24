@@ -21,6 +21,10 @@ export interface YomiResult {
 export interface ParshaResult extends YomiResult {
   verse: number | null;
   name: string;
+  /** Sefaria's own Hebrew parasha name (e.g. "ואתחנן") — there's no catalog equivalent for
+   *  parasha names (unlike tractates/works/books), so this is passed through directly rather
+   *  than derived. */
+  hebrewName: string;
 }
 
 export interface YomiToday {
@@ -33,7 +37,7 @@ export interface YomiToday {
 
 interface CalendarItem {
   title?: { en?: string };
-  displayValue?: { en?: string };
+  displayValue?: { en?: string; he?: string };
   ref?: string;
 }
 
@@ -148,7 +152,7 @@ function parseTanakhYomi(ref: string): YomiResult | null {
   };
 }
 
-function parseParshaYomi(ref: string, name: string): ParshaResult | null {
+function parseParshaYomi(ref: string, name: string, hebrewName: string): ParshaResult | null {
   const parsed = parseTanakhRef(ref);
   if (!parsed) return null;
   const book = TextCatalog.allTanakhBooks[parsed.bookIndex];
@@ -158,6 +162,7 @@ function parseParshaYomi(ref: string, name: string): ParshaResult | null {
     chapter: parsed.chapter,
     verse: parsed.verse,
     name,
+    hebrewName,
     displayLabel: `${name} (${book.name} ${parsed.chapter})`,
   };
 }
@@ -188,7 +193,7 @@ export function parseCalendarItems(items: CalendarItem[]): YomiToday {
         tanakh929 = parseTanakhYomi(ref);
         break;
       case "Parashat Hashavua":
-        parsha = parseParshaYomi(ref, item.displayValue?.en ?? "");
+        parsha = parseParshaYomi(ref, item.displayValue?.en ?? "", item.displayValue?.he ?? "");
         break;
       default:
         break;

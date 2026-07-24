@@ -39,6 +39,7 @@ import {
   type Bookmark,
 } from "@/lib/bookmarks";
 import type { YomiToday, YomiResult } from "@/lib/yomiService";
+import { toHebrewNumeral } from "@/lib/textModels";
 
 interface ChapterResponse {
   ref: string;
@@ -51,6 +52,17 @@ const READER_CATEGORIES: ReaderCategory[] = ["tanakh", "mishnah", "tosefta", "ta
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(Math.max(n, min), max);
+}
+
+/** Looks up a catalog item's display name (English, or nikkud-stripped Hebrew) by id — used for
+ *  the Daf Yomi button, which needs a tractate name outside the currently-selected category's
+ *  own `groups`/`index` state. */
+function findCategoryItemName(category: ReaderCategory, index: number, hebrewMode: boolean): string {
+  for (const g of getCategoryGroups(category, hebrewMode)) {
+    const item = g.items.find((i) => i.id === index);
+    if (item) return item.name;
+  }
+  return "";
 }
 
 // Commentary slot assignments are remembered per context (e.g. "talmud", "sa:0") so switching
@@ -947,27 +959,43 @@ export default function Reader() {
   }, [category, talmudAmud, data]);
 
   // One Yomi button per relevant tab — Daf Yomi (talmud), Mishnah Yomi (mishnah), Rambam Yomi
-  // (rambam), and two for tanakh (929 + weekly Parsha), matching exactly which jump buttons
-  // native shows (no Yomi concept exists for tosefta/yerushalmi/shulchanArukh).
+  // (rambam), and two for tanakh (weekly Parsha + 929), matching exactly which jump buttons
+  // native shows (no Yomi concept exists for tosefta/yerushalmi/shulchanArukh). Only Daf Yomi and
+  // Parsha show what they actually jump to (tractate+daf / parsha name) — Mishnah Yomi, Rambam
+  // Yomi, and 929 are just the plain title, per explicit user feedback that showing the chapter/
+  // section reference on those three was unwanted. Names (tractate, parsha) switch to Hebrew
+  // under hebrewMode, matching how every other selector in this toolbar does.
   const yomiButtons: { label: string; onClick: () => void }[] = [];
   if (yomi) {
     if (category === "talmud" && yomi.daf) {
       const r = yomi.daf;
-      yomiButtons.push({ label: (hebrewMode ? "דף היומי: " : "Daf Yomi: ") + r.displayLabel, onClick: () => jumpToYomi(r) });
+      const tractateName = findCategoryItemName("talmud", r.index, hebrewMode);
+      const dafLabel = hebrewMode ? toHebrewNumeral(r.chapter) : String(r.chapter);
+      yomiButtons.push({
+        label: (hebrewMode ? "דף היומי: " : "Daf Yomi: ") + `${tractateName} ${dafLabel}`,
+        onClick: () => jumpToYomi(r),
+      });
     } else if (category === "mishnah" && yomi.mishnah) {
       const r = yomi.mishnah;
-      yomiButtons.push({ label: (hebrewMode ? "משנה יומית: " : "Mishnah Yomi: ") + r.displayLabel, onClick: () => jumpToYomi(r) });
+      yomiButtons.push({ label: hebrewMode ? "משנה יומית" : "Mishnah Yomi", onClick: () => jumpToYomi(r) });
     } else if (category === "rambam" && yomi.rambam) {
       const r = yomi.rambam;
-      yomiButtons.push({ label: (hebrewMode ? "רמב״ם יומי: " : "Rambam Yomi: ") + r.displayLabel, onClick: () => jumpToYomi(r) });
+      yomiButtons.push({ label: hebrewMode ? "הרמב״ם היומי" : "Rambam Yomi", onClick: () => jumpToYomi(r) });
     } else if (category === "tanakh") {
-      if (yomi.tanakh929) {
-        const r = yomi.tanakh929;
-        yomiButtons.push({ label: (hebrewMode ? "929 היום: " : "Today's 929: ") + r.displayLabel, onClick: () => jumpToYomi(r) });
-      }
+      // Parsha before 929 (source order) — combined with dir=rtl on this cluster (and now the
+      // whole toolbar, see below), this reads correctly in both directions: left-to-right
+      // "Parsha, 929" in English, right-to-left "Parsha, 929" (Parsha closer to the selector
+      // boxes) in Hebrew — per explicit user request.
       if (yomi.parsha) {
         const r = yomi.parsha;
-        yomiButtons.push({ label: (hebrewMode ? "פרשה: " : "Parsha: ") + r.name, onClick: () => jumpToYomi(r) });
+        yomiButtons.push({
+          label: (hebrewMode ? "פרשה: " : "Parsha: ") + (hebrewMode ? r.hebrewName : r.name),
+          onClick: () => jumpToYomi(r),
+        });
+      }
+      if (yomi.tanakh929) {
+        const r = yomi.tanakh929;
+        yomiButtons.push({ label: hebrewMode ? "929 היום" : "Today's 929", onClick: () => jumpToYomi(r) });
       }
     }
   }
@@ -1044,11 +1072,16 @@ export default function Reader() {
         </div>
       </header>
 
-      {/* Macro layout (which cluster sits where) never changes with hebrewMode — only each
-          cluster's *internal* order mirrors (via dir=rtl on that cluster alone), and labels/names
-          translate to Hebrew. This keeps every selector in the same place a returning user
-          expects while still reading correctly right-to-left within each group. */}
-      <div className="mb-4 flex shrink-0 flex-nowrap items-center gap-3 overflow-x-auto rounded-lg border border-border bg-card p-3">
+      {/* dir on the outer toolbar itself makes the whole row a true mirror image in Hebrew mode
+          (user-requested 2026-07-24, superseding the earlier "fixed macro order" design): source
+          order is Tractate/chapter/amud cluster, Yomi buttons, daf-image controls, spacer, Text
+          controls, Commentary controls — under dir=rtl that reads right-to-left in exactly that
+          order. Each cluster below also carries its own (now redundant but harmless) matching
+          dir, which still correctly mirrors that cluster's *internal* item order. */}
+      <div
+        dir={hebrewMode ? "rtl" : "ltr"}
+        className="mb-4 flex shrink-0 flex-nowrap items-center gap-3 overflow-x-auto rounded-lg border border-border bg-card p-3"
+      >
         <div dir={hebrewMode ? "rtl" : "ltr"} className="flex shrink-0 items-center gap-3">
           <select
             value={index}
@@ -1132,7 +1165,10 @@ export default function Reader() {
           </div>
         )}
 
-        {category === "talmud" && dafImageAvailable && hebrewMode && <VerticalDivider />}
+        {/* Separates the Yomi buttons from the daf-image controls, in both directions — only
+            when Yomi actually rendered something to separate from (yomiButtons.length > 0),
+            e.g. Talmud with a Daf Yomi result loaded. */}
+        {yomiButtons.length > 0 && category === "talmud" && dafImageAvailable && <VerticalDivider />}
 
         {category === "talmud" && dafImageAvailable && (
           <div dir={hebrewMode ? "rtl" : "ltr"} className="flex shrink-0 items-center gap-3">

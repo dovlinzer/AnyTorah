@@ -23,18 +23,26 @@ them before changing anything here.
 - **SA siman picker**: `lib/saSimanHelpers.ts`'s `getSATopicSections`/`getSASimanTitle` take a
   `hebrewMode` param and switch to the (previously unwired) `hebNamesOH/YD/EH/HM` and
   `simanNamesOH/YD/EH/HM` arrays in `lib/saSimanNames.ts`.
-- **Toolbar layout — fixed macro order, mirrored internals**: this is the one place native's
-  behavior doesn't transfer directly. Applying `dir="rtl"` to the *whole* toolbar row (mirroring
-  every group's position) was tried and explicitly rejected by the user as disorienting — a
-  returning user expects the book/chapter selector on the left and Commentary on the right
-  regardless of language. The shipped design instead applies `dir={hebrewMode ? "rtl" : "ltr"}`
-  to each cluster *independently* (the book/chapter/amud group, the daf-controls group, and each
-  `ControlGroup` for Text/Commentary), while the outer toolbar `<div>` never gets a `dir`
-  attribute and its top-level children never reorder. Net effect: cluster *positions* are
-  identical in both languages; only the *order of items within each cluster* mirrors (e.g. the
-  book `<select>` moves from being the first/leftmost item in its cluster to the
-  last/rightmost — CSS `direction` inheritance handles this automatically for any un-overridden
-  nested flex row, so don't add a stray `dir="ltr"` inside a cluster or the mirroring breaks).
+- **Toolbar layout — full mirror image (revised 2026-07-24)**: an earlier design (fixed macro
+  cluster order, only mirroring *within* each cluster) was explicitly reversed by the user, who
+  found the non-mirrored macro order confusing. The outer toolbar `<div>` now also carries
+  `dir={hebrewMode ? "rtl" : "ltr"}`, on top of the same attribute already present on each
+  cluster (book/chapter/amud group, Yomi-buttons group, daf-controls group, each `ControlGroup`
+  for Text/Commentary) — redundant where values match, but it's the outer `dir` that actually
+  reorders the *clusters themselves*, not just each cluster's internal items. Source order is
+  fixed as: book/chapter/amud cluster, Yomi buttons, daf-image controls (show/hide + position,
+  Talmud only), a flex spacer, Text controls, Commentary controls. In English this reads
+  left-to-right in that order; in Hebrew, `dir=rtl` mirrors the whole row, so it reads
+  right-to-left in that *same* source order — i.e. a true mirror image, not just flipped labels.
+  Do not re-introduce a "fixed macro position" design without the user's explicit sign-off; this
+  was tried once already and reversed once already, in opposite directions, both times based on
+  direct user feedback.
+- **Yomi buttons cluster placement**: sits immediately after the book/chapter/amud cluster in
+  source order (see `lib/yomiService.ts`/"Yomi buttons" section below for the buttons themselves).
+  For Tanakh, Parsha is pushed before 929 in `Reader.tsx`'s `yomiButtons` array (source order) —
+  under the toolbar's mirroring above, this reads "Parsha, then 929" left-to-right in English and
+  right-to-left in Hebrew (Parsha sits closer to the selector boxes in both directions), matching
+  explicit user request.
   A third `VerticalDivider` (Hebrew-mode only) separates the book/chapter/amud cluster from the
   daf-controls cluster, present only when both clusters actually render content
   (`category === "talmud" && dafImageAvailable`).
@@ -220,11 +228,28 @@ category-scoped, that was only ever a lazy-trigger quirk of native's per-tab sel
 a `yomi: YomiToday | null` state, and computes a `yomiButtons` array each render (one entry for
 whichever of Daf Yomi/Mishnah Yomi/Rambam Yomi/929/Parsha is relevant to the current `category`;
 tosefta/yerushalmi/shulchanArukh get none, matching native exactly). Rendered as a `YomiButton`
-pill cluster in the toolbar, right after the book/chapter/amud cluster, only when
-`yomiButtons.length > 0` (so no empty divider shows for categories with no Yomi jump).
-`jumpToYomi(r: YomiResult)` sets `category` + that category's `selection` entry directly — no
-scroll-to-verse (native scrolls Parsha to its opening verse; this port has no verse-scroll
-infrastructure yet, so Parsha just lands on the chapter, same as how 929 already works here).
+pill cluster in the toolbar — see "Toolbar layout" above for its placement relative to the other
+clusters — only when `yomiButtons.length > 0` (so no empty divider shows for categories with no
+Yomi jump). `jumpToYomi(r: YomiResult)` sets `category` + that category's `selection` entry
+directly — no scroll-to-verse (native scrolls Parsha to its opening verse; this port has no
+verse-scroll infrastructure yet, so Parsha just lands on the chapter, same as how 929 already
+works here).
+
+**Button label content, revised 2026-07-24 per explicit user feedback:** only Daf Yomi and Parsha
+show what they actually point to; Mishnah Yomi, Rambam Yomi, and 929 are plain titles with no
+chapter/section reference (`"Mishnah Yomi"` / `"Rambam Yomi"` / `"Today's 929"`, not `"Mishnah
+Yomi: Keilim ch. 19"` etc.). Daf Yomi shows `"Daf Yomi: {tractate} {daf}"`; Parsha shows `"Parsha:
+{name}"`. Names switch to Hebrew under `hebrewMode`: the Daf Yomi tractate name comes from
+`findCategoryItemName("talmud", index, hebrewMode)` — a small helper (top of `Reader.tsx`) that
+looks up a catalog item's display name via `getCategoryGroups`, since the Daf Yomi tractate is
+usually *not* the currently-selected one and so isn't available from the component's own
+`groups`/`index` state — and the daf number itself switches to `toHebrewNumeral` in Hebrew mode
+(re-imported into `Reader.tsx` specifically for this; the inline chapter/daf input box stays
+Arabic-numeral-only for typability, per the "Numerals" note above, but this is a display-only
+label, not an input, so a Hebrew numeral is fine here). Parsha's Hebrew name comes straight from
+Sefaria's calendar response (`ParshaResult.hebrewName`, populated from `displayValue.he` in
+`lib/yomiService.ts`) rather than any catalog lookup — there's no catalog concept of parasha
+names elsewhere in this app to reuse.
 
 **Name-map verification, not a blind port:** native's own `talmudNameMap`/`mishnahNameMap`/
 `rambamNameMap` don't transfer as-is, because this catalog's `sefariaName` spellings sometimes
@@ -253,3 +278,36 @@ Verified live end-to-end against the real `/api/calendars` response (not mocked)
 Chullin 85, Mishnah Yomi → Keilim ch. 19, Rambam Yomi → Shofar, Sukkah veLulav ch. 6, 929 → Shmuel
 I 3, Parsha → Vaetchanan (Devarim 3) — clicking each button in the browser landed on the correct
 daf/chapter/tractate with the right commentary panel populated.
+
+## MISHNA:/GEMARA: must start a new line (English Talmud text)
+
+**The bug:** on some dafim (confirmed: Berakhot 2a, Yevamot 2a), the English translation's
+opening segment bundles a tractate's introductory note together with the `MISHNA:` marker into
+one Sefaria segment string, separated only by `<br><br>` — e.g. `"...appropriate time to recite
+Shema: <br><br><strong>MISHNA:</strong> <b>From when,</b>..."`. `stripHTML` (`lib/sefariaClient.ts`)
+used to delete `<br>` tags outright (replace with `""`), so the intro and "MISHNA:" rendered
+glued onto one line/paragraph instead of the intro ending and Mishna beginning cleanly. Likely
+affects other tractates too, not just the two confirmed.
+
+**Fix, two parts (`lib/sefariaClient.ts`):**
+1. `stripHTML` now converts `<br>`/`<br/>` to a literal `\n` instead of deleting it. Rendered with
+   `white-space: pre-line` (already applied to every English/Hebrew paragraph in `Reader.tsx`), a
+   `\n` produces a real line break. This is a general correctness fix for every `stripHTML` caller
+   (Hebrew, Tanakh, Rambam, SA too) — Sefaria's `<br>` was always meant to be a line break, never
+   nothing.
+2. `forceNewLineBeforeStructuralMarkers` (new, called from `processedEnglishWithBold` — the
+   function used for Talmud/Mishnah English, see `app/api/chapter/route.ts`'s `englishProcessor`)
+   explicitly inserts `\n` immediately before any `<strong>MISHNA:</strong>` / `<strong>GEMARA:
+   </strong>` that isn't already at the very start of the string or already preceded by a `<br>`/
+   newline. This is deliberately **not** just relying on fix #1 — per explicit user request,
+   MISHNA/GEMARA should always start a new line as a standing rule, not only when Sefaria's source
+   happens to include a `<br>` before it (which isn't guaranteed to hold for every tractate; most
+   of the time GEMARA already starts its own Sefaria *segment*, and thus its own `<p>` in
+   `Reader.tsx`'s per-segment rendering, but MISHNA sometimes doesn't, as the confirmed cases
+   show). Runs on the raw HTML before `BOLD_TAG_RE` converts `<strong>`/`<b>` into placeholder
+   tokens, so the inserted `\n` ends up correctly positioned before the restored
+   `<span class="en-editorial">` in the final output.
+
+Verified against the live Sefaria API (not just synthetic input) for both confirmed dafim, and
+against synthetic edge cases (marker with no preceding `<br>` at all; marker already at the very
+start of its segment) to confirm no double line breaks and no spurious leading blank line.

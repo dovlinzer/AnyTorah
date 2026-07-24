@@ -921,6 +921,11 @@ export function stripLeadingBoldLabel(html: string): string {
 export function stripHTML(html: string): string {
   const s = stripYerushalmiFootnotes(html);
   return s
+    // <br> must become a real line break, not just vanish — Sefaria sometimes joins two
+    // structurally distinct paragraphs (e.g. a tractate's introductory note and its opening
+    // MISHNA) into one segment string separated only by <br><br>. Rendered with
+    // `white-space: pre-line` (see Reader.tsx), a literal \n produces a real line break.
+    .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/g, " ")
     .replace(/&thinsp;/g, " ")
@@ -973,6 +978,24 @@ export function processedHebrewWithMarkers(html: string, showTrop: boolean = fal
 
 const BOLD_TAG_RE = /<(?:b|strong)>([\s\S]*?)<\/(?:b|strong)>/g;
 
+// Sefaria marks Talmud's structural section breaks as `<strong>MISHNA:</strong>` /
+// `<strong>GEMARA:</strong>`. These must always start a new line \u2014 most of the time they already
+// do (either as the first thing in their own segment, or after a `<br><br>` mid-segment), but
+// that's an incidental property of Sefaria's source data, not something to rely on for every
+// tractate. Confirmed broken on Berakhot 2a and Yevamot 2a: both open with an introductory note
+// and "MISHNA:" bundled into one segment string, run together on one line.
+const STRUCTURAL_MARKER_RE = /<strong>(?:MISHNA|GEMARA):<\/strong>/g;
+
+/** Forces a line break immediately before MISHNA:/GEMARA: markers, unless one is already there
+ *  (start of string, or already preceded by `<br>`/a newline) \u2014 see STRUCTURAL_MARKER_RE. */
+function forceNewLineBeforeStructuralMarkers(html: string): string {
+  return html.replace(STRUCTURAL_MARKER_RE, (match, offset: number, full: string) => {
+    const before = full.slice(0, offset);
+    if (before === "" || /(?:<br\s*\/?>\s*|\n\s*)$/i.test(before)) return match;
+    return "\n" + match;
+  });
+}
+
 /**
  * Like stripHTML, but converts `<b>`/`<strong>` spans into `<span class="en-editorial">\u2026</span>`
  * instead of discarding the tags. Ported from native's styledEnglish (TextContentView.swift):
@@ -982,11 +1005,12 @@ const BOLD_TAG_RE = /<(?:b|strong)>([\s\S]*?)<\/(?:b|strong)>/g;
  * instead of literal bold weight \u2014 bold weight alone reads as emphasis, not as "this word isn't
  * really in the source," which is what the color is for. Must be rendered with
  * dangerouslySetInnerHTML; everything else in the returned string is plain-texted exactly as
- * stripHTML would produce.
+ * stripHTML would produce. Also ensures MISHNA:/GEMARA: markers always start a new line \u2014 see
+ * forceNewLineBeforeStructuralMarkers.
  */
 export function processedEnglishWithBold(html: string): string {
   const spans: string[] = [];
-  const withPlaceholders = html.replace(BOLD_TAG_RE, (_m, inner: string) => {
+  const withPlaceholders = forceNewLineBeforeStructuralMarkers(html).replace(BOLD_TAG_RE, (_m, inner: string) => {
     const i = spans.length;
     spans.push(`<span class="en-editorial">${stripHTML(inner)}</span>`);
     return `\uE000B${i}\uE000`;
