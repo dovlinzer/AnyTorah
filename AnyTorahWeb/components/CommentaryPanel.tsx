@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { type CommentaryType, displayName, hebrewDisplayName, hasInlineSAMarkers } from "@/lib/commentaryTypes";
 import type { ReaderCategory, PoolInfo } from "@/lib/commentaryPools";
 import { saHebrewLetter, SA_SLOT_STYLES, type TextDisplayMode, type CommentaryEntry } from "@/lib/textModels";
-import { fontSizePx, fontSizeLineHeight } from "@/lib/fontSizeLevels";
+import { fontSizePx, fontSizeLineHeight, fontSizeSpacingScale } from "@/lib/fontSizeLevels";
 
 export default function CommentaryPanel({
   category,
@@ -51,6 +51,11 @@ export default function CommentaryPanel({
   const hebrewFontPx = fontSizePx(20, fontSizeLevel);
   const englishFontPx = fontSizePx(16, fontSizeLevel);
   const lineHeight = fontSizeLineHeight(fontSizeLevel);
+  // Same rationale as Reader.tsx's mainSegmentGap/mainLineGap — the fixed gap between entries
+  // (and between an entry's Hebrew/English lines) dominated the visual rhythm more than
+  // in-paragraph line-height for typical short entries, so it needs to scale too.
+  const entryGap = 12 * fontSizeSpacingScale(fontSizeLevel);
+  const entryLineGap = 4 * fontSizeSpacingScale(fontSizeLevel);
   const [activeIndex, setActiveIndex] = useState(0);
   const [openSlotIndex, setOpenSlotIndex] = useState<number | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -167,7 +172,11 @@ export default function CommentaryPanel({
         </div>
       )}
 
-      <div ref={contentRef} className="flex-1 space-y-3 overflow-y-auto p-3 text-sm">
+      <div
+        ref={contentRef}
+        className="flex-1 overflow-y-auto p-3 text-sm"
+        style={{ display: "flex", flexDirection: "column", gap: entryGap }}
+      >
         {loading && <p className="py-6 text-center opacity-60">Loading…</p>}
         {error && <p className="py-6 text-center text-red-500">{error}</p>}
         {!loading && !error && entries && entries.length === 0 && (
@@ -228,7 +237,7 @@ export default function CommentaryPanel({
             return (
               <div key={i} className={`flex gap-2 ${numberOnRight ? "flex-row-reverse" : ""}`}>
                 {labelNode}
-                <div className="flex-1 space-y-1">
+                <div className="flex-1" style={{ display: "flex", flexDirection: "column", gap: entryLineGap }}>
                   {(displayMode === "source" || displayMode === "both") && entry.he && (
                     <p
                       dir="rtl"

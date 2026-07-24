@@ -25,6 +25,7 @@ import {
   FONT_SIZE_LABELS,
   fontSizePx,
   fontSizeLineHeight,
+  fontSizeSpacingScale,
 } from "@/lib/fontSizeLevels";
 import BookmarkEditModal from "@/components/BookmarkEditModal";
 import BookmarkListModal from "@/components/BookmarkListModal";
@@ -540,6 +541,12 @@ export default function Reader() {
   // step (2px) smaller specifically for Talmud, not the other categories.
   const mainEnglishFontPx = fontSizePx(16, mainFontSizeLevel) - (category === "talmud" ? 2 : 0);
   const mainLineHeight = fontSizeLineHeight(mainFontSizeLevel);
+  // Base gaps (16px between verses, 6px between a verse's Hebrew/English lines) scaled by the
+  // same font-size level so the *inter-segment* rhythm tightens/loosens alongside the text
+  // itself — see fontSizeSpacingScale's comment for why this matters more than in-paragraph
+  // line-height for most (short, unwrapped) segments.
+  const mainSegmentGap = 16 * fontSizeSpacingScale(mainFontSizeLevel);
+  const mainLineGap = 6 * fontSizeSpacingScale(mainFontSizeLevel);
 
   const { index, chapter } = selection[category];
   const groups = useMemo(() => getCategoryGroups(category, hebrewMode), [category, hebrewMode]);
@@ -1010,7 +1017,7 @@ export default function Reader() {
           {!loading && !error && data && (
             <>
               <p className="mb-4 text-xs opacity-50">{data.ref}</p>
-              <div className="space-y-4 pb-8">
+              <div className="pb-8" style={{ display: "flex", flexDirection: "column", gap: mainSegmentGap }}>
                 {data.segments.map((seg) =>
                   seg.isAmudBMarker ? (
                     <div key={seg.id} ref={amudBRef} className="flex items-center gap-3 py-2 text-xs opacity-60">
@@ -1025,7 +1032,7 @@ export default function Reader() {
                           {seg.label}
                         </span>
                       )}
-                      <div className="flex-1 space-y-1.5">
+                      <div className="flex-1" style={{ display: "flex", flexDirection: "column", gap: mainLineGap }}>
                         {(textDisplayMode === "source" || textDisplayMode === "both") && seg.hebrewHTML && (
                           category === "shulchanArukh" ? (
                             // SA Hebrew carries <span class="sa-mark sa-mark-N"> spans for its
