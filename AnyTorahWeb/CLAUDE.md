@@ -204,3 +204,52 @@ native's "only mark today as checked when a dedication was actually found" quirk
 - **Known quirk (matches native, not a bug):** the `date` column has no timezone, and the
   "is this active today" check compares in UTC. A `period: "today"` dedication can roll out of
   its window before local midnight for users west of UTC — same behavior as native.
+
+## Yomi buttons — shipped
+
+Ports native's `YomiService.swift` (see `AnyTorah/CLAUDE.md`'s "Yomi" section), adapted for this
+catalog's flat `{category, index, chapter}` selection shape instead of native's seder/
+tractateIndexInSeder pairs — `lib/yomiService.ts`'s parsers look tractates/works/books up directly
+via `TextCatalog.allXTractates.find(sefariaName === ...)`, no nested seder loop needed.
+
+`app/api/yomi/route.ts` fetches `https://www.sefaria.org/api/calendars` server-side (1hr
+`revalidate`, same pattern as the other API routes — Sefaria's calendar only rolls over once a
+day) and returns `parseCalendarItems`'s output directly. `Reader.tsx` fetches `/api/yomi` once on
+mount (unlike native, which re-fetches per category-tab visit — the data itself isn't
+category-scoped, that was only ever a lazy-trigger quirk of native's per-tab selector screen) into
+a `yomi: YomiToday | null` state, and computes a `yomiButtons` array each render (one entry for
+whichever of Daf Yomi/Mishnah Yomi/Rambam Yomi/929/Parsha is relevant to the current `category`;
+tosefta/yerushalmi/shulchanArukh get none, matching native exactly). Rendered as a `YomiButton`
+pill cluster in the toolbar, right after the book/chapter/amud cluster, only when
+`yomiButtons.length > 0` (so no empty divider shows for categories with no Yomi jump).
+`jumpToYomi(r: YomiResult)` sets `category` + that category's `selection` entry directly — no
+scroll-to-verse (native scrolls Parsha to its opening verse; this port has no verse-scroll
+infrastructure yet, so Parsha just lands on the chapter, same as how 929 already works here).
+
+**Name-map verification, not a blind port:** native's own `talmudNameMap`/`mishnahNameMap`/
+`rambamNameMap` don't transfer as-is, because this catalog's `sefariaName` spellings sometimes
+differ from native's own catalog (each was independently transcribed). Verified directly against
+Sefaria's live `/api/index` + `/api/calendars` output (see
+[[feedback_verify_against_source_not_spotchecks]]) rather than assumed:
+- **Talmud**: no map needed — every real Bavli tractate title (confirmed via `/api/index`) matches
+  this catalog's `sefariaName` exactly, including "Taanit" with no apostrophe (native's catalog
+  spells it "Ta'anit" and needs a map entry for exactly this reason; this one doesn't).
+- **Mishnah**: 3 real mismatches found by diffing this catalog's tractate list against Sefaria's —
+  `Ta'anit`→`Mishnah Taanit`, `Oholot`→`Mishnah Ohalot`, `Tahorot`→`Mishnah Taharot` (Sefaria
+  spells the Mishnah tractate "Ta'anit" with an apostrophe even though the Talmud tractate of the
+  same name has none — confirmed both spellings are independently real on Sefaria, not a typo).
+- **Rambam**: native's 19-entry `rambamNameMap` was kept as-is (not re-derived) — spot-checked one
+  entry (`"The Order of Prayer"` → `"Mishneh Torah, Prayer and the Priestly Blessing"`) against
+  Sefaria's live index and confirmed `"Mishneh Torah, The Order of Prayer"` is a genuine distinct
+  historical title Sefaria's calendar sometimes emits for this work, not a guess — so the rest of
+  native's table (reverse-engineered from real production calendar data over time) is trusted
+  too. All 73 of this catalog's Rambam `sefariaName`s independently confirmed to already match
+  Sefaria's real titles verbatim, so the map only matters on the days the calendar emits one of
+  these alternate names.
+- **Tanakh**: no map needed — all 39 of this catalog's book `sefariaName`s (e.g. `"I Samuel"`)
+  matched Sefaria's real titles exactly.
+
+Verified live end-to-end against the real `/api/calendars` response (not mocked): Daf Yomi →
+Chullin 85, Mishnah Yomi → Keilim ch. 19, Rambam Yomi → Shofar, Sukkah veLulav ch. 6, 929 → Shmuel
+I 3, Parsha → Vaetchanan (Devarim 3) — clicking each button in the browser landed on the correct
+daf/chapter/tractate with the right commentary panel populated.
