@@ -84,3 +84,24 @@ body {
   color: var(--accent);
   font-weight: 400;
 }
+
+/*
+ * YCT logo (header branding): the color mark reads fine on the light theme's white background
+ * but has poor contrast against the dark theme's navy background, so we swap in the all-white
+ * variant there instead of hiding the logo entirely.
+ */
+.yct-logo {
+  height: 64px;
+  width: auto;
+}
+.yct-logo-dark {
+  display: none;
+}
+@media (prefers-color-scheme: dark) {
+  .yct-logo-light {
+    display: none;
+  }
+  .yct-logo-dark {
+    display: inline-block;
+  }
+}

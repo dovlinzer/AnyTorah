@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { TextDisplayMode, TextSegment } from "@/lib/textModels";
 import type { CommentaryType } from "@/lib/commentaryTypes";
 import { getPoolInfo, computeEffectiveSlots, type ReaderCategory } from "@/lib/commentaryPools";
@@ -92,9 +92,11 @@ function storeFontSizeLevel(key: string, level: number) {
   }
 }
 
-// Hebrew/RTL display mode — matches native's saHebrewMode: book/tractate names and category
-// tabs switch to nikkud-stripped Hebrew, chapter/siman numbers show as Hebrew numerals, and the
-// selector toolbar flips to RTL layout. Independent of the per-panel Hebrew/English/both content
+// Hebrew/RTL display mode — matches native's saHebrewMode: book/tractate names, category tabs,
+// and commentator names switch to nikkud-stripped Hebrew, chapter/siman numbers show as Hebrew
+// numerals, and the commentary tab strip flips to RTL (so the default-first commentator lands on
+// the right). Toolbar/selector *positions* stay fixed regardless of this setting — only labels
+// and the commentary strip change. Independent of the per-panel Hebrew/English/both content
 // toggles (textDisplayMode/commentaryDisplayMode) — this only affects UI chrome, not which
 // language of the text itself is shown.
 const HEBREW_MODE_KEY = "anytorah:hebrewMode";
@@ -112,6 +114,29 @@ function storeHebrewMode(on: boolean) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(HEBREW_MODE_KEY, on ? "1" : "0");
+  } catch {
+    // localStorage unavailable — toggle just won't persist.
+  }
+}
+
+// Reverse Navigation Direction — a separate, independent setting (native has this too) that
+// swaps which physical arrow/chevron moves forward vs. backward. Off by default: right/next
+// matches left-to-right reading convention regardless of hebrewMode.
+const REVERSE_NAV_KEY = "anytorah:reverseNavigation";
+
+function loadReverseNavigation(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(REVERSE_NAV_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function storeReverseNavigation(on: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(REVERSE_NAV_KEY, on ? "1" : "0");
   } catch {
     // localStorage unavailable — toggle just won't persist.
   }
@@ -234,11 +259,14 @@ function FontSizeControl({
   label,
   level,
   onChange,
+  hebrewMode = false,
 }: {
   label: string;
   level: number;
   onChange: (n: number) => void;
+  hebrewMode?: boolean;
 }) {
+  const letter = hebrewMode ? "א" : "A";
   return (
     <div className="flex items-center gap-2 rounded-full border border-border px-3 py-1.5">
       <button
@@ -247,7 +275,7 @@ function FontSizeControl({
         aria-label={`Decrease ${label} font size`}
         className="text-xs opacity-70 transition-opacity hover:opacity-100 disabled:opacity-25"
       >
-        A
+        {letter}
       </button>
       <div className="flex items-center gap-1">
         {FONT_SIZE_LEVELS.map((d) => {
@@ -275,7 +303,7 @@ function FontSizeControl({
         aria-label={`Increase ${label} font size`}
         className="text-base opacity-70 transition-opacity hover:opacity-100 disabled:opacity-25"
       >
-        A
+        {letter}
       </button>
     </div>
   );
@@ -363,18 +391,78 @@ function HebrewModeToggle({ on, onChange }: { on: boolean; onChange: (v: boolean
   );
 }
 
+/** Toggles Reverse Navigation Direction — swaps which physical arrow/chevron moves forward vs.
+ *  backward, independent of hebrewMode (native has this as its own separate setting). */
+function ReverseNavToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      onClick={() => onChange(!on)}
+      aria-pressed={on}
+      aria-label="Reverse navigation direction"
+      title="Reverse navigation direction"
+      className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+      style={on ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+    >
+      ⇄
+    </button>
+  );
+}
+
 /** Thin vertical rule separating the Text and Commentary control groups. */
 function VerticalDivider() {
   return <div className="h-8 w-px shrink-0 self-center bg-border" />;
+}
+
+/** Prev/next chevrons overlaid on whichever box sits next to the Commentary panel (see
+ *  chevronsOnDaf in Reader). Hidden at the start/end of a book/tractate/section. */
+function NavChevrons({
+  hideLeft,
+  hideRight,
+  onStep,
+}: {
+  hideLeft: boolean;
+  hideRight: boolean;
+  onStep: (direction: 1 | -1) => void;
+}) {
+  return (
+    <>
+      {!hideLeft && (
+        <button
+          onClick={() => onStep(-1)}
+          aria-label="Previous"
+          className="absolute left-1 top-1/2 z-10 -translate-y-1/2 rounded-full border border-border bg-card/80 px-2 py-3 text-lg opacity-40 backdrop-blur transition-opacity hover:opacity-100"
+        >
+          ‹
+        </button>
+      )}
+      {!hideRight && (
+        <button
+          onClick={() => onStep(1)}
+          aria-label="Next"
+          className="absolute right-1 top-1/2 z-10 -translate-y-1/2 rounded-full border border-border bg-card/80 px-2 py-3 text-lg opacity-40 backdrop-blur transition-opacity hover:opacity-100"
+        >
+          ›
+        </button>
+      )}
+    </>
+  );
 }
 
 /**
  * A labeled cluster of controls — "Text" or "Commentary" sits inline before its pills (not
  * above them) so the whole group stays a single line and lines up with the rest of the toolbar.
  */
-function ControlGroup({ label, children }: { label: string; children: ReactNode }) {
+function ControlGroup({
+  label,
+  children,
+  hebrewMode = false,
+}: {
+  label: string;
+  children: ReactNode;
+  hebrewMode?: boolean;
+}) {
   return (
-    <div className="flex shrink-0 items-center gap-2">
+    <div dir={hebrewMode ? "rtl" : "ltr"} className="flex shrink-0 items-center gap-2">
       <span className="text-xs opacity-60">{label}</span>
       {children}
     </div>
@@ -399,6 +487,12 @@ export default function Reader() {
   const setHebrewMode = (on: boolean) => {
     setHebrewModeState(on);
     storeHebrewMode(on);
+  };
+  const [reverseNavigation, setReverseNavigationState] = useState(false);
+  useEffect(() => setReverseNavigationState(loadReverseNavigation()), []);
+  const setReverseNavigation = (on: boolean) => {
+    setReverseNavigationState(on);
+    storeReverseNavigation(on);
   };
   // Text and commentary each get their own Hebrew/English/both toggle — some users want to
   // read the main text in "both" but skim commentary in English-only, or vice versa.
@@ -478,9 +572,12 @@ export default function Reader() {
   const handleIndexChange = (id: number) => {
     setSelection((s) => ({ ...s, [category]: { index: id, chapter: getChapterMin(category, id) } }));
   };
-  const handleChapterChange = (c: number) => {
-    setSelection((s) => ({ ...s, [category]: { ...s[category], chapter: c } }));
-  };
+  const handleChapterChange = useCallback(
+    (c: number) => {
+      setSelection((s) => ({ ...s, [category]: { ...s[category], chapter: c } }));
+    },
+    [category],
+  );
 
   // Commentary slots live here (not inside CommentaryPanel) because Shulchan Arukh's main text
   // needs to know the current selection to render matching inline commentary-marker brackets.
@@ -536,14 +633,90 @@ export default function Reader() {
   }, [category, index, chapter, commentariesKey]);
 
   // Talmud amud a/b jump — scroll-only (both amudim are always loaded together). Resets to
-  // "a" on every new daf/tractate/category, matching the expectation that a daf opens at 2a.
+  // "a" on every new daf/tractate/category, matching the expectation that a daf opens at 2a —
+  // except when stepBackward() below crosses a daf boundary, where it should land on the
+  // *previous* daf's amud b instead; skipAmudResetRef lets that one case suppress this reset.
   const [talmudAmud, setTalmudAmud] = useState<"a" | "b">("a");
   const textContainerRef = useRef<HTMLDivElement>(null);
   const amudBRef = useRef<HTMLDivElement>(null);
+  const skipAmudResetRef = useRef(false);
 
-  useEffect(() => setTalmudAmud("a"), [category, index, chapter]);
+  useEffect(() => {
+    if (skipAmudResetRef.current) {
+      skipAmudResetRef.current = false;
+      return;
+    }
+    setTalmudAmud("a");
+  }, [category, index, chapter]);
 
   const [simanPickerOpen, setSimanPickerOpen] = useState(false);
+
+  // Shared "advance/retreat one reading step" used by both arrow keys and the chevron buttons.
+  // For Talmud, a step moves one amud at a time (a→b within a daf, then b→a of the next/previous
+  // daf) rather than jumping a whole daf, matching how the text actually scrolls.
+  const stepReading = useCallback(
+    (rawDirection: 1 | -1) => {
+      // Reverse Navigation Direction inverts the physical→logical mapping here, once, so every
+      // caller (arrow keys, both chevron positions) stays agnostic of the setting — they always
+      // pass -1 for "the control on the left" and +1 for "the control on the right".
+      const direction: 1 | -1 = reverseNavigation ? ((rawDirection * -1) as 1 | -1) : rawDirection;
+      if (category === "talmud") {
+        if (direction === 1) {
+          if (talmudAmud === "a") {
+            setTalmudAmud("b");
+          } else {
+            const next = clamp(chapter + 1, chapterMin, chapterMax);
+            if (next !== chapter) handleChapterChange(next); // lands on amud "a" via the reset effect
+          }
+        } else {
+          if (talmudAmud === "b") {
+            setTalmudAmud("a");
+          } else {
+            const prev = clamp(chapter - 1, chapterMin, chapterMax);
+            if (prev !== chapter) {
+              skipAmudResetRef.current = true;
+              handleChapterChange(prev);
+              setTalmudAmud("b");
+            }
+          }
+        }
+        return;
+      }
+      const next = clamp(chapter + direction, chapterMin, chapterMax);
+      if (next !== chapter) handleChapterChange(next);
+    },
+    [category, chapter, chapterMin, chapterMax, talmudAmud, handleChapterChange, reverseNavigation],
+  );
+
+  const atReadingStart = category === "talmud" ? chapter === chapterMin && talmudAmud === "a" : chapter === chapterMin;
+  const atReadingEnd = category === "talmud" ? chapter === chapterMax && talmudAmud === "b" : chapter === chapterMax;
+  // The left chevron always passes -1 and the right always passes +1 (see stepReading), so which
+  // one is a no-op at a boundary swaps along with reverseNavigation.
+  const hideLeftChevron = reverseNavigation ? atReadingEnd : atReadingStart;
+  const hideRightChevron = reverseNavigation ? atReadingStart : atReadingEnd;
+
+  // The chevrons always sit on whichever box is adjacent to the Commentary panel: normally that's
+  // the text (dafPosition "left", or no daf shown at all), but when the daf image takes the
+  // middle slot, the text gets pushed to the outer/left slot and the daf box becomes the one
+  // next to Commentary — so the chevrons move there instead.
+  const chevronsOnDaf = showDaf && dafPosition === "middle";
+
+  // Arrow-key chapter/daf/siman navigation. Ignored while typing in a field (so ← → still work
+  // for cursor movement in the chapter input/select) or while the siman picker modal is open (it
+  // has its own keyboard handling). Right = next, Left = previous, regardless of hebrewMode —
+  // a fixed UI convention rather than a text-direction-dependent one.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      if (e.altKey || e.metaKey || e.ctrlKey) return;
+      if (simanPickerOpen) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      stepReading(e.key === "ArrowRight" ? 1 : -1);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [category, chapter, chapterMin, chapterMax, talmudAmud, simanPickerOpen, stepReading]);
 
   useEffect(() => {
     if (category !== "talmud") return;
@@ -559,11 +732,23 @@ export default function Reader() {
       className={`mx-auto flex h-screen w-full flex-col px-4 py-6 ${showDaf ? "max-w-[100rem]" : "max-w-7xl"}`}
     >
       <header className="mb-6 flex shrink-0 items-center justify-between">
-        <h1 className="text-xl font-semibold tracking-tight" style={{ color: "var(--accent)" }}>
-          AnyTorah
-        </h1>
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, no need for next/image */}
+          <img src="/yct-logo-color.png" alt="YCT" className="yct-logo yct-logo-light" />
+          {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, no need for next/image */}
+          <img src="/yct-logo-white.png" alt="YCT" className="yct-logo yct-logo-dark" />
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight" style={{ color: "var(--accent)" }}>
+              AnyTorah
+            </h1>
+            {/* Exact copy from native's SplashView.swift ("Powered by YCT and Sefaria", italic, 55% opacity). */}
+            <p className="text-xs italic" style={{ opacity: 0.55 }}>
+              Powered by YCT and Sefaria
+            </p>
+          </div>
+        </div>
         <div className="flex shrink-0 items-center gap-3">
-          <div dir={hebrewMode ? "rtl" : "ltr"} className="flex overflow-hidden rounded-full border border-border text-sm">
+          <div className="flex overflow-hidden rounded-full border border-border text-sm">
             {READER_CATEGORIES.map((c) => (
               <button
                 key={c}
@@ -576,105 +761,113 @@ export default function Reader() {
             ))}
           </div>
           <HebrewModeToggle on={hebrewMode} onChange={setHebrewMode} />
+          <ReverseNavToggle on={reverseNavigation} onChange={setReverseNavigation} />
         </div>
       </header>
 
-      <div
-        dir={hebrewMode ? "rtl" : "ltr"}
-        className="mb-4 flex shrink-0 flex-nowrap items-center gap-3 overflow-x-auto rounded-lg border border-border bg-card p-3"
-      >
-        <select
-          value={index}
-          onChange={(e) => handleIndexChange(Number(e.target.value))}
-          className="shrink-0 rounded border border-border bg-background px-2 py-1 text-sm"
-        >
-          {groups.map((group) =>
-            group.name ? (
-              <optgroup key={group.name} label={group.name}>
-                {group.items.map((item) => (
-                  <option key={item.id} value={item.id}>{item.name}</option>
-                ))}
-              </optgroup>
-            ) : (
-              group.items.map((item) => (
-                <option key={item.id} value={item.id}>{item.name}</option>
-              ))
-            ),
-          )}
-        </select>
-        <span className="shrink-0 text-sm opacity-60">{chapterUnit}</span>
-        <CommitInput value={chapter} min={chapterMin} max={chapterMax} onCommit={handleChapterChange} />
-        <span className="shrink-0 text-xs opacity-50">
-          {chapterMin === 1
-            ? hebrewMode ? `מתוך ${numeral(chapterMax)}` : `of ${chapterMax}`
-            : `${numeral(chapterMin)}–${numeral(chapterMax)}`}
-        </span>
-
-        {category === "shulchanArukh" && (
-          <button
-            onClick={() => setSimanPickerOpen(true)}
-            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+      {/* Macro layout (which cluster sits where) never changes with hebrewMode — only each
+          cluster's *internal* order mirrors (via dir=rtl on that cluster alone), and labels/names
+          translate to Hebrew. This keeps every selector in the same place a returning user
+          expects while still reading correctly right-to-left within each group. */}
+      <div className="mb-4 flex shrink-0 flex-nowrap items-center gap-3 overflow-x-auto rounded-lg border border-border bg-card p-3">
+        <div dir={hebrewMode ? "rtl" : "ltr"} className="flex shrink-0 items-center gap-3">
+          <select
+            value={index}
+            onChange={(e) => handleIndexChange(Number(e.target.value))}
+            className="shrink-0 rounded border border-border bg-background px-2 py-1 text-sm"
           >
-            {hebrewMode ? "עיין בסימנים…" : "Browse simanim…"}
-          </button>
-        )}
+            {groups.map((group) =>
+              group.name ? (
+                <optgroup key={group.name} label={group.name}>
+                  {group.items.map((item) => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </optgroup>
+              ) : (
+                group.items.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))
+              ),
+            )}
+          </select>
+          <span className="shrink-0 text-sm opacity-60">{chapterUnit}</span>
+          <CommitInput value={chapter} min={chapterMin} max={chapterMax} onCommit={handleChapterChange} />
+          <span className="shrink-0 text-xs opacity-50">
+            {chapterMin === 1
+              ? hebrewMode ? `מתוך ${numeral(chapterMax)}` : `of ${chapterMax}`
+              : `${numeral(chapterMin)}–${numeral(chapterMax)}`}
+          </span>
 
-        {category === "talmud" && (
-          <div className="flex shrink-0 overflow-hidden rounded-full border border-border text-sm">
-            {(["a", "b"] as const).map((a) => (
-              <button
-                key={a}
-                onClick={() => setTalmudAmud(a)}
-                className="px-3 py-1.5 transition-colors"
-                style={talmudAmud === a ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
-              >
-                {hebrewMode ? (a === "a" ? "א" : "ב") : a}
-              </button>
-            ))}
-          </div>
-        )}
+          {category === "shulchanArukh" && (
+            <button
+              onClick={() => setSimanPickerOpen(true)}
+              className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+            >
+              {hebrewMode ? "עיין בסימנים…" : "Browse simanim…"}
+            </button>
+          )}
+
+          {category === "talmud" && (
+            <div className="flex shrink-0 overflow-hidden rounded-full border border-border text-sm">
+              {(["a", "b"] as const).map((a) => (
+                <button
+                  key={a}
+                  onClick={() => setTalmudAmud(a)}
+                  className="px-3 py-1.5 transition-colors"
+                  style={talmudAmud === a ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+                >
+                  {hebrewMode ? (a === "a" ? "א" : "ב") : a}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {category === "talmud" && dafImageAvailable && hebrewMode && <VerticalDivider />}
 
         {category === "talmud" && dafImageAvailable && (
-          <button
-            onClick={() => setShowDafImage(!showDafImage)}
-            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
-            style={showDafImage ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
-          >
-            {hebrewMode ? (showDafImage ? "הסתר דף" : "הצג דף") : showDafImage ? "Hide daf" : "Show daf"}
-          </button>
-        )}
+          <div dir={hebrewMode ? "rtl" : "ltr"} className="flex shrink-0 items-center gap-3">
+            <button
+              onClick={() => setShowDafImage(!showDafImage)}
+              className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+              style={showDafImage ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+            >
+              {hebrewMode ? (showDafImage ? "הסתר דף" : "הצג דף") : showDafImage ? "Hide daf" : "Show daf"}
+            </button>
 
-        {showDaf && (
-          <div className="flex shrink-0 items-center gap-1 rounded-full border border-border px-1 py-1 text-sm">
-            <span className="pl-2 text-xs opacity-60">{hebrewMode ? "דף" : "Daf"}</span>
-            {(["left", "middle"] as const).map((pos) => (
-              <button
-                key={pos}
-                onClick={() => setDafPosition(pos)}
-                className="rounded-full px-2.5 py-1 transition-colors"
-                style={
-                  dafPosition === pos ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined
-                }
-              >
-                {hebrewMode ? (pos === "left" ? "שמאל" : "אמצע") : pos === "left" ? "Left" : "Middle"}
-              </button>
-            ))}
+            {showDaf && (
+              <div className="flex shrink-0 items-center gap-1 rounded-full border border-border px-1 py-1 text-sm">
+                <span className="pl-2 text-xs opacity-60">{hebrewMode ? "דף" : "Daf"}</span>
+                {(["left", "middle"] as const).map((pos) => (
+                  <button
+                    key={pos}
+                    onClick={() => setDafPosition(pos)}
+                    className="rounded-full px-2.5 py-1 transition-colors"
+                    style={
+                      dafPosition === pos ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined
+                    }
+                  >
+                    {hebrewMode ? (pos === "left" ? "שמאל" : "אמצע") : pos === "left" ? "Left" : "Middle"}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
         <div className="flex-1" />
         <VerticalDivider />
 
-        <ControlGroup label="Text">
+        <ControlGroup label={hebrewMode ? "טקסט" : "Text"} hebrewMode={hebrewMode}>
           <DisplayModePill mode={textDisplayMode} onChange={setTextDisplayMode} />
-          <FontSizeControl label="Text" level={mainFontSizeLevel} onChange={setMainFontSizeLevel} />
+          <FontSizeControl label="Text" level={mainFontSizeLevel} onChange={setMainFontSizeLevel} hebrewMode={hebrewMode} />
         </ControlGroup>
 
         <VerticalDivider />
 
-        <ControlGroup label="Commentary">
+        <ControlGroup label={hebrewMode ? "מפרשים" : "Commentary"} hebrewMode={hebrewMode}>
           <DisplayModePill mode={commentaryDisplayMode} onChange={setCommentaryDisplayMode} />
-          <FontSizeControl label="Commentary" level={commentaryFontSizeLevel} onChange={setCommentaryFontSizeLevel} />
+          <FontSizeControl label="Commentary" level={commentaryFontSizeLevel} onChange={setCommentaryFontSizeLevel} hebrewMode={hebrewMode} />
         </ControlGroup>
       </div>
 
@@ -690,10 +883,11 @@ export default function Reader() {
         )}
 
         <div
-          ref={textContainerRef}
-          className={`min-h-0 min-w-0 overflow-y-auto pr-1 ${showDaf ? "flex-none" : "flex-1"}`}
+          className={`relative min-h-0 min-w-0 ${showDaf ? "flex-none" : "flex-1"}`}
           style={showDaf ? { width: narrowWidth } : undefined}
         >
+          {!chevronsOnDaf && <NavChevrons hideLeft={hideLeftChevron} hideRight={hideRightChevron} onStep={stepReading} />}
+          <div ref={textContainerRef} className="h-full overflow-y-auto px-6">
           {loading && <p className="py-8 text-center text-sm opacity-60">Loading…</p>}
           {error && <p className="py-8 text-center text-sm text-red-500">{error}</p>}
           {!loading && !error && data && (
@@ -770,13 +964,15 @@ export default function Reader() {
               </div>
             </>
           )}
+          </div>
         </div>
 
         {showDaf && dafPosition === "middle" && (
           <>
             {/* Text sits to the left of this handle, so dragging right grows it. */}
             <ResizeHandle onDrag={(delta) => adjustNarrowWidth(delta)} />
-            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card p-2">
+            <div className="relative min-h-0 min-w-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card p-2">
+              <NavChevrons hideLeft={hideLeftChevron} hideRight={hideRightChevron} onStep={stepReading} />
               <DafImagePanel tractateSefariaName={talmudTractateName!} daf={chapter} side={talmudAmud} />
             </div>
           </>
@@ -801,6 +997,7 @@ export default function Reader() {
             talmudAmud={category === "talmud" ? talmudAmud : undefined}
             mainSegmentCount={category === "rambam" ? data?.segments.length : undefined}
             fontSizeLevel={commentaryFontSizeLevel}
+            hebrewMode={hebrewMode}
           />
         </div>
       </div>

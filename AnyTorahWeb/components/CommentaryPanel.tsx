@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { type CommentaryType, displayName, hasInlineSAMarkers } from "@/lib/commentaryTypes";
+import { type CommentaryType, displayName, hebrewDisplayName, hasInlineSAMarkers } from "@/lib/commentaryTypes";
 import type { ReaderCategory, PoolInfo } from "@/lib/commentaryPools";
 import { saHebrewLetter, SA_SLOT_STYLES, type TextDisplayMode, type CommentaryEntry } from "@/lib/textModels";
 
@@ -17,6 +17,7 @@ export default function CommentaryPanel({
   talmudAmud,
   mainSegmentCount,
   fontSizeLevel,
+  hebrewMode = false,
 }: {
   category: ReaderCategory;
   index: number;
@@ -40,6 +41,10 @@ export default function CommentaryPanel({
    * and made "max" here look smaller than the main text's "max" even at the same level.
    */
   fontSizeLevel: number;
+  /** saHebrewMode — commentator tab names/picker options switch to Hebrew, and the tab strip
+   *  flips to RTL so the default-first commentator (e.g. Rashi) visually lands on the right,
+   *  matching native. */
+  hebrewMode?: boolean;
 }) {
   const hebrewFontPx = 20 + fontSizeLevel * 2;
   const englishFontPx = 16 + fontSizeLevel * 2;
@@ -100,7 +105,7 @@ export default function CommentaryPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex border-b border-border">
+      <div dir={hebrewMode ? "rtl" : "ltr"} className="flex border-b border-border">
         {slots.map((_, i) => (
           <button
             key={i}
@@ -119,14 +124,14 @@ export default function CommentaryPanel({
                 : { borderColor: "transparent" }
             }
           >
-            {displayName[effectiveSlots[i] ?? slots[i]]}
+            {(hebrewMode ? hebrewDisplayName : displayName)[effectiveSlots[i] ?? slots[i]]}
             {i === activeIndex ? " ▾" : ""}
           </button>
         ))}
       </div>
 
       {openSlotIndex !== null && (
-        <div className="max-h-56 overflow-y-auto border-b border-border bg-card p-2 text-sm">
+        <div dir={hebrewMode ? "rtl" : "ltr"} className="max-h-56 overflow-y-auto border-b border-border bg-card p-2 text-sm">
           {poolInfo.groups.map((group, gi) => {
             const options = group.filter(
               (t) => poolInfo.isAvailable(t) && !slots.some((s, si) => s === t && si !== openSlotIndex),
@@ -149,7 +154,7 @@ export default function CommentaryPanel({
                       }}
                       className="rounded-full border border-border px-2.5 py-1 transition-colors hover:border-[var(--accent)]"
                     >
-                      {displayName[t]}
+                      {(hebrewMode ? hebrewDisplayName : displayName)[t]}
                     </button>
                   ))}
                 </div>
