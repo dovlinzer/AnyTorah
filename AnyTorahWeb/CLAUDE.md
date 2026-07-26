@@ -187,6 +187,51 @@ the full staged plan.
 **Not yet built:** account-based sync. Local storage works standalone and should remain available
 even once accounts ship — not everyone will want to sign in just to save a bookmark.
 
+## Anchored Notes — design record (scrapped 2026-07-25, not in the codebase)
+
+The bigger vision referenced above (notes tied to a specific text/commentary passage, not just a
+bookmark-level field) was fully designed and a v1 was built, verified live, and committed
+(`40ce5e4`) on 2026-07-24 — then **deliberately removed** from `main` on 2026-07-25 because the
+user decided they want a substantially different implementation approach. The code isn't gone:
+it's preserved on the `backup/anchored-notes-v1` git branch (never pushed, local-only) if it's
+ever worth referencing or cherry-picking from. This section is the design record in case a future
+session picks this feature back up — read it before re-deriving the plan from scratch, but don't
+assume the chosen approach is still what the user wants; confirm first.
+
+**Vision:** notes anchored directly to a specific verse/mishnah/Gemara line or commentary entry
+(e.g. "this Rashi"), not just a chapter-level bookmark. Meant to serve a range of users from a
+Daf Yomi listener wanting a one-tap highlight to a yeshiva student writing an extended chiddush
+with formatting and links — considered the app's most likely flagship differentiator.
+
+**Decisions reached in the scrapped design** (full rationale, app comparisons, and session-by-
+session history in memory `project_anytorah_web_notes_feature`):
+- Segment-level anchors only (whole verse/mishnah/commentary-entry) — no arbitrary text-range
+  selection, that was judged too big a UI lift for v1.
+- Tiptap WYSIWYG rich text for the note body (bold/italic/bullets/links) over markdown-lite.
+- Fixed-color category swatches (6, Trello-style) with **user-editable labels** — colors are a
+  stable index, labels are freeform text stored separately, so renaming never migrates data.
+  Freeform tags layered on top for finer, many-per-note classification.
+- **One note per anchor point** — a quick color-only highlight and a full written note are the
+  same record; a highlight is just a note with an empty body until upgraded. Chosen over
+  multiple-notes-per-anchor specifically to keep the indicator/popover UI simple; explicitly
+  flagged as the main cost if this is ever revisited (indicator needs a stack/count, popover
+  needs a list-first step).
+- Local storage now, Supabase migration once account sync exists (not blocking the feature on
+  that heavier-lift item).
+- Build order: v1 = data model + quick highlight + full note w/ categories+tags+auto-quoted
+  anchor text; v1.1 = note-count badges on pickers + export/print; later = internal deep-links
+  (needs real URL routing first — this app has none today), review-resurfacing, sharing (needs
+  account sync).
+
+**A real lesson from the build-and-revert, worth keeping regardless of the next approach:** the
+"click here to add a note" empty-state indicator was styled as a dashed, half-opacity ring in
+`--border`, which in dark mode is nearly the same color as the page background — the *entire*
+feature's discovery affordance was effectively invisible, and neither `tsc`/`eslint`/build nor
+automated click-testing via accessibility-tree refs caught it (refs resolve and click regardless
+of visual contrast). Only caught when the user looked at the actual rendered page. Whatever the
+next indicator design looks like, verify it with an actual screenshot at rest, not just DOM
+presence or successful ref-clicks.
+
 ## Daily learning dedication banner — shipped
 
 `lib/dedicationService.ts` (types + `periodTitle`/`formattedMessage`, ported from native's
