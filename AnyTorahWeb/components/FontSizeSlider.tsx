@@ -31,22 +31,22 @@ export default function FontSizeSlider({
   return (
     <div dir={hebrewMode ? "rtl" : "ltr"} className="flex shrink-0 items-center gap-1.5">
       <span className="text-[10px] opacity-50">{letter}</span>
+      <input
+        type="range"
+        min={0}
+        max={FONT_SIZE_LEVELS.length - 1}
+        step={1}
+        value={clampedIndex}
+        onChange={(e) => onChange(FONT_SIZE_LEVELS[Number(e.target.value)])}
+        aria-label={`${label} font size: ${FONT_SIZE_LABELS[level] ?? ""}`}
+        title={FONT_SIZE_LABELS[level] ?? ""}
+        className="h-1 w-20"
+        style={{ accentColor: "var(--accent)" }}
+      />
       <div className="flex items-center gap-1">
-        <input
-          type="range"
-          min={0}
-          max={FONT_SIZE_LEVELS.length - 1}
-          step={1}
-          value={clampedIndex}
-          onChange={(e) => onChange(FONT_SIZE_LEVELS[Number(e.target.value)])}
-          aria-label={`${label} font size: ${FONT_SIZE_LABELS[level] ?? ""}`}
-          title={FONT_SIZE_LABELS[level] ?? ""}
-          className="h-1 w-20"
-          style={{ accentColor: "var(--accent)" }}
-        />
-        <span className="w-14 shrink-0 text-[10px] opacity-40">{FONT_SIZE_LABELS[level] ?? ""}</span>
+        <span className="text-xs opacity-50">{letter}</span>
+        <span className="shrink-0 text-[10px] opacity-40">{FONT_SIZE_LABELS[level] ?? ""}</span>
       </div>
-      <span className="text-xs opacity-50">{letter}</span>
     </div>
   );
 }
