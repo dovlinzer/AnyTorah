@@ -1,8 +1,11 @@
 // In-document find for the Notebook editor — a small, self-contained ProseMirror plugin (no
 // official Tiptap search extension ships in this version) that decorates every case-insensitive
-// text match for the current search term and moves the editor's selection to whichever one is
-// "active", scrolling it into view. Cross-notebook search (searching *between* notebooks, not
-// within one) lives separately in lib/notebooks.ts's extractPlainText + NotebookSearchModal.tsx.
+// text match for the current search term (also matching tag chip labels, since those aren't
+// plain text nodes) and moves the editor's selection to whichever one is "active", scrolling it
+// into view. A color filter can additionally restrict/seed matches to text carrying a given
+// SectionColorExtension mark, so a user can jump through just the "yellow" passages, with or
+// without a text term. Cross-notebook search (searching *between* notebooks, not within one)
+// lives separately in lib/notebooks.ts's extractPlainText + NotebookSearchModal.tsx.
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -15,33 +18,71 @@ export interface SearchMatch {
 
 interface SearchStorage {
   searchTerm: string;
+  /** null = no color filter (plain text search); a HIGHLIGHT_CATEGORY index otherwise — see
+   *  lib/highlightCategories.ts, the same 4 colors SectionColorExtension marks text with. */
+  colorFilter: number | null;
   results: SearchMatch[];
   resultIndex: number;
 }
 
 const SearchPluginKey = new PluginKey("notebookSearch");
 
-function findMatches(doc: ProseMirrorNode, term: string): SearchMatch[] {
+/** Every contiguous run of text carrying a `sectionColor` mark of the given index — used both as
+ *  the color filter's own match set (no text term) and to restrict text/tag matches to colored
+ *  passages (term + filter combined). */
+function findColoredRanges(doc: ProseMirrorNode, colorIndex: number): SearchMatch[] {
+  const ranges: SearchMatch[] = [];
+  doc.descendants((node, pos) => {
+    if (!node.isText) return;
+    const mark = node.marks.find((m) => m.type.name === "sectionColor" && m.attrs.colorIndex === colorIndex);
+    if (mark) ranges.push({ from: pos, to: pos + node.nodeSize });
+  });
+  return ranges;
+}
+
+function overlaps(a: SearchMatch, b: SearchMatch): boolean {
+  return a.from < b.to && b.from < a.to;
+}
+
+function findMatches(doc: ProseMirrorNode, term: string, colorFilter: number | null): SearchMatch[] {
   const q = term.trim().toLowerCase();
-  if (!q) return [];
+  const coloredRanges = colorFilter !== null ? findColoredRanges(doc, colorFilter) : null;
+
+  if (!q) {
+    // No text term — a color filter alone means "every colored run of this color", otherwise
+    // there's nothing to match.
+    return coloredRanges ?? [];
+  }
+
   const results: SearchMatch[] = [];
   doc.descendants((node, pos) => {
-    if (!node.isText || !node.text) return;
-    const text = node.text.toLowerCase();
-    let idx = text.indexOf(q);
-    while (idx !== -1) {
-      results.push({ from: pos + idx, to: pos + idx + q.length });
-      idx = text.indexOf(q, idx + 1);
+    if (node.isText && node.text) {
+      const text = node.text.toLowerCase();
+      let idx = text.indexOf(q);
+      while (idx !== -1) {
+        results.push({ from: pos + idx, to: pos + idx + q.length });
+        idx = text.indexOf(q, idx + 1);
+      }
+    } else if (node.type.name === "tag" && typeof node.attrs.label === "string" && node.attrs.label.toLowerCase().includes(q)) {
+      // Atom node, not text — the whole node is the match, same convention extractAnchors/
+      // extractTags (lib/notebooks.ts) already use for "this node is the unit," not a substring
+      // range within it.
+      results.push({ from: pos, to: pos + node.nodeSize });
     }
   });
-  return results;
+
+  if (!coloredRanges) return results;
+  return results.filter((r) => coloredRanges.some((c) => overlaps(r, c)));
 }
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     notebookSearch: {
-      /** Sets the term, recomputes matches, and jumps to the first one. Empty string clears. */
+      /** Sets the term, recomputes matches, and jumps to the first one. Empty string clears
+       *  (unless a color filter is also active, in which case it seeds from that instead). */
       setSearchTerm: (term: string) => ReturnType;
+      /** null clears the filter back to plain text search. */
+      setColorFilter: (colorIndex: number | null) => ReturnType;
       goToNextMatch: () => ReturnType;
       goToPreviousMatch: () => ReturnType;
     };
@@ -51,13 +92,11 @@ declare module "@tiptap/core" {
   }
 }
 
-/** `getMatchInfo()` reads live off `storage`, so a toolbar can show "2 / 5" without re-running
- *  the search itself. */
 const SearchExtension = Extension.create({
   name: "notebookSearch",
 
   addStorage(): SearchStorage {
-    return { searchTerm: "", results: [], resultIndex: -1 };
+    return { searchTerm: "", colorFilter: null, results: [], resultIndex: -1 };
   },
 
   addCommands() {
@@ -69,14 +108,28 @@ const SearchExtension = Extension.create({
       }
       tr.setMeta(SearchPluginKey, true);
     };
+    const recompute = (doc: ProseMirrorNode) => {
+      this.storage.results = findMatches(doc, this.storage.searchTerm, this.storage.colorFilter);
+      this.storage.resultIndex = this.storage.results.length > 0 ? 0 : -1;
+    };
 
     return {
       setSearchTerm:
         (term: string) =>
         ({ editor, tr, dispatch }) => {
           this.storage.searchTerm = term;
-          this.storage.results = findMatches(editor.state.doc, term);
-          this.storage.resultIndex = this.storage.results.length > 0 ? 0 : -1;
+          recompute(editor.state.doc);
+          if (dispatch) {
+            jumpToActiveMatch(tr);
+            dispatch(tr);
+          }
+          return true;
+        },
+      setColorFilter:
+        (colorIndex: number | null) =>
+        ({ editor, tr, dispatch }) => {
+          this.storage.colorFilter = colorIndex;
+          recompute(editor.state.doc);
           if (dispatch) {
             jumpToActiveMatch(tr);
             dispatch(tr);
@@ -86,7 +139,7 @@ const SearchExtension = Extension.create({
       goToNextMatch:
         () =>
         ({ editor, tr, dispatch }) => {
-          this.storage.results = findMatches(editor.state.doc, this.storage.searchTerm);
+          this.storage.results = findMatches(editor.state.doc, this.storage.searchTerm, this.storage.colorFilter);
           if (this.storage.results.length === 0) return false;
           this.storage.resultIndex = (this.storage.resultIndex + 1 + this.storage.results.length) % this.storage.results.length;
           if (dispatch) {
@@ -98,7 +151,7 @@ const SearchExtension = Extension.create({
       goToPreviousMatch:
         () =>
         ({ editor, tr, dispatch }) => {
-          this.storage.results = findMatches(editor.state.doc, this.storage.searchTerm);
+          this.storage.results = findMatches(editor.state.doc, this.storage.searchTerm, this.storage.colorFilter);
           if (this.storage.results.length === 0) return false;
           this.storage.resultIndex = (this.storage.resultIndex - 1 + this.storage.results.length) % this.storage.results.length;
           if (dispatch) {

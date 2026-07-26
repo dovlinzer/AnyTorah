@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
@@ -14,14 +14,63 @@ import TagNodeExtension from "./notebook/TagNodeExtension";
 import {
   emptyNotebookBody,
   extractAnchors,
+  extractTags,
+  formatNotebookScopeLabel,
   loadNotebook,
+  loadNotebooks,
+  notebookScopeKey,
   saveNotebook,
   type NotebookScope,
 } from "@/lib/notebooks";
 import { formatAnchorLabel, type TextAnchor } from "@/lib/textAnchor";
 import { HIGHLIGHT_CATEGORY_COUNT, loadHighlightCategoryLabels } from "@/lib/highlightCategories";
+import FontSizeSlider from "@/components/FontSizeSlider";
+import { fontSizePx, FONT_SIZE_MIN, FONT_SIZE_MAX } from "@/lib/fontSizeLevels";
 
 const AUTOSAVE_DELAY_MS = 500;
+const NOTEBOOK_FONT_SIZE_KEY = "anytorah:notebookFontSizeLevel";
+
+function loadNotebookFontSizeLevel(): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const raw = window.localStorage.getItem(NOTEBOOK_FONT_SIZE_KEY);
+    const n = raw === null ? NaN : parseInt(raw, 10);
+    return Number.isFinite(n) ? Math.min(Math.max(n, FONT_SIZE_MIN), FONT_SIZE_MAX) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function storeNotebookFontSizeLevel(level: number) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(NOTEBOOK_FONT_SIZE_KEY, String(level));
+  } catch {
+    // localStorage unavailable — font size choice just won't persist.
+  }
+}
+
+/** Walks the live editor doc for heading nodes — powers the outline panel's "jump to heading"
+ *  navigation. `pos` is a live ProseMirror document position, valid only against the current
+ *  doc/editor instance (not persisted), used with editor.view.nodeDOM to scroll to the actual
+ *  rendered heading element. Recomputed on every edit (onUpdate) so the outline stays in sync
+ *  while the user is typing new headings, not just on open. */
+function extractHeadings(editor: Editor): { level: number; text: string; pos: number }[] {
+  const items: { level: number; text: string; pos: number }[] = [];
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name === "heading") {
+      items.push({ level: node.attrs.level as number, text: node.textContent.trim() || "(untitled)", pos });
+    }
+  });
+  return items;
+}
+
+/** Distinct, alphabetized tag labels in this notebook — powers the find bar's tag-chip row (a
+ *  notebook can have the same tag chip inserted more than once, same as cross-notebook search's
+ *  own tag list). */
+function dedupeTags(tags: { tagId: string; label: string }[]): string[] {
+  return Array.from(new Set(tags.map((t) => t.label))).sort((a, b) => a.localeCompare(b));
+}
 
 export interface NotebookScopeOption {
   source: NotebookScope["source"];
@@ -36,8 +85,11 @@ export default function NotebookPanel({
   scope,
   readerChapter,
   readerHalakha,
+  readerAmud,
+  hebrewMode = false,
   scopeOptions,
   onScopeChange,
+  onNavigateToOtherScope,
   onNavigateAnchor,
   onEditorReady,
   onClose,
@@ -47,12 +99,21 @@ export default function NotebookPanel({
   scope: NotebookScope;
   /** Wherever the reader currently is, within this notebook's scope's book/tractate — drives
    *  reverse sync: scrolling to and flashing whichever anchor pill(s) match. Anchor matching is
-   *  chapter/halakha granularity only, same limitation as anchor *navigation* itself (see
-   *  navigateToAnchor in Reader.tsx) — this app has no scroll-to-segment infrastructure. */
+   *  chapter/halakha/amud granularity — this app still has no scroll-to-*segment* infrastructure,
+   *  so an anchor pointing at a specific verse/paragraph still only resolves to its chapter. */
   readerChapter: number;
   readerHalakha?: number;
+  /** Talmud only — which amud the reader is currently on, for amud-aware matching. Anchors
+   *  created before this field existed omit `amud` and match on chapter alone (broader match). */
+  readerAmud?: "a" | "b";
+  /** saHebrewMode — the scope dropdown, header line, and newly-inserted anchor pill labels all
+   *  render in Hebrew when true. */
+  hebrewMode?: boolean;
   scopeOptions: NotebookScopeOption[];
   onScopeChange: (option: NotebookScopeOption) => void;
+  /** Selecting a notebook from the "Other notebooks" group (any notebook ever created, not just
+   *  ones for the current book) — unlike onScopeChange, this can change category/index too. */
+  onNavigateToOtherScope: (scope: NotebookScope) => void;
   onNavigateAnchor: (anchor: TextAnchor) => void;
   onEditorReady: (insertAnchor: (anchor: TextAnchor) => void) => void;
   onClose: () => void;
@@ -66,9 +127,21 @@ export default function NotebookPanel({
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [findOpen, setFindOpen] = useState(!!initialSearchTerm);
   const [findQuery, setFindQuery] = useState(initialSearchTerm ?? "");
+  const [colorFilter, setColorFilter] = useState<number | null>(null);
   const [findMatchInfo, setFindMatchInfo] = useState({ count: 0, index: -1 });
   const findInputRef = useRef<HTMLInputElement>(null);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [headings, setHeadings] = useState<{ level: number; text: string; pos: number }[]>([]);
+  const [noteTags, setNoteTags] = useState<string[]>([]);
   const [colorLabels] = useState<string[]>(() => loadHighlightCategoryLabels());
+  const [fontSizeLevel, setFontSizeLevelState] = useState(() => loadNotebookFontSizeLevel());
+  const setFontSizeLevel = (level: number) => {
+    setFontSizeLevelState(level);
+    storeNotebookFontSizeLevel(level);
+  };
+  // Loaded once per mount (this component remounts on scope change anyway) — the "Other
+  // notebooks" picker doesn't need to react to notebooks created in other tabs/sessions live.
+  const [allNotebooks] = useState(() => loadNotebooks());
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -84,11 +157,17 @@ export default function NotebookPanel({
       TagNodeExtension,
     ],
     content: loadNotebook(scope)?.bodyJSON ?? emptyNotebookBody(),
+    onCreate: ({ editor }) => {
+      setHeadings(extractHeadings(editor));
+      setNoteTags(dedupeTags(extractTags(editor.getJSON())));
+    },
     onUpdate: ({ editor }) => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = setTimeout(() => {
         saveNotebook(scope, editor.getJSON());
       }, AUTOSAVE_DELAY_MS);
+      setHeadings(extractHeadings(editor));
+      setNoteTags(dedupeTags(extractTags(editor.getJSON())));
     },
     onTransaction: ({ editor }) => {
       setFindMatchInfo({
@@ -97,6 +176,15 @@ export default function NotebookPanel({
       });
     },
   });
+
+  const scrollToHeading = (pos: number) => {
+    if (!editor) return;
+    const dom = editor.view.nodeDOM(pos) as HTMLElement | null;
+    if (!dom) return;
+    dom.scrollIntoView({ behavior: "smooth", block: "start" });
+    dom.classList.add("notebook-heading-flash");
+    setTimeout(() => dom.classList.remove("notebook-heading-flash"), 1200);
+  };
 
   // Run the seeded search whenever a fresh term arrives (cross-notebook search hand-off). Keyed
   // on initialSearchTerm itself, not just [editor] — navigating to a notebook that's already the
@@ -129,12 +217,12 @@ export default function NotebookPanel({
       editor
         .chain()
         .focus()
-        .insertAnchor({ anchor, nodeId: crypto.randomUUID(), label: formatAnchorLabel(anchor) })
+        .insertAnchor({ anchor, nodeId: crypto.randomUUID(), label: formatAnchorLabel(anchor, hebrewMode) })
         .insertContent(" ")
         .run();
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- onEditorReady ref is set once editor exists
-  }, [editor]);
+  }, [editor, hebrewMode]);
 
   // Reverse sync — scroll to and briefly flash whichever anchor pill(s) match wherever the
   // reader currently is. Runs on mount too (matching "always showing the matching notebook"),
@@ -143,7 +231,10 @@ export default function NotebookPanel({
   useEffect(() => {
     if (!editor) return;
     const matches = extractAnchors(editor.getJSON()).filter(
-      (a) => a.anchor.chapter === readerChapter && (a.anchor.halakha ?? undefined) === (readerHalakha ?? undefined),
+      (a) =>
+        a.anchor.chapter === readerChapter &&
+        (a.anchor.halakha ?? undefined) === (readerHalakha ?? undefined) &&
+        (!a.anchor.amud || a.anchor.amud === readerAmud),
     );
     if (matches.length === 0) return;
     const elements = matches.map((m) => document.getElementById(m.nodeId)).filter((el): el is HTMLElement => !!el);
@@ -154,36 +245,67 @@ export default function NotebookPanel({
       elements.forEach((el) => el.classList.remove("notebook-anchor-flash"));
     }, 1600);
     return () => clearTimeout(timeout);
-  }, [editor, readerChapter, readerHalakha]);
+  }, [editor, readerChapter, readerHalakha, readerAmud]);
 
   const currentOptionLabel =
     scopeOptions.find(
       (o) => o.source === scope.source && (o.commentaryType ?? undefined) === (scope.commentaryType ?? undefined),
-    )?.label ?? "Main text";
+    )?.label ?? formatNotebookScopeLabel(scope, hebrewMode);
+
+  // "Other notebooks" — every notebook ever created that isn't already reachable through the
+  // "this book" group above (a different book/tractate entirely, or a commentary that used to be
+  // an active slot but no longer is). Selecting one can change category/index, unlike
+  // onScopeChange which only switches source/commentaryType within the current book.
+  const currentScopeKeys = new Set(
+    scopeOptions.map((o) => notebookScopeKey({ category: scope.category, index: scope.index, source: o.source, commentaryType: o.commentaryType })),
+  );
+  const otherNotebookOptions = allNotebooks
+    .filter((n) => !currentScopeKeys.has(n.scopeKey))
+    .map((n) => ({ scopeKey: n.scopeKey, scope: n.scope, label: formatNotebookScopeLabel(n.scope, hebrewMode) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border p-2">
         <select
-          value={JSON.stringify({ source: scope.source, commentaryType: scope.commentaryType ?? null })}
+          value={notebookScopeKey(scope)}
           onChange={(e) => {
-            const parsed = JSON.parse(e.target.value) as { source: NotebookScope["source"]; commentaryType: string | null };
-            const option = scopeOptions.find(
-              (o) => o.source === parsed.source && (o.commentaryType ?? null) === parsed.commentaryType,
+            const key = e.target.value;
+            const here = scopeOptions.find(
+              (o) =>
+                notebookScopeKey({ category: scope.category, index: scope.index, source: o.source, commentaryType: o.commentaryType }) === key,
             );
-            if (option) onScopeChange(option);
+            if (here) {
+              onScopeChange(here);
+              return;
+            }
+            const other = otherNotebookOptions.find((o) => o.scopeKey === key);
+            if (other) onNavigateToOtherScope(other.scope);
           }}
+          dir={hebrewMode ? "rtl" : "ltr"}
           className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs"
+          style={hebrewMode ? { textAlign: "right" } : undefined}
           aria-label="Notebook scope"
         >
-          {scopeOptions.map((o) => (
-            <option
-              key={`${o.source}:${o.commentaryType ?? ""}`}
-              value={JSON.stringify({ source: o.source, commentaryType: o.commentaryType ?? null })}
-            >
-              {o.label}
-            </option>
-          ))}
+          <optgroup label={hebrewMode ? "הטקסט הזה" : "This text"}>
+            {scopeOptions.map((o) => {
+              const key = notebookScopeKey({ category: scope.category, index: scope.index, source: o.source, commentaryType: o.commentaryType });
+              return (
+                <option key={key} value={key}>
+                  {o.label}
+                </option>
+              );
+            })}
+          </optgroup>
+          {otherNotebookOptions.length > 0 && (
+            <optgroup label={hebrewMode ? "עוד מחברות" : "Other notebooks"}>
+              {otherNotebookOptions.map((o) => (
+                <option key={o.scopeKey} value={o.scopeKey}>
+                  {o.label}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
         <button
           onClick={onClose}
@@ -309,79 +431,173 @@ export default function NotebookPanel({
           onClick={() => {
             setFindOpen((o) => {
               const next = !o;
-              if (!next) editor?.commands.setSearchTerm("");
+              if (!next) {
+                editor?.commands.setSearchTerm("");
+                editor?.commands.setColorFilter(null);
+                setColorFilter(null);
+              }
               return next;
             });
             requestAnimationFrame(() => findInputRef.current?.focus());
           }}
           active={findOpen}
         />
+        <ToolbarButton
+          label="📑"
+          title="Jump to a heading"
+          onClick={() => setOutlineOpen((o) => !o)}
+          active={outlineOpen}
+        />
       </div>
 
-      {findOpen && (
-        <div className="flex shrink-0 items-center gap-1 border-b border-border p-1.5">
-          <input
-            ref={findInputRef}
-            value={findQuery}
-            onChange={(e) => {
-              setFindQuery(e.target.value);
-              editor?.commands.setSearchTerm(e.target.value);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                if (e.shiftKey) editor?.commands.goToPreviousMatch();
-                else editor?.commands.goToNextMatch();
-              } else if (e.key === "Escape") {
-                setFindOpen(false);
-                setFindQuery("");
-                editor?.commands.setSearchTerm("");
-              }
-            }}
-            placeholder="Find in notebook…"
-            className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs"
-            aria-label="Find in this notebook"
-          />
-          <span className="shrink-0 text-[10px] opacity-60">
-            {findMatchInfo.count > 0 ? `${findMatchInfo.index + 1} / ${findMatchInfo.count}` : "0 / 0"}
-          </span>
-          <button
-            onClick={() => editor?.commands.goToPreviousMatch()}
-            disabled={findMatchInfo.count === 0}
-            aria-label="Previous match"
-            title="Previous match"
-            className="shrink-0 rounded border border-border px-1.5 py-1 text-xs disabled:opacity-40"
-          >
-            ↑
-          </button>
-          <button
-            onClick={() => editor?.commands.goToNextMatch()}
-            disabled={findMatchInfo.count === 0}
-            aria-label="Next match"
-            title="Next match"
-            className="shrink-0 rounded border border-border px-1.5 py-1 text-xs disabled:opacity-40"
-          >
-            ↓
-          </button>
-          <button
-            onClick={() => {
-              setFindOpen(false);
-              setFindQuery("");
-              editor?.commands.setSearchTerm("");
-            }}
-            aria-label="Close find"
-            title="Close find"
-            className="shrink-0 rounded px-1.5 py-1 text-xs opacity-60 hover:opacity-100"
-          >
-            ✕
-          </button>
+      {outlineOpen && (
+        <div className="flex max-h-40 shrink-0 flex-col gap-0.5 overflow-y-auto border-b border-border p-1.5">
+          {headings.length === 0 ? (
+            <p className="px-1 py-1 text-[10px] opacity-50">No headings yet — use H1/H2/H3 to add one.</p>
+          ) : (
+            headings.map((h) => (
+              <button
+                key={h.pos}
+                onClick={() => {
+                  scrollToHeading(h.pos);
+                  setOutlineOpen(false);
+                }}
+                className="truncate rounded px-1.5 py-1 text-left text-xs hover:bg-[var(--border)]"
+                style={{ paddingInlineStart: `${(h.level - 1) * 12 + 6}px`, fontWeight: h.level === 1 ? 600 : 400 }}
+                title={h.text}
+              >
+                {h.text}
+              </button>
+            ))
+          )}
         </div>
       )}
 
-      <p className="shrink-0 px-2 pt-1.5 text-[10px] opacity-50">Notebook — {currentOptionLabel}</p>
+      {findOpen && (
+        <div className="flex shrink-0 flex-col gap-1 border-b border-border p-1.5">
+          <div className="flex items-center gap-1">
+            <input
+              ref={findInputRef}
+              value={findQuery}
+              onChange={(e) => {
+                setFindQuery(e.target.value);
+                editor?.commands.setSearchTerm(e.target.value);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (e.shiftKey) editor?.commands.goToPreviousMatch();
+                  else editor?.commands.goToNextMatch();
+                } else if (e.key === "Escape") {
+                  setFindOpen(false);
+                  setFindQuery("");
+                  setColorFilter(null);
+                  editor?.commands.setSearchTerm("");
+                  editor?.commands.setColorFilter(null);
+                }
+              }}
+              placeholder="Find in notebook — text or tags…"
+              className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs"
+              aria-label="Find in this notebook"
+            />
+            <span className="shrink-0 text-[10px] opacity-60">
+              {findMatchInfo.count > 0 ? `${findMatchInfo.index + 1} / ${findMatchInfo.count}` : "0 / 0"}
+            </span>
+            <button
+              onClick={() => editor?.commands.goToPreviousMatch()}
+              disabled={findMatchInfo.count === 0}
+              aria-label="Previous match"
+              title="Previous match"
+              className="shrink-0 rounded border border-border px-1.5 py-1 text-xs disabled:opacity-40"
+            >
+              ↑
+            </button>
+            <button
+              onClick={() => editor?.commands.goToNextMatch()}
+              disabled={findMatchInfo.count === 0}
+              aria-label="Next match"
+              title="Next match"
+              className="shrink-0 rounded border border-border px-1.5 py-1 text-xs disabled:opacity-40"
+            >
+              ↓
+            </button>
+            <button
+              onClick={() => {
+                setFindOpen(false);
+                setFindQuery("");
+                setColorFilter(null);
+                editor?.commands.setSearchTerm("");
+                editor?.commands.setColorFilter(null);
+              }}
+              aria-label="Close find"
+              title="Close find"
+              className="shrink-0 rounded px-1.5 py-1 text-xs opacity-60 hover:opacity-100"
+            >
+              ✕
+            </button>
+          </div>
+          {noteTags.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] opacity-50">Tags:</span>
+              {noteTags.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => {
+                    const next = findQuery === t ? "" : t;
+                    setFindQuery(next);
+                    editor?.commands.setSearchTerm(next);
+                  }}
+                  className="rounded-full border px-2 py-0.5 text-[10px]"
+                  style={{
+                    borderColor: findQuery === t ? "var(--accent)" : "var(--border)",
+                    opacity: findQuery === t ? 1 : 0.7,
+                  }}
+                >
+                  🏷 {t}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] opacity-50">Highlighted:</span>
+            {Array.from({ length: HIGHLIGHT_CATEGORY_COUNT }, (_, i) => i).map((i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => {
+                  const next = colorFilter === i ? null : i;
+                  setColorFilter(next);
+                  editor?.commands.setColorFilter(next);
+                }}
+                title={`Jump through ${colorLabels[i]} sections`}
+                aria-label={`Filter to ${colorLabels[i]} highlighted sections`}
+                aria-pressed={colorFilter === i}
+                className={`highlight-dot highlight-dot-${i}`}
+                style={colorFilter === i ? { transform: "scale(1.25)", opacity: 1 } : undefined}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p
+        dir={hebrewMode ? "rtl" : "ltr"}
+        className={`shrink-0 px-2 pt-1.5 text-[10px] opacity-50 ${hebrewMode ? "text-right" : ""}`}
+      >
+        {hebrewMode ? `מחברת — ${currentOptionLabel}` : `Notebook — ${currentOptionLabel}`}
+      </p>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
-        <EditorContent editor={editor} className="notebook-editor-content h-full text-sm" />
+        <EditorContent
+          editor={editor}
+          className="notebook-editor-content h-full"
+          style={{ fontSize: fontSizePx(14, fontSizeLevel) }}
+        />
+      </div>
+
+      <div className="flex shrink-0 items-center justify-end border-t border-border p-1.5">
+        <FontSizeSlider label="Notebook" level={fontSizeLevel} onChange={setFontSizeLevel} hebrewMode={hebrewMode} />
       </div>
     </div>
   );

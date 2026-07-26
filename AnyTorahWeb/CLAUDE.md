@@ -529,6 +529,136 @@ exercising the real command path) rather than skipped.
 `set-state-in-effect` items are pre-existing in `Reader.tsx`, confirmed against a stashed baseline
 — none introduced this session).
 
+## Notebook — Phase 3 shipped (naming, granular anchors, cross-notebook picker, outline)
+
+Built in the same session as Phase 2 above, in response to live user testing feedback right after
+Phase 2 shipped. Eight distinct fixes/features; all verified live.
+
+**Scope naming (main text now has a real name, not "Main text"):** `formatNotebookScopeLabel`
+(`lib/notebooks.ts`) now covers the main-text case too — `"Bereshit"` for Tanakh (unambiguous on
+its own), `"Bavli, Gittin"` for every other category (tractate/work names repeat across
+categories, e.g. Mishnah vs. Talmud Pesachim, so those get a `"CategoryName, Book"` prefix).
+`Reader.tsx`'s `notebookScopeOptions` now builds every option's label through this one function
+(previously hand-rolled "X on Y" inline) so the panel's dropdown, its header line, and the
+cross-notebook search modal all describe a scope identically.
+
+**Full Hebrew localization when saHebrewMode is on:** `formatNotebookScopeLabel` and
+`formatAnchorLabel` (`lib/textAnchor.ts`) both take a `hebrewMode` param now — book/tractate name
+via the already-Hebrew-aware `getCategoryItemName` (new shared helper, see below), commentary name
+via `hebrewDisplayName`, and the connector word itself localizes ("on" → "על"). `NotebookPanel.tsx`
+threads `hebrewMode` down from `Reader.tsx` for both the scope label and newly-inserted anchor
+pills — existing pills keep whatever language they were created in (a snapshot, like Highlights'
+anchor-quote capture, not a live-recomputed value), which is a deliberate, not accidental,
+limitation.
+
+**New shared helper — `getCategoryItemName`** (`lib/categoryCatalog.ts`): the same
+`getCategoryGroups`-then-`find` book-name lookup was independently duplicated three times
+(Reader.tsx's `findCategoryItemName`, `formatNotebookScopeLabel`, and now `formatAnchorLabel`) —
+consolidated into one exported function; the three call sites became thin wrappers/direct callers.
+
+**Scope picker lists every notebook ever created, not just the current book's:** the panel's
+`<select>` now has two `<optgroup>`s — "This book" (the existing per-book options) and "Other
+notebooks" (every notebook from `loadNotebooks()` whose scope key isn't already in the first
+group, labeled via `formatNotebookScopeLabel`, alphabetized). Picking an "Other notebooks" entry
+calls a new `onNavigateToOtherScope` prop — wired in `Reader.tsx` to the same
+`navigateToNotebookScope` function cross-notebook search already used, reused as-is (it already
+handled changing category/index and seeding a focus).
+
+**Font-size slider**, matching the Text/Commentary panels: a self-contained `fontSizeLevel` state
+in `NotebookPanel.tsx` (own localStorage key `anytorah:notebookFontSizeLevel`, same
+load/clamp/store pattern Reader.tsx uses for the other two panels, just not lifted to Reader.tsx
+since nothing outside this panel needs it) drives a `FontSizeSlider` in a new footer row, and an
+inline `fontSize` style (via `fontSizePx(14, level)`) on `EditorContent` — the CSS's heading/list/
+blockquote rules are already `em`-relative (`globals.css`), so they scale for free.
+
+**Anchor labels went from chapter-only to granular** — this was the biggest single change.
+`TextAnchor` (`lib/textAnchor.ts`) gained two optional fields, both captured once at
+anchor-*creation* time (same snapshot philosophy as `Highlight.anchorQuoteHe/En` — an anchor pill
+displayed later has no guarantee the source segment data is still loaded):
+- `amud?: "a" | "b"` — Talmud only.
+- `segmentLabel?: string` — verse/mishnah/halakha/seif number (Tanakh, Mishnah, Tosefta, Rambam,
+  Shulchan Arukh — taken from `TextSegment.label`/`CommentaryEntry`'s outer-index number, colon-
+  stripped) **or**, for Talmud/Yerushalmi (no per-segment numbering at all), a short "opening
+  words" excerpt of the paragraph — the dibbur-hamatchil convention for a commentator, the gemara's
+  own opening words for the main text. Built by the new `buildSegmentLabel(marginLabel,
+  hebrewText, englishText)` helper; callers pass the *raw*, ungated segment/paragraph text (not
+  the display-mode-gated `quoteHe`/`quoteEn` used for Highlights) so opening words are capturable
+  regardless of which language is currently toggled — both are already fetched either way.
+  `formatAnchorLabel` produces e.g. `"Bereshit 1:2"`, `"Berakhot 1:א"`, `"Gittin 2b — פתח רבי"`,
+  falling back to the old chapter-only `buildDisplayTitle` format when either field is absent
+  (anchors created before this shipped).
+- Capture wiring: `Reader.tsx`'s `buildAnchor` gained two more optional params; the two
+  `onInsertToNotebook` call sites (main text, `CommentaryPanel.tsx`) compute `segmentLabel`/`amud`
+  right where the segment/entry data is already in scope. `CommentaryPanel.tsx` had to stop
+  gating its Hebrew/English paragraph split on the current `displayMode` (`heParagraphsAll`/
+  `enParagraphsAll` computed unconditionally now, with the existing gated `heParagraphs`/
+  `enParagraphs` just a slice of those) so opening-words capture always has real text to work
+  with.
+- Reverse sync got amud-aware for free once the data existed: `NotebookPanel.tsx`'s matching
+  filter now also checks `!a.anchor.amud || a.anchor.amud === readerAmud` — an anchor without a
+  captured amud (older data) still matches on chapter alone (broader, unchanged behavior); one
+  with a captured amud only flashes when the reader is actually on that amud.
+
+**In-notebook find now matches tag chip labels, and can filter to a highlight color.**
+`SearchExtension.ts`'s `findMatches` walks for `type === "tag"` nodes matching the query too (a
+tag chip's whole node is "the match," same convention `extractAnchors`/`extractTags` use), and a
+new `colorFilter` (`setColorFilter` command) restricts/seeds matches to text carrying a
+`sectionColor` mark of a given index — with no text term, the filter alone becomes "every run of
+this color." A new swatch row in the find bar (reusing the toolbar's `.highlight-dot-N` styling)
+toggles it. Closing find (✕ or the toolbar button) clears both the term and the color filter.
+
+**Cross-notebook search gained a notebook picker and a highlight-color filter.**
+`lib/notebooks.ts` gained `extractColoredRuns(doc)` (every text run carrying a `sectionColor`
+mark, paired with its color index — mirrors `extractTags`'s walk shape). `NotebookSearchModal.tsx`
+now tracks `excludedScopeKeys` (empty = everything included, so newly-loaded notebooks default to
+"in" without needing to pre-populate a positive selection set) behind a collapsible "Searching N
+of M notebooks" checkbox list (All/None shortcuts), and a color-swatch filter row identical in
+spirit to the in-notebook one. When a color filter is active with no text query, a result's
+preview snippet is the actual colored run's text, rendered in that highlight's real
+`.highlight-text-N` style rather than the generic doc-start snippet.
+
+**Outline panel — "jump to heading" navigation**, the one item that shipped as the simpler half of
+"collapsible sections and/or a navigation panel": collapsing text under headings would need a
+custom fold/hide mechanism in Tiptap (hiding sibling nodes until the next same-or-higher heading)
+— a materially larger, riskier build than the navigation panel alone, which already solves "find
+my way around a long notebook." A new 📑 toolbar button toggles a scrollable list built from
+`extractHeadings(editor)` (walks `editor.state.doc` for `heading` nodes, capturing `{level, text,
+pos}` — recomputed on every `onUpdate`, not just on open, so the outline stays live while typing),
+indented by level. Clicking an entry calls `editor.view.nodeDOM(pos)` to get the heading's actual
+rendered DOM element, `scrollIntoView`s it, and briefly flashes it (`notebook-heading-flash`, a
+1.2s CSS pulse, same convention as the anchor-flash animation) — no custom IDs or a dedicated
+extension needed, since ProseMirror's own `nodeDOM` already resolves a live document position to
+its rendered element.
+
+**Verified live**, including a clean second browser tab specifically to rule out stale
+console-buffer noise from the long testing session in the original tab (a `useEffect` deps-array-
+size warning turned out to be leftover history from *before* this session's fixes, not a real
+bug — confirmed by reproducing the exact same interaction in a fresh tab with an empty console and
+seeing nothing): main-text/Hebrew-mode/Talmud-daf-amud scope labels, cross-book "Other notebooks"
+navigation, the font slider, granular anchor labels in both English and Hebrew (verse-level and
+Talmud-opening-words), in-notebook tag/color find, cross-notebook notebook-picker + color filter
+with real-highlight-styled snippets, and the outline panel's list + indentation + scroll/flash.
+`npm run build`/`tsc --noEmit`/`npm run lint` all clean throughout, lint count matching the
+committed Phase 2 baseline exactly at every checkpoint (no new issues at any point in this
+session).
+
+**Phase 3 follow-up round (same session, from live-testing feedback on Phase 3 itself):**
+- The panel's own chrome (header line + scope `<select>`) is now fully Hebrew/RTL, not just the
+  label *text* inside it — `dir={hebrewMode ? "rtl" : "ltr"}` plus `text-align: right` on both, and
+  the header word itself switches ("Notebook" → "מחברת", still an em-dash before the scope label).
+  The optgroup headers localize too: `"This text"`/`"Other notebooks"` → `"הטקסט הזה"`/`"עוד
+  מחברות"`. ("This book" was renamed to "This text" in English at the same time — a plain wording
+  fix, unrelated to Hebrew.)
+- Cross-notebook search's notebook picker (added earlier this session) turned out to be a real
+  discoverability miss — collapsed-by-default behind a small `▸ Searching N of M notebooks` link
+  was easy to not notice at all. Now opens expanded by default (still collapsible to save space
+  once someone has many notebooks) with clearer accent-colored text ending in "— click to choose".
+- In-notebook find gained a tag-chip row (mirrors the cross-notebook modal's own tag row) —
+  `noteTags` state tracks `extractTags(editor.getJSON())` deduped/alphabetized, recomputed on
+  every `onUpdate`/`onCreate` alongside the existing `headings` tracking. Clicking a chip sets the
+  find query to that tag's label, reusing `SearchExtension`'s existing tag-matching (no new search
+  logic needed — this was purely a missing *listing* of what's already searchable).
+
 ## Daily learning dedication banner — shipped
 
 `lib/dedicationService.ts` (types + `periodTitle`/`formattedMessage`, ported from native's

@@ -136,6 +136,18 @@ export function getTalmudSefariaName(index: number): string | undefined {
   return TextCatalog.allTalmudTractates.find((t) => t.id === index)?.sefariaName;
 }
 
+/** Looks up a single catalog item's display name (book/tractate/work) by id — the shared
+ *  implementation behind Reader.tsx's findCategoryItemName, lib/notebooks.ts's
+ *  formatNotebookScopeLabel, and lib/textAnchor.ts's formatAnchorLabel, all of which previously
+ *  duplicated this same getCategoryGroups-then-find lookup. */
+export function getCategoryItemName(category: ReaderCategory, index: number, hebrewMode = false): string {
+  for (const group of getCategoryGroups(category, hebrewMode)) {
+    const item = group.items.find((i) => i.id === index);
+    if (item) return item.name;
+  }
+  return "";
+}
+
 export function getCategoryDisplayName(category: ReaderCategory, hebrewMode = false): string {
   switch (category) {
     case "tanakh": return hebrewMode ? "תנ״ך" : "Tanakh";

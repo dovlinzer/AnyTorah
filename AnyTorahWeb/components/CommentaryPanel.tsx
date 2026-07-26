@@ -5,7 +5,7 @@ import { type CommentaryType, displayName, hebrewDisplayName, hasInlineSAMarkers
 import { fetchCategoryFor, type ReaderCategory, type PoolInfo } from "@/lib/commentaryPools";
 import { saHebrewLetter, SA_SLOT_STYLES, type TextDisplayMode, type CommentaryEntry } from "@/lib/textModels";
 import { fontSizePx, fontSizeLineHeight, fontSizeSpacingScale } from "@/lib/fontSizeLevels";
-import { splitParagraphs } from "@/lib/textAnchor";
+import { splitParagraphs, buildSegmentLabel } from "@/lib/textAnchor";
 import type { Highlight } from "@/lib/highlights";
 import FontSizeSlider from "@/components/FontSizeSlider";
 import DisplayModePill from "@/components/DisplayModePill";
@@ -62,8 +62,16 @@ export default function CommentaryPanel({
     anchorQuoteEn: string,
   ) => void;
   /** Set only while the Notebook side panel is open — inserts this paragraph as an anchor at the
-   *  notebook's cursor. See HighlightMark's onInsertToNotebook for the click affordance. */
-  onInsertToNotebook?: (segmentIndex: number, paragraphIndex: number, commentaryType: CommentaryType) => void;
+   *  notebook's cursor. See HighlightMark's onInsertToNotebook for the click affordance. `amud`/
+   *  `segmentLabel` are captured here (this panel is the only place that knows the entry's
+   *  number/text) for the anchor's granular label — see TextAnchor.segmentLabel. */
+  onInsertToNotebook?: (
+    segmentIndex: number,
+    paragraphIndex: number,
+    commentaryType: CommentaryType,
+    amud: "a" | "b" | undefined,
+    segmentLabel: string | undefined,
+  ) => void;
   /** Fired whenever the active commentary tab changes — Reader.tsx uses this to auto-follow the
    *  Notebook's scope to whichever commentary the reader is currently viewing (see notebook
    *  reverse-sync). Only this panel knows which tab is active, so the signal has to be lifted. */
@@ -299,11 +307,19 @@ export default function CommentaryPanel({
             // language's split count should never manufacture empty rows.
             const showHe = displayMode === "source" || displayMode === "both";
             const showEn = displayMode === "translation" || displayMode === "both";
-            const heParagraphs = showHe ? splitParagraphs(entry.he) : [];
-            const enParagraphs = showEn ? splitParagraphs(entry.en) : [];
+            // Split unconditionally (not gated on displayMode) — the notebook-insert anchor's
+            // opening-words capture (Talmud/Yerushalmi, see buildSegmentLabel) needs the raw
+            // Hebrew regardless of which language is currently toggled on screen, since both are
+            // already fetched either way. The gated heParagraphs/enParagraphs below (what's
+            // actually rendered) are just a slice/empty of these.
+            const heParagraphsAll = splitParagraphs(entry.he);
+            const enParagraphsAll = splitParagraphs(entry.en);
+            const heParagraphs = showHe ? heParagraphsAll : [];
+            const enParagraphs = showEn ? enParagraphsAll : [];
             // A hidden language's paragraph count never contributes rows — it's [] above — so
             // this is naturally driven only by whichever language(s) are actually visible.
             const paragraphCount = Math.max(heParagraphs.length, enParagraphs.length, 1);
+            const isGemara = category === "talmud" || category === "yerushalmi";
             return (
               <div key={i} className={`flex gap-2 ${numberOnRight ? "flex-row-reverse" : ""}`}>
                 {labelNode}
@@ -325,7 +341,16 @@ export default function CommentaryPanel({
                         onQuickPick={(c) => onHighlightQuickPick(entry.index, pIdx, activeType, c, quoteHe, quoteEn)}
                         onOpenEditor={() => onHighlightOpenEditor(entry.index, pIdx, activeType, quoteHe, quoteEn)}
                         onInsertToNotebook={
-                          onInsertToNotebook ? () => onInsertToNotebook(entry.index, pIdx, activeType) : undefined
+                          onInsertToNotebook
+                            ? () => {
+                                const segmentLabel = buildSegmentLabel(
+                                  isGemara ? null : String(num),
+                                  isGemara ? heParagraphsAll[pIdx] ?? "" : "",
+                                  isGemara ? enParagraphsAll[pIdx] ?? "" : "",
+                                );
+                                onInsertToNotebook(entry.index, pIdx, activeType, category === "talmud" ? talmudAmud : undefined, segmentLabel);
+                              }
+                            : undefined
                         }
                       >
                         <div className="flex items-start gap-1">

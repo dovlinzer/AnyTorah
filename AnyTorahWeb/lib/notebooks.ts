@@ -6,9 +6,13 @@
 // is native to the JSON doc model but awkward to do reliably by re-parsing HTML strings.
 import type { JSONContent } from "@tiptap/core";
 import type { ReaderCategory } from "./commentaryPools";
-import { displayName as commentaryDisplayName, type CommentaryType } from "./commentaryTypes";
+import {
+  displayName as commentaryDisplayName,
+  hebrewDisplayName as hebrewCommentaryDisplayName,
+  type CommentaryType,
+} from "./commentaryTypes";
 import type { AnchorSource, TextAnchor } from "./textAnchor";
-import { getCategoryGroups, getCategoryDisplayName } from "./categoryCatalog";
+import { getCategoryItemName, getCategoryDisplayName } from "./categoryCatalog";
 
 export interface NotebookScope {
   category: ReaderCategory;
@@ -30,17 +34,25 @@ export function notebookScopeKey(scope: NotebookScope): string {
   return `${scope.category}:${scope.index}:${scope.source}:${scope.commentaryType ?? ""}`;
 }
 
-/** Human-readable label for a notebook's scope, e.g. "Tosafot on Gittin" or "Talmud · Gittin" —
- *  used by the cross-notebook search modal (NotebookSearchModal.tsx), which lists notebooks
- *  across every book/tractate at once and so can't rely on Reader.tsx's own scope-option labels
- *  (those are scoped to whatever's currently selected). No chapter in the label — a Notebook is
- *  scoped to a whole book/commentary, not a chapter (see NotebookScope). */
-export function formatNotebookScopeLabel(scope: NotebookScope): string {
-  const bookName = getCategoryGroups(scope.category).flatMap((g) => g.items).find((i) => i.id === scope.index)?.name ?? "";
+/** Human-readable label for a notebook's scope, e.g. "Tosafot on Gittin" / "Bavli, Gittin", or in
+ *  Hebrew mode "תוספות על גיטין" / "בבלי, גיטין" — used by the cross-notebook search modal
+ *  (NotebookSearchModal.tsx), which lists notebooks across every book/tractate at once and so
+ *  can't rely on Reader.tsx's own scope-option labels (those are scoped to whatever's currently
+ *  selected), and by NotebookPanel.tsx's own header/dropdown for the current scope. No chapter in
+ *  the label — a Notebook is scoped to a whole book/commentary, not a chapter (see NotebookScope).
+ *  Tanakh's book names are unambiguous on their own (no category prefix); every other category
+ *  can share a tractate/work name across categories (e.g. "Pesachim" in both Mishnah and Talmud),
+ *  so those get a category prefix. */
+export function formatNotebookScopeLabel(scope: NotebookScope, hebrewMode = false): string {
+  const bookName = getCategoryItemName(scope.category, scope.index, hebrewMode);
   if (scope.source === "commentary" && scope.commentaryType) {
-    return `${commentaryDisplayName[scope.commentaryType]} on ${bookName}`;
+    const commentaryName = hebrewMode
+      ? hebrewCommentaryDisplayName[scope.commentaryType]
+      : commentaryDisplayName[scope.commentaryType];
+    return hebrewMode ? `${commentaryName} על ${bookName}` : `${commentaryName} on ${bookName}`;
   }
-  return `${getCategoryDisplayName(scope.category)} · ${bookName}`;
+  if (scope.category === "tanakh") return bookName;
+  return `${getCategoryDisplayName(scope.category, hebrewMode)}, ${bookName}`;
 }
 
 /** Empty Tiptap doc — a single empty paragraph, the shape `editor.getJSON()` produces for a
@@ -127,6 +139,26 @@ export function extractTags(doc: JSONContent): { tagId: string; label: string }[
   function walk(node: JSONContent) {
     if (isTagNode(node)) {
       found.push({ tagId: node.attrs!.tagId as string, label: node.attrs!.label as string });
+    }
+    node.content?.forEach(walk);
+  }
+  walk(doc);
+  return found;
+}
+
+/** Walks a notebook doc for every run of text carrying a `sectionColor` mark (see
+ *  components/notebook/SectionColorExtension.ts) — used by the cross-notebook search modal to
+ *  filter to (and preview) notebooks with a passage highlighted in a given color, the same 4
+ *  colors reader Highlights use (lib/highlightCategories.ts). Colored text is already plain text
+ *  content, so it's already covered by extractPlainText's own substring search — this is only
+ *  for the *color-specific* filter, not general search. */
+export function extractColoredRuns(doc: JSONContent): { colorIndex: number; text: string }[] {
+  const found: { colorIndex: number; text: string }[] = [];
+  function walk(node: JSONContent) {
+    if (node.type === "text" && node.text) {
+      const mark = node.marks?.find((m) => m.type === "sectionColor");
+      const colorIndex = mark?.attrs?.colorIndex;
+      if (typeof colorIndex === "number") found.push({ colorIndex, text: node.text });
     }
     node.content?.forEach(walk);
   }

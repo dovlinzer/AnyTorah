@@ -244,6 +244,21 @@ body {
   }
 }
 
+/* Outline panel's "jump to heading" — briefly flashes the target heading so the destination is
+ * obvious even for a short scroll where the smooth-scroll motion alone is easy to miss. */
+.notebook-heading-flash {
+  animation: notebook-heading-flash-pulse 1.2s ease-out;
+  border-radius: 0.2rem;
+}
+@keyframes notebook-heading-flash-pulse {
+  0%, 35% {
+    background-color: color-mix(in srgb, var(--accent) 25%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
 /* Notebook editor prose (NotebookPanel's Tiptap EditorContent). */
 .notebook-editor-content .ProseMirror {
   outline: none;

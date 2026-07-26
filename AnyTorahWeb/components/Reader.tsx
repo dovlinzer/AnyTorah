@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TextDisplayMode, TextSegment } from "@/lib/textModels";
-import { displayName, type CommentaryType } from "@/lib/commentaryTypes";
+import type { CommentaryType } from "@/lib/commentaryTypes";
 import { getPoolInfo, computeEffectiveSlots, fetchCategoryFor, type ReaderCategory } from "@/lib/commentaryPools";
 import {
   getCategoryGroups,
+  getCategoryItemName,
   getChapterMin,
   getChapterMax,
   getChapterUnitLabel,
@@ -36,13 +37,13 @@ import {
 import type { YomiToday, YomiResult } from "@/lib/yomiService";
 import { toHebrewNumeral } from "@/lib/textModels";
 import { loadHighlights, saveHighlights, findHighlight, type Highlight } from "@/lib/highlights";
-import { anchorKey, stripAnchorHTML, type TextAnchor } from "@/lib/textAnchor";
+import { anchorKey, stripAnchorHTML, buildSegmentLabel, type TextAnchor } from "@/lib/textAnchor";
 import HighlightMark from "@/components/HighlightMark";
 import HighlightEditModal from "@/components/HighlightEditModal";
 import HighlightsListModal from "@/components/HighlightsListModal";
 import NotebookPanel, { type NotebookScopeOption } from "@/components/NotebookPanel";
 import NotebookSearchModal from "@/components/NotebookSearchModal";
-import { notebookScopeKey, type NotebookScope } from "@/lib/notebooks";
+import { notebookScopeKey, formatNotebookScopeLabel, type NotebookScope } from "@/lib/notebooks";
 
 interface ChapterResponse {
   ref: string;
@@ -59,13 +60,9 @@ function clamp(n: number, min: number, max: number): number {
 
 /** Looks up a catalog item's display name (English, or nikkud-stripped Hebrew) by id — used for
  *  the Daf Yomi button, which needs a tractate name outside the currently-selected category's
- *  own `groups`/`index` state. */
+ *  own `groups`/`index` state. Thin wrapper over the shared getCategoryItemName. */
 function findCategoryItemName(category: ReaderCategory, index: number, hebrewMode: boolean): string {
-  for (const g of getCategoryGroups(category, hebrewMode)) {
-    const item = g.items.find((i) => i.id === index);
-    if (item) return item.name;
-  }
-  return "";
+  return getCategoryItemName(category, index, hebrewMode);
 }
 
 // Commentary slot assignments are remembered per context (e.g. "talmud", "sa:0") so switching
@@ -882,7 +879,14 @@ export default function Reader() {
   }, [highlights, category, index, chapter, halakha]);
 
   const buildAnchor = useCallback(
-    (source: "main" | "commentary", segmentIndex: number, paragraphIndex: number, commentaryType?: CommentaryType): TextAnchor => ({
+    (
+      source: "main" | "commentary",
+      segmentIndex: number,
+      paragraphIndex: number,
+      commentaryType?: CommentaryType,
+      amud?: "a" | "b",
+      segmentLabel?: string,
+    ): TextAnchor => ({
       category,
       index,
       chapter,
@@ -891,6 +895,8 @@ export default function Reader() {
       commentaryType,
       segmentIndex,
       paragraphIndex: paragraphIndex || undefined,
+      amud,
+      segmentLabel,
     }),
     [category, index, chapter, halakha],
   );
@@ -929,16 +935,16 @@ export default function Reader() {
   );
 
   const notebookScopeOptions: NotebookScopeOption[] = useMemo(() => {
-    // "Sforno" alone is ambiguous once you have notebooks on more than one book/tractate — name
-    // the book/tractate it's commenting on too, matching how anchor pills already read (e.g.
-    // formatAnchorLabel's "Sforno on Bereshit ch. 1").
-    const bookName = findCategoryItemName(category, index, hebrewMode);
+    // Labels reuse formatNotebookScopeLabel (lib/notebooks.ts) so the dropdown, the panel's own
+    // header line, and the cross-notebook search modal all describe the same scope identically —
+    // book/tractate name for main text (e.g. "Bavli, Gittin"), "Commentary on Book" for a
+    // commentary slot, both fully localized to Hebrew when hebrewMode is on.
     return [
-      { source: "main", label: "Main text" },
+      { source: "main", label: formatNotebookScopeLabel({ category, index, source: "main" }, hebrewMode) },
       ...effectiveSlots.map((c) => ({
         source: "commentary" as const,
         commentaryType: c,
-        label: `${displayName[c]} on ${bookName}`,
+        label: formatNotebookScopeLabel({ category, index, source: "commentary", commentaryType: c }, hebrewMode),
       })),
     ];
   }, [category, index, hebrewMode, effectiveSlots]);
@@ -1470,7 +1476,19 @@ export default function Reader() {
                             onQuickPick={(c) => handleQuickPickHighlight(buildAnchor("main", seg.index, 0), c, quoteHe, quoteEn)}
                             onOpenEditor={() => handleOpenHighlightEditor(buildAnchor("main", seg.index, 0), quoteHe, quoteEn)}
                             onInsertToNotebook={
-                              notebookOpen ? () => notebookInsertRef.current?.(buildAnchor("main", seg.index, 0)) : undefined
+                              notebookOpen
+                                ? () => {
+                                    const isGemara = category === "talmud" || category === "yerushalmi";
+                                    const segmentLabel = buildSegmentLabel(
+                                      isGemara ? null : seg.label,
+                                      isGemara ? seg.hebrewHTML : "",
+                                      isGemara ? seg.englishHTML : "",
+                                    );
+                                    notebookInsertRef.current?.(
+                                      buildAnchor("main", seg.index, 0, undefined, category === "talmud" ? talmudAmud : undefined, segmentLabel),
+                                    );
+                                  }
+                                : undefined
                             }
                           >
                             <div className="flex items-start gap-1">
@@ -1610,8 +1628,10 @@ export default function Reader() {
             }
             onInsertToNotebook={
               notebookOpen
-                ? (segmentIndex, paragraphIndex, commentaryType) =>
-                    notebookInsertRef.current?.(buildAnchor("commentary", segmentIndex, paragraphIndex, commentaryType))
+                ? (segmentIndex, paragraphIndex, commentaryType, amud, segmentLabel) =>
+                    notebookInsertRef.current?.(
+                      buildAnchor("commentary", segmentIndex, paragraphIndex, commentaryType, amud, segmentLabel),
+                    )
                 : undefined
             }
             onActiveTypeChange={(type) => setNotebookFocusSource({ source: "commentary", commentaryType: type })}
@@ -1631,6 +1651,8 @@ export default function Reader() {
                 scope={notebookScope}
                 readerChapter={chapter}
                 readerHalakha={isYerushalmi ? halakha : undefined}
+                readerAmud={category === "talmud" ? talmudAmud : undefined}
+                hebrewMode={hebrewMode}
                 scopeOptions={notebookScopeOptions}
                 onScopeChange={(option) =>
                   setNotebookFocusSource(
@@ -1639,6 +1661,7 @@ export default function Reader() {
                       : { source: "main" },
                   )
                 }
+                onNavigateToOtherScope={(otherScope) => navigateToNotebookScope(otherScope, "")}
                 onNavigateAnchor={navigateToAnchor}
                 onEditorReady={(insertFn) => {
                   notebookInsertRef.current = insertFn;
