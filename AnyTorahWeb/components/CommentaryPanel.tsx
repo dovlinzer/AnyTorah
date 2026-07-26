@@ -5,6 +5,7 @@ import { type CommentaryType, displayName, hebrewDisplayName, hasInlineSAMarkers
 import { fetchCategoryFor, type ReaderCategory, type PoolInfo } from "@/lib/commentaryPools";
 import { saHebrewLetter, SA_SLOT_STYLES, type TextDisplayMode, type CommentaryEntry } from "@/lib/textModels";
 import { fontSizePx, fontSizeLineHeight, fontSizeSpacingScale } from "@/lib/fontSizeLevels";
+import FontSizeSlider from "@/components/FontSizeSlider";
 
 export default function CommentaryPanel({
   category,
@@ -18,6 +19,7 @@ export default function CommentaryPanel({
   talmudAmud,
   mainSegmentCount,
   fontSizeLevel,
+  onFontSizeLevelChange,
   hebrewMode = false,
   halakha,
 }: {
@@ -46,6 +48,7 @@ export default function CommentaryPanel({
    * and made "max" here look smaller than the main text's "max" even at the same level.
    */
   fontSizeLevel: number;
+  onFontSizeLevelChange: (n: number) => void;
   /** saHebrewMode — commentator tab names/picker options switch to Hebrew, and the tab strip
    *  flips to RTL so the default-first commentator (e.g. Rashi) visually lands on the right,
    *  matching native. */
@@ -263,6 +266,7 @@ export default function CommentaryPanel({
             );
           })}
       </div>
+      <FontSizeSlider label="Commentary" level={fontSizeLevel} onChange={onFontSizeLevelChange} hebrewMode={hebrewMode} />
     </div>
   );
 }

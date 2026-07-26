@@ -46,14 +46,50 @@ them before changing anything here.
   A third `VerticalDivider` (Hebrew-mode only) separates the book/chapter/amud cluster from the
   daf-controls cluster, present only when both clusters actually render content
   (`category === "talmud" && dafImageAvailable`).
-- **Labels**: `ControlGroup` label text switches to `טקסט`/`מפרשים`; `FontSizeControl`'s
-  decrease/increase buttons render `א` instead of `A` (`hebrewMode` prop on both).
+- **Labels**: `ControlGroup` label text switches to `טקסט`/`מפרשים`; `FontSizeSlider`'s end
+  labels render `א` instead of `A` (`hebrewMode` prop, also flips the slider's own `dir` — see
+  "Font-size sliders" below).
 - **Auto-defaults on toggle**: `setHebrewMode` (`Reader.tsx`) also resets Reverse Navigation
   Direction and both Text/Commentary display modes to that direction's default — ON → reverse
   nav + Hebrew-only (`"source"`) for both; OFF → standard nav + both-language (`"both"`) for
   both. Just defaults: each of the three can still be changed independently afterward without
   the next `hebrewMode` toggle silently overwriting the user's choice — only toggling
   `hebrewMode` itself resets them.
+- **Geo default on first visit (`app/api/geo/route.ts`)**: a first-time visitor (no
+  `anytorah:hebrewMode` key in `localStorage` yet — `loadStoredHebrewMode()` returns `null`,
+  distinct from an explicit stored `false`) gets Hebrew/RTL mode defaulted on when Vercel's edge
+  network reports their IP as Israel. Reads the `x-vercel-ip-country` request header Vercel
+  stamps on every request server-side — no browser Geolocation permission prompt, no third-party
+  IP-lookup service. Route returns `{country: string | null}`; `null` in local dev or any
+  non-Vercel host, which the client (`Reader.tsx`'s mount effect) treats the same as "not
+  Israel" and just leaves the existing English/LTR default. Fires through the same
+  `setHebrewMode(true)` the toggle itself uses, so reverse-nav/display-mode defaults come along
+  with it. Once *any* explicit choice exists (toggling it, or this default itself, since
+  `setHebrewMode` persists) the stored value always wins on later loads — this only ever fires
+  once, before any preference exists.
+
+## Font-size sliders
+
+`components/FontSizeSlider.tsx` — a shared `<input type="range">` control, one instance pinned
+to the bottom of the main text panel and one to the bottom of the commentary panel
+(`components/CommentaryPanel.tsx`), each driving its own independent `fontSizeLevel` in
+`Reader.tsx` (`mainFontSizeLevel`/`commentaryFontSizeLevel`, same `lib/fontSizeLevels.ts` scheme
+as before). Replaced the old tappable-dots `FontSizeControl` that used to live in the toolbar's
+`ControlGroup` next to each panel's `DisplayModePill` — the toolbar groups now hold only the
+display-mode pill.
+
+- The slider's own `value`/`max` are just an index into `FONT_SIZE_LEVELS` (levels are
+  non-contiguous — see that file), converted back to a real level on `onChange`, same conversion
+  `FontSizeControl` used to do for its step buttons.
+- `dir={hebrewMode ? "rtl" : "ltr"}` on the slider's wrapper flips a native range input's visual
+  direction along with everything else in Hebrew mode (see "Toolbar layout" above) — the "א"/"א"
+  end-labels swap sides for free since they're just the first/last child in source order.
+- Sits inside each panel's own scroll container as a `shrink-0` footer below the `flex-1
+  overflow-y-auto` content — in `Reader.tsx` this required splitting what used to be one
+  `relative` wrapper (scroll area + `NavChevrons`) into an outer `flex flex-col` (scroll-wrapper +
+  slider) with the `relative`/chevron positioning moved to an inner `min-h-0 flex-1` div, so the
+  chevrons' `top-1/2` still centers on just the scrollable text, not the panel including the
+  slider footer.
 
 ## Navigation: Arrow Keys, Chevrons, and Reverse Navigation Direction
 

@@ -18,16 +18,9 @@ import SASimanPicker from "@/components/SASimanPicker";
 import NumberPickerModal from "@/components/NumberPickerModal";
 import DafImagePanel from "@/components/DafImagePanel";
 import DedicationBanner from "@/components/DedicationBanner";
+import FontSizeSlider from "@/components/FontSizeSlider";
 import { formattedMessage, type Dedication } from "@/lib/dedicationService";
-import {
-  FONT_SIZE_LEVELS,
-  FONT_SIZE_MIN,
-  FONT_SIZE_MAX,
-  FONT_SIZE_LABELS,
-  fontSizePx,
-  fontSizeLineHeight,
-  fontSizeSpacingScale,
-} from "@/lib/fontSizeLevels";
+import { FONT_SIZE_MIN, FONT_SIZE_MAX, fontSizePx, fontSizeLineHeight, fontSizeSpacingScale } from "@/lib/fontSizeLevels";
 import BookmarkEditModal from "@/components/BookmarkEditModal";
 import BookmarkListModal from "@/components/BookmarkListModal";
 import { loadTalmudPages, hasPages as hasTalmudPages, type TalmudPages } from "@/lib/talmudPages";
@@ -125,12 +118,16 @@ function storeFontSizeLevel(key: string, level: number) {
 // language of the text itself is shown.
 const HEBREW_MODE_KEY = "anytorah:hebrewMode";
 
-function loadHebrewMode(): boolean {
-  if (typeof window === "undefined") return false;
+/** null means the user has never touched the toggle — distinct from an explicit "off" — so the
+ *  Israel-geolocation default (see Reader's mount effect) only ever applies once, before any
+ *  explicit user choice exists. */
+function loadStoredHebrewMode(): boolean | null {
+  if (typeof window === "undefined") return null;
   try {
-    return window.localStorage.getItem(HEBREW_MODE_KEY) === "1";
+    const raw = window.localStorage.getItem(HEBREW_MODE_KEY);
+    return raw === null ? null : raw === "1";
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -271,70 +268,6 @@ function ResizeHandle({ onDrag }: { onDrag: (deltaX: number) => void }) {
       className="mx-1 w-1.5 shrink-0 cursor-col-resize self-stretch rounded transition-colors hover:bg-[var(--accent)]"
       style={{ background: "var(--border)" }}
     />
-  );
-}
-
-/**
- * Small-A…large-A control with tappable dots. `label` is used for aria-labels/tooltips only —
- * the visible caption lives above the group (see ControlGroup) so Text and Commentary read as
- * two clearly separate sections rather than repeating the word on every pill.
- */
-function FontSizeControl({
-  label,
-  level,
-  onChange,
-  hebrewMode = false,
-}: {
-  label: string;
-  level: number;
-  onChange: (n: number) => void;
-  hebrewMode?: boolean;
-}) {
-  const letter = hebrewMode ? "א" : "A";
-  // Levels are non-contiguous (see lib/fontSizeLevels.ts), so stepping and an unrecognized
-  // stored level both need to resolve by position in FONT_SIZE_LEVELS, not raw arithmetic ±1.
-  const currentIndex = FONT_SIZE_LEVELS.indexOf(level as (typeof FONT_SIZE_LEVELS)[number]);
-  const clampedIndex = currentIndex === -1 ? 0 : currentIndex;
-  const stepTo = (index: number) => onChange(FONT_SIZE_LEVELS[clamp(index, 0, FONT_SIZE_LEVELS.length - 1)]);
-  return (
-    <div className="flex items-center gap-2 rounded-full border border-border px-3 py-1.5">
-      <button
-        onClick={() => stepTo(clampedIndex - 1)}
-        disabled={clampedIndex <= 0}
-        aria-label={`Decrease ${label} font size`}
-        className="text-xs opacity-70 transition-opacity hover:opacity-100 disabled:opacity-25"
-      >
-        {letter}
-      </button>
-      <div className="flex items-center gap-1">
-        {FONT_SIZE_LEVELS.map((d, i) => {
-          const size = 5 + i * 2;
-          return (
-            <button
-              key={d}
-              onClick={() => onChange(d)}
-              aria-label={`${label} font size: ${FONT_SIZE_LABELS[d]}`}
-              title={FONT_SIZE_LABELS[d]}
-              className="rounded-full"
-              style={{
-                width: size,
-                height: size,
-                background: "var(--foreground)",
-                opacity: d === level ? 1 : 0.25,
-              }}
-            />
-          );
-        })}
-      </div>
-      <button
-        onClick={() => stepTo(clampedIndex + 1)}
-        disabled={clampedIndex >= FONT_SIZE_LEVELS.length - 1}
-        aria-label={`Increase ${label} font size`}
-        className="text-base opacity-70 transition-opacity hover:opacity-100 disabled:opacity-25"
-      >
-        {letter}
-      </button>
-    </div>
   );
 }
 
@@ -589,7 +522,6 @@ export default function Reader() {
   const [halakhaCount, setHalakhaCount] = useState(1);
 
   const [hebrewMode, setHebrewModeState] = useState(false);
-  useEffect(() => setHebrewModeState(loadHebrewMode()), []);
   // Persistent dedication line above the header — independent of DedicationBanner's once-a-day
   // popup, which only ever shows the message once; this stays visible for as long as a
   // dedication is active.
@@ -635,6 +567,25 @@ export default function Reader() {
     setTextDisplayMode(on ? "source" : "both");
     setCommentaryDisplayMode(on ? "source" : "both");
   };
+  // On first load: restore any explicit stored preference as-is. If the user has never touched
+  // the toggle, ask /api/geo (Vercel's edge IP-country header — see app/api/geo/route.ts) and
+  // default to Hebrew/RTL for visitors in Israel, via the same setHebrewMode used by the toggle
+  // itself so reverse-nav/display-mode defaults come along with it. Runs once; a fetch failure or
+  // non-Vercel host (no geo header, e.g. local dev) just leaves the existing English/LTR default.
+  useEffect(() => {
+    const stored = loadStoredHebrewMode();
+    if (stored !== null) {
+      setHebrewModeState(stored);
+      return;
+    }
+    fetch("/api/geo")
+      .then((res) => res.json())
+      .then((json: { country: string | null }) => {
+        if (json.country === "IL") setHebrewMode(true);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [mainFontSizeLevel, setMainFontSizeLevelState] = useState(0);
   const [commentaryFontSizeLevel, setCommentaryFontSizeLevelState] = useState(0);
   useEffect(() => {
@@ -1212,14 +1163,12 @@ export default function Reader() {
 
         <ControlGroup label={hebrewMode ? "טקסט" : "Text"} hebrewMode={hebrewMode}>
           <DisplayModePill mode={textDisplayMode} onChange={setTextDisplayMode} />
-          <FontSizeControl label="Text" level={mainFontSizeLevel} onChange={setMainFontSizeLevel} hebrewMode={hebrewMode} />
         </ControlGroup>
 
         <VerticalDivider />
 
         <ControlGroup label={hebrewMode ? "מפרשים" : "Commentary"} hebrewMode={hebrewMode}>
           <DisplayModePill mode={commentaryDisplayMode} onChange={setCommentaryDisplayMode} />
-          <FontSizeControl label="Commentary" level={commentaryFontSizeLevel} onChange={setCommentaryFontSizeLevel} hebrewMode={hebrewMode} />
         </ControlGroup>
       </div>
 
@@ -1235,9 +1184,10 @@ export default function Reader() {
         )}
 
         <div
-          className={`relative min-h-0 min-w-0 ${showDaf ? "flex-none" : "flex-1"}`}
+          className={`flex min-h-0 min-w-0 flex-col ${showDaf ? "flex-none" : "flex-1"}`}
           style={showDaf ? { width: narrowWidth } : undefined}
         >
+        <div className="relative min-h-0 flex-1">
           {!chevronsOnDaf && <NavChevrons hideLeft={hideLeftChevron} hideRight={hideRightChevron} onStep={stepReading} />}
           <div ref={textContainerRef} className="h-full overflow-y-auto px-6">
           {loading && <p className="py-8 text-center text-sm opacity-60">Loading…</p>}
@@ -1321,6 +1271,8 @@ export default function Reader() {
           )}
           </div>
         </div>
+          <FontSizeSlider label="Text" level={mainFontSizeLevel} onChange={setMainFontSizeLevel} hebrewMode={hebrewMode} />
+        </div>
 
         {showDaf && dafPosition === "middle" && (
           <>
@@ -1352,6 +1304,7 @@ export default function Reader() {
             talmudAmud={category === "talmud" ? talmudAmud : undefined}
             mainSegmentCount={category === "rambam" ? data?.segments.length : undefined}
             fontSizeLevel={commentaryFontSizeLevel}
+            onFontSizeLevelChange={setCommentaryFontSizeLevel}
             hebrewMode={hebrewMode}
             halakha={isYerushalmi ? halakha : undefined}
           />
