@@ -11,7 +11,7 @@ export default function AnchorPill({ node, extension }: NodeViewProps) {
   const { onNavigate } = extension.options as AnchorNodeOptions;
 
   return (
-    <NodeViewWrapper as="span" className="notebook-anchor-pill" contentEditable={false}>
+    <NodeViewWrapper as="span" id={node.attrs.nodeId} className="notebook-anchor-pill" contentEditable={false}>
       <button
         type="button"
         onClick={() => onNavigate(node.attrs.anchor)}

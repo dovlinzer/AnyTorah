@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
@@ -8,13 +8,18 @@ import Link from "@tiptap/extension-link";
 import AnchorNodeExtension from "./notebook/AnchorNodeExtension";
 import IndentExtension from "./notebook/IndentExtension";
 import TextDirectionExtension from "./notebook/TextDirectionExtension";
+import SearchExtension from "./notebook/SearchExtension";
+import SectionColorExtension from "./notebook/SectionColorExtension";
+import TagNodeExtension from "./notebook/TagNodeExtension";
 import {
   emptyNotebookBody,
+  extractAnchors,
   loadNotebook,
   saveNotebook,
   type NotebookScope,
 } from "@/lib/notebooks";
 import { formatAnchorLabel, type TextAnchor } from "@/lib/textAnchor";
+import { HIGHLIGHT_CATEGORY_COUNT, loadHighlightCategoryLabels } from "@/lib/highlightCategories";
 
 const AUTOSAVE_DELAY_MS = 500;
 
@@ -29,20 +34,41 @@ export interface NotebookScopeOption {
  *  remounts this component (and thus useEditor) instead of manually resyncing content. */
 export default function NotebookPanel({
   scope,
+  readerChapter,
+  readerHalakha,
   scopeOptions,
   onScopeChange,
   onNavigateAnchor,
   onEditorReady,
   onClose,
+  initialSearchTerm,
+  onInitialSearchConsumed,
 }: {
   scope: NotebookScope;
+  /** Wherever the reader currently is, within this notebook's scope's book/tractate — drives
+   *  reverse sync: scrolling to and flashing whichever anchor pill(s) match. Anchor matching is
+   *  chapter/halakha granularity only, same limitation as anchor *navigation* itself (see
+   *  navigateToAnchor in Reader.tsx) — this app has no scroll-to-segment infrastructure. */
+  readerChapter: number;
+  readerHalakha?: number;
   scopeOptions: NotebookScopeOption[];
   onScopeChange: (option: NotebookScopeOption) => void;
   onNavigateAnchor: (anchor: TextAnchor) => void;
   onEditorReady: (insertAnchor: (anchor: TextAnchor) => void) => void;
   onClose: () => void;
+  /** Set when arriving here from a cross-notebook search result (NotebookSearchModal) — opens
+   *  the in-doc find bar pre-seeded with the query that matched, so the user lands on the hit. */
+  initialSearchTerm?: string;
+  /** Fired once initialSearchTerm has been applied — Reader.tsx clears its copy so a later,
+   *  unrelated scope switch doesn't reapply a stale seeded search. */
+  onInitialSearchConsumed?: () => void;
 }) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [findOpen, setFindOpen] = useState(!!initialSearchTerm);
+  const [findQuery, setFindQuery] = useState(initialSearchTerm ?? "");
+  const [findMatchInfo, setFindMatchInfo] = useState({ count: 0, index: -1 });
+  const findInputRef = useRef<HTMLInputElement>(null);
+  const [colorLabels] = useState<string[]>(() => loadHighlightCategoryLabels());
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -53,6 +79,9 @@ export default function NotebookPanel({
       AnchorNodeExtension.configure({ onNavigate: onNavigateAnchor }),
       IndentExtension,
       TextDirectionExtension,
+      SearchExtension,
+      SectionColorExtension,
+      TagNodeExtension,
     ],
     content: loadNotebook(scope)?.bodyJSON ?? emptyNotebookBody(),
     onUpdate: ({ editor }) => {
@@ -61,7 +90,26 @@ export default function NotebookPanel({
         saveNotebook(scope, editor.getJSON());
       }, AUTOSAVE_DELAY_MS);
     },
+    onTransaction: ({ editor }) => {
+      setFindMatchInfo({
+        count: editor.storage.notebookSearch.results.length,
+        index: editor.storage.notebookSearch.resultIndex,
+      });
+    },
   });
+
+  // Run the seeded search whenever a fresh term arrives (cross-notebook search hand-off). Keyed
+  // on initialSearchTerm itself, not just [editor] — navigating to a notebook that's already the
+  // open one doesn't remount this component (same key={notebookScopeKey(scope)} in Reader.tsx),
+  // so relying on mount alone would silently drop the seeded search in that case.
+  useEffect(() => {
+    if (!editor || !initialSearchTerm) return;
+    setFindOpen(true);
+    setFindQuery(initialSearchTerm);
+    editor.commands.setSearchTerm(initialSearchTerm);
+    onInitialSearchConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onInitialSearchConsumed ref intentionally excluded
+  }, [editor, initialSearchTerm]);
 
   // Flush a pending debounced save immediately on unmount (scope switch or panel close) so the
   // last few hundred ms of typing aren't lost to the debounce window.
@@ -87,6 +135,26 @@ export default function NotebookPanel({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- onEditorReady ref is set once editor exists
   }, [editor]);
+
+  // Reverse sync — scroll to and briefly flash whichever anchor pill(s) match wherever the
+  // reader currently is. Runs on mount too (matching "always showing the matching notebook"),
+  // not just on subsequent navigation, since Reader.tsx remounts this component fresh whenever
+  // scope changes (key={notebookScopeKey(scope)}).
+  useEffect(() => {
+    if (!editor) return;
+    const matches = extractAnchors(editor.getJSON()).filter(
+      (a) => a.anchor.chapter === readerChapter && (a.anchor.halakha ?? undefined) === (readerHalakha ?? undefined),
+    );
+    if (matches.length === 0) return;
+    const elements = matches.map((m) => document.getElementById(m.nodeId)).filter((el): el is HTMLElement => !!el);
+    if (elements.length === 0) return;
+    elements[0].scrollIntoView({ behavior: "smooth", block: "center" });
+    elements.forEach((el) => el.classList.add("notebook-anchor-flash"));
+    const timeout = setTimeout(() => {
+      elements.forEach((el) => el.classList.remove("notebook-anchor-flash"));
+    }, 1600);
+    return () => clearTimeout(timeout);
+  }, [editor, readerChapter, readerHalakha]);
 
   const currentOptionLabel =
     scopeOptions.find(
@@ -196,6 +264,33 @@ export default function NotebookPanel({
           }}
           active={editor?.isActive("link")}
         />
+        <ToolbarButton
+          label="🏷"
+          title="Insert a tag at the cursor"
+          onClick={() => {
+            const label = window.prompt("Tag name");
+            if (label?.trim()) {
+              editor?.chain().focus().insertTag({ tagId: crypto.randomUUID(), label: label.trim() }).insertContent(" ").run();
+            }
+          }}
+        />
+        <ToolbarDivider />
+        {Array.from({ length: HIGHLIGHT_CATEGORY_COUNT }, (_, i) => i).map((i) => (
+          <button
+            key={i}
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => editor?.chain().focus().setSectionColor(i).run()}
+            title={`Highlight selection — ${colorLabels[i]}`}
+            aria-label={`Highlight selection ${colorLabels[i]}`}
+            className={`highlight-dot highlight-dot-${i}`}
+          />
+        ))}
+        <ToolbarButton
+          label="✕"
+          title="Remove highlight color"
+          onClick={() => editor?.chain().focus().unsetSectionColor().run()}
+        />
         <ToolbarDivider />
         <ToolbarButton
           label="⇄"
@@ -207,7 +302,81 @@ export default function NotebookPanel({
           }}
           active={editor?.isActive({ dir: "rtl" })}
         />
+        <ToolbarDivider />
+        <ToolbarButton
+          label="🔍"
+          title="Find in this notebook"
+          onClick={() => {
+            setFindOpen((o) => {
+              const next = !o;
+              if (!next) editor?.commands.setSearchTerm("");
+              return next;
+            });
+            requestAnimationFrame(() => findInputRef.current?.focus());
+          }}
+          active={findOpen}
+        />
       </div>
+
+      {findOpen && (
+        <div className="flex shrink-0 items-center gap-1 border-b border-border p-1.5">
+          <input
+            ref={findInputRef}
+            value={findQuery}
+            onChange={(e) => {
+              setFindQuery(e.target.value);
+              editor?.commands.setSearchTerm(e.target.value);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                if (e.shiftKey) editor?.commands.goToPreviousMatch();
+                else editor?.commands.goToNextMatch();
+              } else if (e.key === "Escape") {
+                setFindOpen(false);
+                setFindQuery("");
+                editor?.commands.setSearchTerm("");
+              }
+            }}
+            placeholder="Find in notebook…"
+            className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs"
+            aria-label="Find in this notebook"
+          />
+          <span className="shrink-0 text-[10px] opacity-60">
+            {findMatchInfo.count > 0 ? `${findMatchInfo.index + 1} / ${findMatchInfo.count}` : "0 / 0"}
+          </span>
+          <button
+            onClick={() => editor?.commands.goToPreviousMatch()}
+            disabled={findMatchInfo.count === 0}
+            aria-label="Previous match"
+            title="Previous match"
+            className="shrink-0 rounded border border-border px-1.5 py-1 text-xs disabled:opacity-40"
+          >
+            ↑
+          </button>
+          <button
+            onClick={() => editor?.commands.goToNextMatch()}
+            disabled={findMatchInfo.count === 0}
+            aria-label="Next match"
+            title="Next match"
+            className="shrink-0 rounded border border-border px-1.5 py-1 text-xs disabled:opacity-40"
+          >
+            ↓
+          </button>
+          <button
+            onClick={() => {
+              setFindOpen(false);
+              setFindQuery("");
+              editor?.commands.setSearchTerm("");
+            }}
+            aria-label="Close find"
+            title="Close find"
+            className="shrink-0 rounded px-1.5 py-1 text-xs opacity-60 hover:opacity-100"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <p className="shrink-0 px-2 pt-1.5 text-[10px] opacity-50">Notebook — {currentOptionLabel}</p>
 

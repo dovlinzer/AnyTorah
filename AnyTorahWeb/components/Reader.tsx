@@ -41,6 +41,7 @@ import HighlightMark from "@/components/HighlightMark";
 import HighlightEditModal from "@/components/HighlightEditModal";
 import HighlightsListModal from "@/components/HighlightsListModal";
 import NotebookPanel, { type NotebookScopeOption } from "@/components/NotebookPanel";
+import NotebookSearchModal from "@/components/NotebookSearchModal";
 import { notebookScopeKey, type NotebookScope } from "@/lib/notebooks";
 
 interface ChapterResponse {
@@ -899,20 +900,32 @@ export default function Reader() {
   // so the user can click a paragraph in the reader while the notebook stays open (see
   // HighlightMark's onInsertToNotebook / CommentaryPanel's mirror of it).
   const [notebookOpen, setNotebookOpen] = useState(false);
-  const [notebookSourceOverride, setNotebookSourceOverride] = useState<{
-    source: "commentary";
-    commentaryType: CommentaryType;
-  } | null>(null);
-  // Reset to "main text" whenever the selected book/tractate changes — a commentary override from
-  // a previous book isn't meaningful once category/index moves on.
-  useEffect(() => setNotebookSourceOverride(null), [category, index]);
+  // Reverse sync — the panel's scope auto-follows wherever the reader currently is (main text vs.
+  // whichever commentary tab is active), rather than a browsing-session-long manual pin. Set
+  // directly by three things: CommentaryPanel's onActiveTypeChange (an explicit tab switch), the
+  // panel's own scope dropdown, and cross-notebook search navigation. Reset to "main" only on a
+  // book/tractate change — a commentary focus from a previous book isn't meaningful once
+  // category/index moves on, but switching *chapters* within the same book deliberately does NOT
+  // reset it, so stepping through chapters while reading a specific commentary's notes keeps
+  // following that same commentary instead of snapping back on every step.
+  type NotebookFocus = { source: "main" } | { source: "commentary"; commentaryType: CommentaryType };
+  const [notebookFocusSource, setNotebookFocusSource] = useState<NotebookFocus>({ source: "main" });
+  // Cross-notebook search navigation (navigateToNotebookScope below) changes category/index and
+  // wants a specific focus (possibly "commentary") to survive the reset this effect would
+  // otherwise apply — it stashes the desired value here just before triggering the change, and
+  // this effect consumes (and clears) it instead of defaulting to "main" when present.
+  const pendingNotebookFocusRef = useRef<NotebookFocus | null>(null);
+  useEffect(() => {
+    setNotebookFocusSource(pendingNotebookFocusRef.current ?? { source: "main" });
+    pendingNotebookFocusRef.current = null;
+  }, [category, index]);
 
   const notebookScope: NotebookScope = useMemo(
     () =>
-      notebookSourceOverride
-        ? { category, index, source: "commentary", commentaryType: notebookSourceOverride.commentaryType }
+      notebookFocusSource.source === "commentary"
+        ? { category, index, source: "commentary", commentaryType: notebookFocusSource.commentaryType }
         : { category, index, source: "main" },
-    [category, index, notebookSourceOverride],
+    [category, index, notebookFocusSource],
   );
 
   const notebookScopeOptions: NotebookScopeOption[] = useMemo(() => {
@@ -931,6 +944,10 @@ export default function Reader() {
   }, [category, index, hebrewMode, effectiveSlots]);
 
   const notebookInsertRef = useRef<((anchor: TextAnchor) => void) | null>(null);
+  const [notebookSearchOpen, setNotebookSearchOpen] = useState(false);
+  // Set only when arriving from a cross-notebook search result — seeds NotebookPanel's in-doc
+  // find bar so the user lands on the hit that matched, not just the top of the document.
+  const [notebookSearchSeed, setNotebookSearchSeed] = useState("");
 
   const navigateToAnchor = useCallback(
     (anchor: TextAnchor) => {
@@ -942,6 +959,34 @@ export default function Reader() {
     },
     [],
   );
+
+  // Cross-notebook search result → open the panel on that exact scope. Chapter/halakha reset to
+  // the book's first section (same as picking a new book from any of the book pickers) since a
+  // Notebook is scoped to a whole book/commentary, not a chapter — there's no single "right"
+  // chapter to land on for a hit that might reference several.
+  const navigateToNotebookScope = useCallback((scope: NotebookScope, seedSearchTerm: string) => {
+    const desiredFocus: NotebookFocus =
+      scope.source === "commentary" && scope.commentaryType
+        ? { source: "commentary", commentaryType: scope.commentaryType }
+        : { source: "main" };
+    // Stash for the [category, index] reset effect above, and also apply directly — the effect
+    // only fires when category/index actually change (e.g. searching within the already-open
+    // book's own notebook wouldn't change either).
+    pendingNotebookFocusRef.current = desiredFocus;
+    setNotebookFocusSource(desiredFocus);
+    setCategory(scope.category);
+    setSelection((s) => ({
+      ...s,
+      [scope.category]: {
+        index: scope.index,
+        chapter: getChapterMin(scope.category, scope.index),
+        halakha: scope.category === "yerushalmi" ? 1 : undefined,
+      },
+    }));
+    setNotebookSearchSeed(seedSearchTerm);
+    setNotebookOpen(true);
+    setNotebookSearchOpen(false);
+  }, [setCategory, setSelection, setNotebookFocusSource, setNotebookSearchSeed, setNotebookOpen, setNotebookSearchOpen]);
 
   const upsertHighlight = (
     anchor: TextAnchor,
@@ -1224,6 +1269,14 @@ export default function Reader() {
             style={notebookOpen ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
           >
             📓
+          </button>
+          <button
+            onClick={() => setNotebookSearchOpen(true)}
+            aria-label="Search all notebooks"
+            title="Search all notebooks"
+            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+          >
+            🔎
           </button>
         </div>
       </header>
@@ -1561,6 +1614,7 @@ export default function Reader() {
                     notebookInsertRef.current?.(buildAnchor("commentary", segmentIndex, paragraphIndex, commentaryType))
                 : undefined
             }
+            onActiveTypeChange={(type) => setNotebookFocusSource({ source: "commentary", commentaryType: type })}
           />
         </div>
 
@@ -1575,12 +1629,14 @@ export default function Reader() {
               <NotebookPanel
                 key={notebookScopeKey(notebookScope)}
                 scope={notebookScope}
+                readerChapter={chapter}
+                readerHalakha={isYerushalmi ? halakha : undefined}
                 scopeOptions={notebookScopeOptions}
                 onScopeChange={(option) =>
-                  setNotebookSourceOverride(
+                  setNotebookFocusSource(
                     option.source === "commentary" && option.commentaryType
                       ? { source: "commentary", commentaryType: option.commentaryType }
-                      : null,
+                      : { source: "main" },
                   )
                 }
                 onNavigateAnchor={navigateToAnchor}
@@ -1588,6 +1644,8 @@ export default function Reader() {
                   notebookInsertRef.current = insertFn;
                 }}
                 onClose={() => setNotebookOpen(false)}
+                initialSearchTerm={notebookSearchSeed || undefined}
+                onInitialSearchConsumed={() => setNotebookSearchSeed("")}
               />
             </div>
           </>
@@ -1675,6 +1733,13 @@ export default function Reader() {
           onNavigate={handleNavigateHighlight}
           onDelete={(h) => handleDeleteHighlightAt(h.anchor)}
           onClose={() => setHighlightsListOpen(false)}
+        />
+      )}
+
+      {notebookSearchOpen && (
+        <NotebookSearchModal
+          onNavigate={(notebook, seedQuery) => navigateToNotebookScope(notebook.scope, seedQuery)}
+          onClose={() => setNotebookSearchOpen(false)}
         />
       )}
 

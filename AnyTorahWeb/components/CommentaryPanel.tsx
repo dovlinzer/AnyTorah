@@ -31,6 +31,7 @@ export default function CommentaryPanel({
   onHighlightQuickPick,
   onHighlightOpenEditor,
   onInsertToNotebook,
+  onActiveTypeChange,
 }: {
   category: ReaderCategory;
   index: number;
@@ -63,6 +64,10 @@ export default function CommentaryPanel({
   /** Set only while the Notebook side panel is open — inserts this paragraph as an anchor at the
    *  notebook's cursor. See HighlightMark's onInsertToNotebook for the click affordance. */
   onInsertToNotebook?: (segmentIndex: number, paragraphIndex: number, commentaryType: CommentaryType) => void;
+  /** Fired whenever the active commentary tab changes — Reader.tsx uses this to auto-follow the
+   *  Notebook's scope to whichever commentary the reader is currently viewing (see notebook
+   *  reverse-sync). Only this panel knows which tab is active, so the signal has to be lifted. */
+  onActiveTypeChange?: (type: CommentaryType) => void;
   /** The user's raw slot assignments — what the swap picker writes to and persists. */
   slots: CommentaryType[];
   /** slots with any context-unavailable entry substituted for a fallback — what's shown/fetched. */
@@ -108,6 +113,11 @@ export default function CommentaryPanel({
   }, [poolInfo.contextKey]);
 
   const activeType = effectiveSlots[activeIndex] ?? slots[activeIndex];
+
+  useEffect(() => {
+    if (activeType) onActiveTypeChange?.(activeType);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onActiveTypeChange ref intentionally excluded, fire only when the tab itself changes
+  }, [activeType]);
 
   const [entries, setEntries] = useState<CommentaryEntry[] | null>(null);
   const [loading, setLoading] = useState(false);

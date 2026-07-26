@@ -404,15 +404,130 @@ toggling a list only indented the text with no visible bullet or number. `global
 `.notebook-editor-content .ProseMirror ul/ol` rules now set `list-style-type` explicitly (disc/
 decimal, with circle/square for nested `ul`s).
 
-**Explicitly deferred to a later session** (matching the original staged build order): reverse
-sync (auto-scrolling/highlighting the notebook to whichever anchor matches wherever the reader
-currently is — "the key feature that determines its usability" per the user, still not built) and
-cross-notebook search/browsing across all scopes at once.
-
 Verified live: editor persists across a full page reload (`anytorah:notebooks` in localStorage,
 one entry per scope key, confirmed separate documents for main text vs. a commentary on the same
 book), toolbar formatting commands, anchor-pill insertion and click-to-navigate round trip, both
 themes at rest.
+
+## Notebook — Phase 2 shipped (reverse sync, search, section colors, tags)
+
+Builds on Phase 1 above. Four features, all in the same session per user request: reverse sync
+(the piece explicitly deferred from Phase 1), in-notebook find, cross-notebook search, and a way
+to color-code/tag passages within one notebook — modeled on Highlights' color/tag mechanism per
+explicit user design decisions (see below).
+
+**Design decisions locked in via AskUserQuestion before building:**
+- Reverse sync auto-follow: when the reader navigates, the panel's scope snaps to "main" on any
+  category/index change (new book/tractate) but **not** on a plain chapter/daf step within the
+  same book — switching a commentary tab in `CommentaryPanel` sets focus to that commentary and it
+  *persists* across chapter navigation, so stepping through a tractate while reading a specific
+  commentary's notes keeps following that commentary instead of snapping back every daf.
+- Section coloring: an inline highlight **mark** on selected text (like a real highlighter), not a
+  block/divider node — reuses `lib/highlightCategories.ts`'s exact 4 colors/labels for visual
+  consistency with reader Highlights.
+- Tags: **per-section** (inline chips insertable at the cursor), not whole-notebook — chosen over
+  the simpler whole-doc-tag option specifically so cross-notebook search can filter to a tagged
+  passage, not just a tagged document.
+
+**Reverse sync — auto-follow + scroll/flash:**
+- `CommentaryPanel.tsx` gained `onActiveTypeChange?: (type) => void`, fired from a `useEffect` on
+  `[activeType]` — the only place that knows which commentary tab is currently active.
+- `Reader.tsx`'s `notebookFocusSource` state (`{source:"main"}` or `{source:"commentary",
+  commentaryType}`) replaces the old `notebookSourceOverride`. Reset to `"main"` only on
+  `[category, index]` change (not chapter/halakha — see design decision above); set from three
+  places: `CommentaryPanel`'s `onActiveTypeChange`, the panel's own scope `<select>`, and
+  cross-notebook search navigation (`navigateToNotebookScope`).
+  **Ordering hazard, worked around:** `navigateToNotebookScope` changes `category`/`index` *and*
+  wants a specific (possibly non-"main") focus in the same tick, but the `[category, index]` reset
+  effect fires *after* that render regardless of call order and would stomp an explicit
+  `setNotebookFocusSource` call made just before it. Fixed with `pendingNotebookFocusRef` — the
+  navigate function stashes the desired focus there before triggering the category/index change,
+  and the reset effect consumes (and clears) the pending value instead of defaulting to "main"
+  when one is present.
+- `NotebookPanel.tsx` takes `readerChapter`/`readerHalakha` props (primitives, not an object, so
+  the effect's dependency array stays stable) and a `useEffect` that calls `extractAnchors` on the
+  live doc, filters to matches at that chapter/halakha, `scrollIntoView`s the first match, and adds
+  a `notebook-anchor-flash` class (a 1.6s CSS keyframe pulse, `globals.css`) to every match, timing
+  out the class after 1.6s. Runs on every mount too (not just subsequent navigation), which is what
+  makes switching scope or reopening the panel "always show the matching notebook."
+- `AnchorPill.tsx`'s `NodeViewWrapper` now renders `id={node.attrs.nodeId}` so the effect above can
+  `getElementById` it — this was the one missing piece Phase 1 didn't need (nothing used the id).
+- Still doesn't scroll to the exact *paragraph* — chapter/halakha granularity only, same
+  documented limitation as anchor navigation itself (no scroll-to-segment infrastructure).
+
+**In-notebook find — `components/notebook/SearchExtension.ts`:** a from-scratch Tiptap `Extension`
+(no official Tiptap search extension exists in this installed version) — a ProseMirror `Plugin`
+with a `DecorationSet` state field decorating every case-insensitive text match, plus
+`setSearchTerm`/`goToNextMatch`/`goToPreviousMatch` commands that move the editor's real selection
+to the active match and call `tr.scrollIntoView()`. Toolbar 🔍 button toggles a find bar (input +
+match count `"N / M"` + prev/next + close) in `NotebookPanel.tsx`; `onTransaction` mirrors
+`editor.storage.notebookSearch` into React state so the count re-renders live.
+**Lint gotcha worth keeping:** the natural implementation aliases `this` to a local var inside
+`addProseMirrorPlugins()` (the standard pattern in Tiptap's own docs for this kind of extension) —
+this repo's `@typescript-eslint/no-this-alias` rule rejects that. Fixed with a `() => this.storage`
+closure instead of `const extensionThis = this`, which reads live off `this` without an alias.
+
+**Cross-notebook search — `NotebookSearchModal.tsx`:** mirrors `HighlightsListModal.tsx`'s chrome.
+Loads all notebooks via `loadNotebooks()`, searches each one's `extractPlainText` (already folds in
+anchor *and* tag labels, so a search for a tag name or an anchor's book name also matches), and
+shows a tag-filter chip row built from the union of every notebook's `extractTags`. New header 🔎
+button ("Search all notebooks"), always available (not gated on the panel being open). Clicking a
+result calls `navigateToNotebookScope(scope, query)` (Reader.tsx) which switches category/index,
+sets `notebookFocusSource`, opens the panel, and seeds `NotebookPanel`'s find bar via
+`initialSearchTerm`/`onInitialSearchConsumed` so the user lands on the actual hit.
+**Real bug found via live testing, fixed same session:** the seed-search effect was originally
+keyed on `[editor]` only ("run once when the editor becomes available"), which silently did
+nothing when the search result's scope was *already* the currently-open notebook — same
+`key={notebookScopeKey(scope)}`, so `NotebookPanel` doesn't remount and `editor` never changes.
+Fixed by keying the effect on `[editor, initialSearchTerm]` instead, and having it explicitly
+`setFindOpen(true)`/`setFindQuery(term)` rather than relying on `useState`'s mount-only initializer
+for those two — covers both the fresh-mount case and the same-instance case.
+`lib/notebooks.ts` gained `formatNotebookScopeLabel(scope)` (book/commentary name without a
+chapter, since a Notebook is scoped to a whole book — reuses `getCategoryGroups`/
+`getCategoryDisplayName` from `categoryCatalog.ts`, same data `bookmarks.ts`'s private
+`getItemName` draws from) for the modal's result headers.
+
+**Section colors — `components/notebook/SectionColorExtension.ts`:** a Tiptap `Mark` (not a node)
+with one `colorIndex` attribute, rendered as `<span data-color-index="N" class="notebook-section-
+color-N">`. `setSectionColor(i)` does `unsetMark().setMark(colorIndex:i)` (pick-a-color semantics,
+not toggle — matches `HighlightColorPicker`'s own swatch UX) rather than a plain toggle, so
+re-clicking a different color while some other color is active always switches to the new one; a
+dedicated ✕ button is the only "remove" affordance. Toolbar renders 4 small `.highlight-dot-N`
+swatches (same class Highlights' own color picker uses) with labels loaded from
+`loadHighlightCategoryLabels()` — a label rename in the Highlights feature automatically renames
+these swatches' tooltips too, since both read the same localStorage-backed labels.
+CSS (`globals.css`): `.notebook-section-color-0..3`, same opacity/mix formula as `.highlight-
+text-0..3` but declared separately (different DOM host, `<span data-color-index>` vs. the reader's
+own highlight-mark wrapper) rather than sharing a class.
+
+**Per-section tags — `components/notebook/TagNodeExtension.ts` + `TagChip.tsx`:** an inline atom
+node (`name: "tag"`, mirrors `AnchorNodeExtension` exactly — plain JSON attrs `{tagId, label}`, not
+HTML) inserted via a toolbar 🏷 button that does `window.prompt("Tag name")` (same UX as the
+existing Link button, not a new pattern). `TagChip`'s `NodeViewWrapper` renders `id={tagId}` (same
+scroll-target convention as `AnchorPill`) and its own inline ✕ that calls the NodeView's
+`deleteNode()` — unlike the anchor pill, nothing else in the editor removes a tag chip, so it needs
+its own delete affordance. `lib/notebooks.ts` gained `extractTags(doc)` (walks for `type==="tag"`
+nodes, same shape as `extractAnchors`) and `extractPlainText` now also folds in tag labels
+alongside anchor labels, so cross-notebook search matches by tag text without a separate index.
+
+**Verified live** (browser preview, both themes at rest): reverse sync auto-switches the panel's
+scope dropdown the instant a commentary tab is clicked, without touching the notebook at all;
+scroll+flash CSS confirmed correct (`animation-name` present, computed background matches the
+keyframe's end state); in-notebook find highlights all matches and steps through them with a live
+"N / M" count; cross-notebook search finds a note by its prose, navigates across categories
+(Tanakh → Talmud), opens the panel on the right scope, and lands with the find bar pre-seeded on
+the actual hit; a section-color mark applied via toolbar persists through a full page reload; a tag
+chip inserts, renders, and its ✕ deletes cleanly, leaving the surrounding prose intact.
+**Automation note, not a product bug:** the browser-preview tooling used for this verification
+couldn't drive native mouse-drag text selection or `window.prompt()` reliably inside the
+ProseMirror `contentEditable` (selection stayed collapsed regardless of click/double-click/
+triple-click/drag, and `prompt()` throws "not supported" in that harness) — real Chrome has neither
+issue. Selection-dependent checks were done by programmatically constructing a `Range` +
+dispatching `selectionchange` (which Tiptap's own selection sync picks up correctly, so it's
+exercising the real command path) rather than skipped.
+`npm run build`/`tsc --noEmit`/`npm run lint` all clean (lint's remaining `react-hooks/refs`/
+`set-state-in-effect` items are pre-existing in `Reader.tsx`, confirmed against a stashed baseline
+— none introduced this session).
 
 ## Daily learning dedication banner — shipped
 

@@ -205,6 +205,45 @@ body {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
+/* Notebook tag chip (TagChip NodeView) — a small inline label marking a specific passage,
+ * distinct from the anchor pill's accent styling so the two are visually distinguishable at a
+ * glance. Its own ✕ deletes just this chip (no other editor action removes one). */
+.notebook-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 0.05rem 0.5rem;
+  font-size: 0.8em;
+  opacity: 0.85;
+}
+.notebook-tag-chip button {
+  opacity: 0.5;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+.notebook-tag-chip button:hover {
+  opacity: 1;
+}
+
+/* Reverse sync — briefly flashes whichever anchor pill(s) match wherever the reader currently
+ * is, so a scroll-into-view alone (easy to miss on a long notebook) isn't the only signal. */
+.notebook-anchor-flash button {
+  animation: notebook-anchor-flash-pulse 1.6s ease-out;
+}
+@keyframes notebook-anchor-flash-pulse {
+  0%, 40% {
+    background: var(--accent);
+    color: var(--accent-foreground);
+  }
+  100% {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    color: var(--accent);
+  }
+}
+
 /* Notebook editor prose (NotebookPanel's Tiptap EditorContent). */
 .notebook-editor-content .ProseMirror {
   outline: none;
@@ -238,6 +277,25 @@ body {
   color: var(--accent);
   text-decoration: underline;
 }
+
+/* In-notebook find (SearchExtension) — every match gets a faint wash; the active one (selection
+ * is also moved there) gets a solid outline so it's unambiguous which hit prev/next just landed
+ * on, matching a typical editor's find-bar convention. */
+.notebook-search-match {
+  background-color: color-mix(in srgb, var(--accent) 25%, transparent);
+  border-radius: 0.1rem;
+}
+.notebook-search-match-active {
+  background-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  outline: 1px solid var(--accent);
+}
+
+/* Notebook section-color mark (SectionColorExtension) — same 4-color set/opacity as reader
+ * Highlights' .highlight-text-N, applied to arbitrary selected text inside the notebook editor. */
+.notebook-section-color-0 { background-color: color-mix(in srgb, var(--highlight-color-0) 45%, transparent); border-radius: 0.15rem; }
+.notebook-section-color-1 { background-color: color-mix(in srgb, var(--highlight-color-1) 38%, transparent); border-radius: 0.15rem; }
+.notebook-section-color-2 { background-color: color-mix(in srgb, var(--highlight-color-2) 38%, transparent); border-radius: 0.15rem; }
+.notebook-section-color-3 { background-color: color-mix(in srgb, var(--highlight-color-3) 38%, transparent); border-radius: 0.15rem; }
 
 /*
  * YCT logo (header branding): the color mark reads fine on the light theme's white background
