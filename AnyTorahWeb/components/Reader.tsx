@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TextDisplayMode, TextSegment } from "@/lib/textModels";
-import type { CommentaryType } from "@/lib/commentaryTypes";
+import { displayName, type CommentaryType } from "@/lib/commentaryTypes";
 import { getPoolInfo, computeEffectiveSlots, fetchCategoryFor, type ReaderCategory } from "@/lib/commentaryPools";
 import {
   getCategoryGroups,
@@ -40,6 +40,8 @@ import { anchorKey, stripAnchorHTML, type TextAnchor } from "@/lib/textAnchor";
 import HighlightMark from "@/components/HighlightMark";
 import HighlightEditModal from "@/components/HighlightEditModal";
 import HighlightsListModal from "@/components/HighlightsListModal";
+import NotebookPanel, { type NotebookScopeOption } from "@/components/NotebookPanel";
+import { notebookScopeKey, type NotebookScope } from "@/lib/notebooks";
 
 interface ChapterResponse {
   ref: string;
@@ -224,8 +226,10 @@ function storeShowDafImage(show: boolean) {
 const DAF_POSITION_KEY = "anytorah:dafPosition";
 const NARROW_WIDTH_KEY = "anytorah:narrowPanelWidth";
 const COMMENTARY_WIDTH_KEY = "anytorah:commentaryWidth";
+const NOTEBOOK_WIDTH_KEY = "anytorah:notebookWidth";
 const NARROW_WIDTH_DEFAULT = 420;
 const COMMENTARY_WIDTH_DEFAULT = 380;
+const NOTEBOOK_WIDTH_DEFAULT = 380;
 const PANEL_WIDTH_MIN = 260;
 const PANEL_WIDTH_MAX = 800;
 
@@ -652,10 +656,12 @@ export default function Reader() {
   const [dafPosition, setDafPositionState] = useState<DafPosition>("middle");
   const [narrowWidth, setNarrowWidthState] = useState(NARROW_WIDTH_DEFAULT);
   const [commentaryWidth, setCommentaryWidthState] = useState(COMMENTARY_WIDTH_DEFAULT);
+  const [notebookWidth, setNotebookWidthState] = useState(NOTEBOOK_WIDTH_DEFAULT);
   useEffect(() => {
     setDafPositionState(loadDafPosition());
     setNarrowWidthState(loadStoredWidth(NARROW_WIDTH_KEY, NARROW_WIDTH_DEFAULT));
     setCommentaryWidthState(loadStoredWidth(COMMENTARY_WIDTH_KEY, COMMENTARY_WIDTH_DEFAULT));
+    setNotebookWidthState(loadStoredWidth(NOTEBOOK_WIDTH_KEY, NOTEBOOK_WIDTH_DEFAULT));
   }, []);
   const setDafPosition = (pos: DafPosition) => {
     setDafPositionState(pos);
@@ -672,6 +678,13 @@ export default function Reader() {
     setCommentaryWidthState((w) => {
       const next = clamp(w - deltaX, PANEL_WIDTH_MIN, PANEL_WIDTH_MAX);
       storeWidth(COMMENTARY_WIDTH_KEY, next);
+      return next;
+    });
+  };
+  const adjustNotebookWidth = (deltaX: number) => {
+    setNotebookWidthState((w) => {
+      const next = clamp(w - deltaX, PANEL_WIDTH_MIN, PANEL_WIDTH_MAX);
+      storeWidth(NOTEBOOK_WIDTH_KEY, next);
       return next;
     });
   };
@@ -879,6 +892,48 @@ export default function Reader() {
       paragraphIndex: paragraphIndex || undefined,
     }),
     [category, index, chapter, halakha],
+  );
+
+  // Notebook — a long-form rich-text document per book/commentary (not per-chapter, unlike
+  // Highlights), with embedded anchor pills that jump the reader here. Side panel, not a modal,
+  // so the user can click a paragraph in the reader while the notebook stays open (see
+  // HighlightMark's onInsertToNotebook / CommentaryPanel's mirror of it).
+  const [notebookOpen, setNotebookOpen] = useState(false);
+  const [notebookSourceOverride, setNotebookSourceOverride] = useState<{
+    source: "commentary";
+    commentaryType: CommentaryType;
+  } | null>(null);
+  // Reset to "main text" whenever the selected book/tractate changes — a commentary override from
+  // a previous book isn't meaningful once category/index moves on.
+  useEffect(() => setNotebookSourceOverride(null), [category, index]);
+
+  const notebookScope: NotebookScope = useMemo(
+    () =>
+      notebookSourceOverride
+        ? { category, index, source: "commentary", commentaryType: notebookSourceOverride.commentaryType }
+        : { category, index, source: "main" },
+    [category, index, notebookSourceOverride],
+  );
+
+  const notebookScopeOptions: NotebookScopeOption[] = useMemo(
+    () => [
+      { source: "main", label: "Main text" },
+      ...effectiveSlots.map((c) => ({ source: "commentary" as const, commentaryType: c, label: displayName[c] })),
+    ],
+    [effectiveSlots],
+  );
+
+  const notebookInsertRef = useRef<((anchor: TextAnchor) => void) | null>(null);
+
+  const navigateToAnchor = useCallback(
+    (anchor: TextAnchor) => {
+      setCategory(anchor.category);
+      setSelection((s) => ({
+        ...s,
+        [anchor.category]: { index: anchor.index, chapter: anchor.chapter, halakha: anchor.halakha },
+      }));
+    },
+    [],
   );
 
   const upsertHighlight = (
@@ -1153,6 +1208,16 @@ export default function Reader() {
           >
             🖍️{highlights.length > 0 ? ` ${highlights.length}` : ""}
           </button>
+          <button
+            onClick={() => setNotebookOpen((o) => !o)}
+            aria-pressed={notebookOpen}
+            aria-label={notebookOpen ? "Close notebook" : "Open notebook"}
+            title={notebookOpen ? "Close notebook" : "Open notebook"}
+            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+            style={notebookOpen ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+          >
+            📓
+          </button>
         </div>
       </header>
 
@@ -1344,6 +1409,9 @@ export default function Reader() {
                             colorIndex={highlight?.colorIndex ?? null}
                             onQuickPick={(c) => handleQuickPickHighlight(buildAnchor("main", seg.index, 0), c, quoteHe, quoteEn)}
                             onOpenEditor={() => handleOpenHighlightEditor(buildAnchor("main", seg.index, 0), quoteHe, quoteEn)}
+                            onInsertToNotebook={
+                              notebookOpen ? () => notebookInsertRef.current?.(buildAnchor("main", seg.index, 0)) : undefined
+                            }
                           >
                             <div className="flex items-start gap-1">
                               <div className="min-w-0 flex-1" style={{ display: "flex", flexDirection: "column", gap: mainLineGap }}>
@@ -1480,8 +1548,43 @@ export default function Reader() {
                 enQuote,
               )
             }
+            onInsertToNotebook={
+              notebookOpen
+                ? (segmentIndex, paragraphIndex, commentaryType) =>
+                    notebookInsertRef.current?.(buildAnchor("commentary", segmentIndex, paragraphIndex, commentaryType))
+                : undefined
+            }
           />
         </div>
+
+        {notebookOpen && (
+          <>
+            {/* Notebook sits to the right of this handle, so dragging right shrinks it. */}
+            <ResizeHandle onDrag={(delta) => adjustNotebookWidth(delta)} />
+            <div
+              className="min-h-0 shrink-0 overflow-hidden rounded-lg border border-border bg-card"
+              style={{ width: notebookWidth }}
+            >
+              <NotebookPanel
+                key={notebookScopeKey(notebookScope)}
+                scope={notebookScope}
+                scopeOptions={notebookScopeOptions}
+                onScopeChange={(option) =>
+                  setNotebookSourceOverride(
+                    option.source === "commentary" && option.commentaryType
+                      ? { source: "commentary", commentaryType: option.commentaryType }
+                      : null,
+                  )
+                }
+                onNavigateAnchor={navigateToAnchor}
+                onEditorReady={(insertFn) => {
+                  notebookInsertRef.current = insertFn;
+                }}
+                onClose={() => setNotebookOpen(false)}
+              />
+            </div>
+          </>
+        )}
       </div>
 
       {simanPickerOpen && category === "shulchanArukh" && (

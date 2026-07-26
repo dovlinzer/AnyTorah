@@ -30,6 +30,7 @@ export default function CommentaryPanel({
   getHighlight,
   onHighlightQuickPick,
   onHighlightOpenEditor,
+  onInsertToNotebook,
 }: {
   category: ReaderCategory;
   index: number;
@@ -59,6 +60,9 @@ export default function CommentaryPanel({
     anchorQuoteHe: string,
     anchorQuoteEn: string,
   ) => void;
+  /** Set only while the Notebook side panel is open — inserts this paragraph as an anchor at the
+   *  notebook's cursor. See HighlightMark's onInsertToNotebook for the click affordance. */
+  onInsertToNotebook?: (segmentIndex: number, paragraphIndex: number, commentaryType: CommentaryType) => void;
   /** The user's raw slot assignments — what the swap picker writes to and persists. */
   slots: CommentaryType[];
   /** slots with any context-unavailable entry substituted for a fallback — what's shown/fetched. */
@@ -310,6 +314,9 @@ export default function CommentaryPanel({
                         colorIndex={highlight?.colorIndex ?? null}
                         onQuickPick={(c) => onHighlightQuickPick(entry.index, pIdx, activeType, c, quoteHe, quoteEn)}
                         onOpenEditor={() => onHighlightOpenEditor(entry.index, pIdx, activeType, quoteHe, quoteEn)}
+                        onInsertToNotebook={
+                          onInsertToNotebook ? () => onInsertToNotebook(entry.index, pIdx, activeType) : undefined
+                        }
                       >
                         <div className="flex items-start gap-1">
                           <div className="min-w-0 flex-1" style={{ display: "flex", flexDirection: "column", gap: entryLineGap }}>

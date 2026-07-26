@@ -16,12 +16,17 @@ export default function HighlightMark({
   colorIndex,
   onQuickPick,
   onOpenEditor,
+  onInsertToNotebook,
   className = "",
   children,
 }: {
   colorIndex: number | null;
   onQuickPick: (colorIndex: number) => void;
   onOpenEditor: () => void;
+  /** Set only while the Notebook side panel is open — renders a hover-visible secondary button
+   *  that inserts this paragraph as an anchor at the notebook's cursor, independent of the normal
+   *  highlight click path. */
+  onInsertToNotebook?: () => void;
   className?: string;
   children: ReactNode;
 }) {
@@ -79,7 +84,7 @@ export default function HighlightMark({
   return (
     <div
       ref={containerRef}
-      className={`highlight-mark ${className}`}
+      className={`highlight-mark group relative ${className}`}
       onClick={(e) => {
         e.stopPropagation();
         if (colorIndex === null) setPickerOpen((o) => !o);
@@ -87,6 +92,20 @@ export default function HighlightMark({
       }}
     >
       {children}
+      {onInsertToNotebook && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onInsertToNotebook();
+          }}
+          title="Insert into notebook"
+          aria-label="Insert into notebook"
+          className="notebook-insert-button absolute -top-1 -right-1 opacity-0 transition-opacity group-hover:opacity-100"
+        >
+          📌
+        </button>
+      )}
       {pickerOpen && popoverPos && (
         <div
           className="fixed z-50 flex flex-wrap gap-1.5 rounded-lg border border-border bg-card p-2 shadow-xl"

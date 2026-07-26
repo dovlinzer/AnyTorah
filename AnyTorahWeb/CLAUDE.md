@@ -322,14 +322,97 @@ catches this (refs resolve and click regardless of visual contrast) — only an 
 rest does. Verified this way for both the (now-removed) dot design and the current inline-mark
 design, in both themes, before calling either done.
 
-**Not yet built — the Notebook:** a separate, long-form rich-text document per book/commentary
-(e.g. "notes on Gittin" or "notes on Ramban on Bereishit"), with embedded clickable anchors that
-jump the reader to a specific location and, in reverse, scroll the notebook to the anchor matching
-wherever the reader currently is. `lib/notebooks.ts` (the data layer — `Notebook`/`NotebookScope`
-types, Tiptap/ProseMirror JSON storage, `extractAnchors`/`extractPlainText`) and the `@tiptap/*`
-dependencies are already in `package.json`, but no editor UI, no `AnchorNode` Tiptap extension, no
-panel, and no navigation wiring exist yet — this is the next phase, intentionally picked up in a
-separate session.
+## Notebook — Phase 1 shipped (editor core + anchor creation)
+
+A separate, long-form rich-text document per book/commentary (e.g. "notes on Gittin" or "notes on
+Ramban on Bereishit"), with embedded clickable anchors that jump the reader to a specific
+location. Builds on the same data layer referenced above (`lib/notebooks.ts` — `Notebook`/
+`NotebookScope`, Tiptap/ProseMirror JSON storage, `extractAnchors`/`extractPlainText`), which
+needed no changes for this phase — confirmed by reading it fresh rather than trusting the design
+notes above, since `lib/textAnchor.ts` had gained `paragraphIndex` gating since this was designed
+and the two needed to still line up (they did).
+
+**Surface — a persistent side panel, not a modal:** deliberate choice over Bookmarks/Highlights'
+modal chrome, so the user can click a paragraph in the reader while the notebook stays open. Sits
+to the right of the Commentary panel as a third resizable column (`components/Reader.tsx`:
+`notebookOpen`/`notebookWidth`/`adjustNotebookWidth`, mirroring the existing `commentaryWidth`
+pattern exactly), toggled by a new 📓 header button. A Notebook is scoped to a whole book/
+commentary, not a chapter (see `NotebookScope`) — the panel defaults to whatever the reader is
+currently showing (main text) and has its own in-panel `<select>` to switch to any commentary
+currently active in the Commentary panel's slots (`effectiveSlots`), each a fully separate
+document.
+
+**New files:**
+- `components/notebook/AnchorNodeExtension.ts` — custom Tiptap inline atom node (`name: "anchor"`)
+  storing `{anchor: TextAnchor, nodeId, label}` as plain attrs (not HTML) so it round-trips
+  losslessly through `Notebook.bodyJSON`. Takes an `onNavigate` extension option wired per-editor
+  instance.
+- `components/notebook/AnchorPill.tsx` — the NodeView (`ReactNodeViewRenderer`): a small inline
+  pill button (📍 + label) that calls `onNavigate` on click.
+- `components/NotebookPanel.tsx` — the panel itself: Tiptap `useEditor` (StarterKit + Underline +
+  Link + the anchor node + `IndentExtension`/`TextDirectionExtension`, see below), a toolbar
+  (bold/italic/underline, H1–H3, bullet/ordered list, indent/outdent, blockquote, link via a plain
+  `window.prompt`, LTR/RTL toggle), debounced (500ms) autosave through `saveNotebook`/
+  `loadNotebook`, and a flush-save on unmount so switching scope or closing the panel doesn't drop
+  the last few hundred ms of typing. **Mounted with `key={notebookScopeKey(scope)}` from
+  `Reader.tsx`** — switching scope remounts the whole editor rather than manually resyncing
+  content, deliberately simpler than fighting `useEditor` over content sync.
+- `components/notebook/IndentExtension.ts` — a global `indent` attribute (margin-left steps) on
+  paragraph/heading/blockquote, plus `indent`/`outdent` commands. Deliberately separate from list
+  nesting: the toolbar's Indent/Outdent buttons check `editor.isActive("listItem")` first and use
+  StarterKit's own `sinkListItem`/`liftListItem` there instead, only falling back to this
+  extension's margin-based indent for plain blocks.
+- `components/notebook/TextDirectionExtension.ts` — a global `dir` attribute (paragraph/heading/
+  blockquote/listItem) so a single block can be flipped RTL for a line of Hebrew inside otherwise-
+  English notes. Only supplies the attribute — `setTextDirection`/`unsetTextDirection` themselves
+  are **already built into every Tiptap editor** (part of `@tiptap/core`'s always-included
+  `Commands` core extension, same bundle as `focus`/`setContent`), so the toolbar button calls
+  those directly. Note: `@tiptap/core` v3.29 also ships an internal `TextDirection` Extension
+  class in its source, but that class itself isn't in the installed version's actual public export
+  surface (confirmed absent from both the bundled `.d.ts`'s export list and the compiled `.cjs`'s
+  `exports` — a real gap in that release, not a typing issue) — hence this small equivalent instead
+  of importing the built-in one.
+
+**Toolbar buttons must call `e.preventDefault()` on `onMouseDown`, not just `onClick`
+(real bug, found and fixed live, not just a design note):** a plain `mousedown` on a toolbar
+`<button>` blurs the editor's contentEditable and can shift its ProseMirror selection *before*
+`onClick`'s command runs — confirmed live: clicking Bullet List immediately after pressing Enter
+for a new line wrapped the *previous* paragraph instead of the one the cursor was actually in,
+even though `.chain().focus()...run()` looked correct. `ToolbarButton` (`NotebookPanel.tsx`) now
+sets `onMouseDown={(e) => e.preventDefault()}` on every toolbar button, which keeps the DOM
+selection intact so the command sees the real, current selection. This is the standard, widely-
+documented Tiptap/ProseMirror toolbar fix — apply it to any future toolbar button added here.
+
+**Anchor creation — click a paragraph while the panel is open:** `HighlightMark.tsx` grew an
+optional `onInsertToNotebook` prop — a small 📌 button, hidden until hover (`group`/`group-hover`),
+positioned in the corner of the same click-target `HighlightMark` already wraps for highlighting.
+Purely additive: the existing highlight click path is untouched, and the button only renders when
+the prop is passed, which `Reader.tsx`/`CommentaryPanel.tsx` only do while `notebookOpen` is true.
+Clicking it calls into the currently-open `NotebookPanel`'s `insertAnchor` via a ref
+(`notebookInsertRef`) set through an `onEditorReady` callback — avoids threading the Tiptap editor
+instance itself through props.
+
+**Anchor navigation — one-directional only in this phase:** clicking a pill calls
+`navigateToAnchor` (`Reader.tsx`, same shape as the existing `handleNavigateBookmark`) which lands
+on the anchor's chapter/halakha. **Does not** scroll to the exact paragraph — this app has no
+scroll-to-segment infrastructure yet (same documented limitation for Yomi/929 jumps in
+`AnyTorah/CLAUDE.md`), so this isn't a new gap, just an existing one this feature also runs into.
+
+**Bullet/numbered lists showed no marker (second bug behind the same symptom):** Tailwind's
+preflight resets `ul`/`ol` to `list-style: none`, so even once the selection bug above was fixed,
+toggling a list only indented the text with no visible bullet or number. `globals.css`'s
+`.notebook-editor-content .ProseMirror ul/ol` rules now set `list-style-type` explicitly (disc/
+decimal, with circle/square for nested `ul`s).
+
+**Explicitly deferred to a later session** (matching the original staged build order): reverse
+sync (auto-scrolling/highlighting the notebook to whichever anchor matches wherever the reader
+currently is — "the key feature that determines its usability" per the user, still not built) and
+cross-notebook search/browsing across all scopes at once.
+
+Verified live: editor persists across a full page reload (`anytorah:notebooks` in localStorage,
+one entry per scope key, confirmed separate documents for main text vs. a commentary on the same
+book), toolbar formatting commands, anchor-pill insertion and click-to-navigate round trip, both
+themes at rest.
 
 ## Daily learning dedication banner — shipped
 

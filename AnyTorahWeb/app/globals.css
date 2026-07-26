@@ -166,6 +166,80 @@ body {
 }
 
 /*
+ * Insert-to-notebook button (HighlightMark) — only rendered while the Notebook side panel is
+ * open. Sits in the corner of each paragraph's click target, hidden until hovered so it doesn't
+ * compete visually with the highlight affordance.
+ */
+.notebook-insert-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--card);
+  font-size: 0.65rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.notebook-insert-button:hover {
+  border-color: var(--accent);
+}
+
+/* Notebook anchor pill (AnchorPill NodeView) — an inline clickable link-like button embedded in
+ * the Notebook's rich text, jumping the reader to the anchored chapter/halakha. */
+.notebook-anchor-pill button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  padding: 0.05rem 0.5rem;
+  font-size: 0.8em;
+  cursor: pointer;
+}
+.notebook-anchor-pill button:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* Notebook editor prose (NotebookPanel's Tiptap EditorContent). */
+.notebook-editor-content .ProseMirror {
+  outline: none;
+  min-height: 100%;
+}
+.notebook-editor-content .ProseMirror h1 { font-size: 1.3em; font-weight: 600; margin: 0.5em 0; }
+.notebook-editor-content .ProseMirror h2 { font-size: 1.15em; font-weight: 600; margin: 0.5em 0; }
+.notebook-editor-content .ProseMirror h3 { font-size: 1.05em; font-weight: 600; margin: 0.4em 0; }
+.notebook-editor-content .ProseMirror p { margin: 0.35em 0; }
+/* Tailwind's preflight resets ul/ol to list-style:none — restore real markers, since without
+ * list-style-type the bullet/numbered-list toolbar buttons only indented the text with no
+ * visible bullet or number. */
+.notebook-editor-content .ProseMirror ul,
+.notebook-editor-content .ProseMirror ol {
+  padding-left: 1.25rem;
+  margin: 0.35em 0;
+}
+.notebook-editor-content .ProseMirror ul { list-style-type: disc; }
+.notebook-editor-content .ProseMirror ol { list-style-type: decimal; }
+.notebook-editor-content .ProseMirror ul ul { list-style-type: circle; }
+.notebook-editor-content .ProseMirror ul ul ul { list-style-type: square; }
+.notebook-editor-content .ProseMirror li { margin: 0.15em 0; }
+.notebook-editor-content .ProseMirror li p { margin: 0; }
+.notebook-editor-content .ProseMirror blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 0.75rem;
+  margin: 0.4em 0;
+  opacity: 0.85;
+}
+.notebook-editor-content .ProseMirror a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/*
  * YCT logo (header branding): the color mark reads fine on the light theme's white background
  * but has poor contrast against the dark theme's navy background, so we swap in the all-white
  * variant there instead of hiding the logo entirely.
