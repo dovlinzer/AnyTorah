@@ -915,13 +915,20 @@ export default function Reader() {
     [category, index, notebookSourceOverride],
   );
 
-  const notebookScopeOptions: NotebookScopeOption[] = useMemo(
-    () => [
+  const notebookScopeOptions: NotebookScopeOption[] = useMemo(() => {
+    // "Sforno" alone is ambiguous once you have notebooks on more than one book/tractate — name
+    // the book/tractate it's commenting on too, matching how anchor pills already read (e.g.
+    // formatAnchorLabel's "Sforno on Bereshit ch. 1").
+    const bookName = findCategoryItemName(category, index, hebrewMode);
+    return [
       { source: "main", label: "Main text" },
-      ...effectiveSlots.map((c) => ({ source: "commentary" as const, commentaryType: c, label: displayName[c] })),
-    ],
-    [effectiveSlots],
-  );
+      ...effectiveSlots.map((c) => ({
+        source: "commentary" as const,
+        commentaryType: c,
+        label: `${displayName[c]} on ${bookName}`,
+      })),
+    ];
+  }, [category, index, hebrewMode, effectiveSlots]);
 
   const notebookInsertRef = useRef<((anchor: TextAnchor) => void) | null>(null);
 
