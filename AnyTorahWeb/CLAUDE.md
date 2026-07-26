@@ -223,13 +223,27 @@ margins that make the logo look tiny at any reasonable `height` in `.yct-logo`.
 The "Powered by YCT and Sefaria" caption under the title is copied verbatim (including
 italic/55%-opacity styling) from native's `SplashView.swift`.
 
-**Logo/title size (revised 2026-07-26):** `.yct-logo`'s `height` was 64px, and the title/tagline
-were `text-2xl`/`text-sm` — wide enough in English mode (where "Tanakh" etc. run longer than their
-Hebrew equivalents) that the logo block alone could push the header row's `flex-wrap` to trigger
-sooner than in Hebrew mode. Shrunk to `height: 48px` / `text-xl` / `text-xs` (tagline is the
-actual widest element in the block, wider than the "AnyTorah" title itself, so it needed the cut
-too) specifically to buy back width for the category-tab cluster in English mode. `flex-wrap`
-itself is unchanged — this narrows the trigger, it doesn't remove the wrap fallback.
+**Logo lives in its own left sidebar column, not the toolbar row (2026-07-26).** Several rounds
+this session tried to fix the toolbar row wrapping onto a second line by shrinking the logo/title
+(64px→48px, `text-2xl`→`text-xl`, tagline `text-sm`→`text-xs`) and adding buffer between it and
+the tabs — all still sharing one row via `justify-between`. That approach hit a hard ceiling: the
+category tabs + all the header buttons need ~1100px on their own in Hebrew mode (Hebrew's buttons
+are sized a step larger than English's, see the pill-sizing note below), and the logo block was
+±300px of *additional* competition for the same row — no amount of shrinking made both consistently
+fit one line at normal desktop widths. Per explicit user request, the logo/title were pulled out
+entirely into a permanent left sidebar column (`Reader()`'s top-level return is now `<div className="flex h-screen w-full">` containing a `shrink-0` sidebar div first, then the existing
+`mx-auto max-w-7xl/max-w-[100rem]` reading column as the second, `flex-1` child) — this was a
+deliberate choice over the alternative (floating the logo in the page's outer margin only on wide
+screens, invisible/falling back on narrower ones): the sidebar is *always* reserved, at every
+width, so the toolbar row consistently gets the reading column's full width without the logo
+competing for it, rather than only working above some viewport threshold. Logo/title were then
+bumped back up to a comfortable size (`.yct-logo` 64px, title `text-3xl`, tagline `text-sm`) since
+they no longer cost the toolbar row anything. `mx-auto` on the reading column still centers its
+capped width within whatever space remains next to the sidebar — flexbox respects `margin: auto`
+on a flex-grow item for exactly this "capped-width content, centered in the leftover space"
+composition. Verified live: one line in both languages at 1366px+ (most real laptop/desktop
+widths); still gracefully wraps via the toolbar's own `flex-wrap` rather than overlapping anything
+below that.
 
 ## Bookmarks + Notes (phase 1: local storage) — shipped
 
@@ -250,12 +264,46 @@ a bookmark count; replaced with `BookmarkListIcon` (`Reader.tsx`) — a custom o
 list-badge SVG (`currentColor` stroke so it matches the button's theme color automatically,
 `var(--background)` knockout circle behind the badge) — per an explicit user reference image, and
 the count suffix was dropped entirely (space-saving, same call the highlight button's count got,
-see "Highlights" below). The header row's button cluster is now split into four groups by
-`VerticalDivider` (already used elsewhere for the second toolbar row, reused as-is): category
-tabs | Hebrew-mode + reverse-nav toggles | bookmark star + bookmark list | notebook + notebook-
-search + highlights — explicit user request to visually group "associated" controls. The
-notebook/notebook-search/highlights trio was also reordered into that exact sequence (was
-highlights, notebook, notebook-search before) per the same request.
+see "Highlights" below). The button cluster (everything except the category tabs) is split into
+three groups by `VerticalDivider` (already used elsewhere for the second toolbar row, reused as-
+is): Hebrew-mode + reverse-nav toggles | bookmark star + bookmark list | notebook + notebook-
+search + highlights — explicit user request to visually group "associated" controls. That trio's
+order was also changed to notebook → notebook-search → highlights (was highlights, notebook,
+notebook-search before) per the same request. The category tabs themselves are a separate flex
+child from this whole button cluster — see the next note for how the two are positioned relative
+to each other.
+
+**Category tabs and buttons sit at opposite ends of the header (2026-07-26):** per explicit user
+request, the main text picker (category tabs) and every other header button are two separate flex
+children — not one cluster — inside `<header dir={hebrewMode ? "rtl" : "ltr"} className="flex
+flex-wrap ... justify-between ...">` (`Reader.tsx`). `justify-between` plus the `dir` flip puts
+tabs at the row's start edge and the button cluster at its end edge, tracking direction: English
+reads tabs-left/buttons-right, Hebrew mirrors to tabs-right/buttons-left.
+**A real layout bug, found live and fixed same session:** an earlier version of this header gave
+the wrapper `min-w-0 flex-1` so it could stretch to fill the line it wrapped onto — but `min-w-0`
+also tells the *page header's own* flex-wrap calculation that this item can shrink to ~0, so the
+header never actually wrapped it to a new line; it just squeezed the wrapper's box smaller than
+its two `shrink-0` children (tabs, buttons) needed, and they overflowed that squeezed box instead.
+In Hebrew mode the button cluster sits at the wrapper's RTL "end" — physically the *left* edge —
+so the overflow spilled left into whatever sat there (at the time, the logo, before it moved into
+its own sidebar — see "YCT Branding" above), which is why the bug was visible in Hebrew mode but
+not English (English's overflow spilled right, into open space). Fix: drop `min-w-0`, keep
+`flex-1`. Without it, the header's wrap-time minimum size is the wrapper's real content width (its
+`shrink-0` children can't shrink below their own size), so the header now correctly wraps the
+whole row to its own line instead of crushing it — the standard flexbox trap: `min-width: auto`
+(the unset default) is what makes a flex item's *own* content size count as its wrap-time minimum;
+`min-w-0` deliberately opts out of that, which is right for a scrollable/truncating item but wrong
+here.
+
+**Hebrew-mode pill sizing is one step larger than English's (2026-07-26):** category tabs, the
+EN/עב + ⇄ toggles, and every bookmark/notebook/highlight button size up
+(`px-3 py-1.5 text-sm`→`px-4 py-2 text-base`, icons 16-17px→19-20px) when `hebrewMode` is on, vs.
+English's `px-2 py-1 text-xs`→`px-3 py-1.5 text-sm` step. Rationale, confirmed by the user directly
+(not assumed): Hebrew glyphs render visibly smaller than Latin ones at the same font size, and
+Hebrew mode was never actually short on toolbar width the way English is — English's category
+labels ("Shulchan Arukh" vs. "שו״ע") are the long pole. `tabsContainerClass`/`tabButtonClass`/
+`pillButtonClass` (computed once near the top of `Reader()`'s render, `hebrewMode`-conditional)
+feed every one of these buttons so the two sizing scales stay centrally defined in one place.
 
 ## Highlights — shipped
 

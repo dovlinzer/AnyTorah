@@ -396,16 +396,18 @@ function CommitInput({
 
 
 /** EN/עב pill toggling saHebrewMode — Hebrew names, Hebrew numerals, and RTL toolbar layout.
- *  Sized one step larger (px-3 py-1.5 text-sm vs. px-2 py-1 text-xs) when `on` — Hebrew glyphs
+ *  Sized one step larger (px-4 py-2 text-base vs. px-3 py-1.5 text-sm) when `on` — Hebrew glyphs
  *  render visibly smaller than Latin ones at the same font size, and Hebrew mode never actually
- *  needed the compact English-mode sizing (2026-07-26). */
+ *  needed the compact English-mode sizing. Bumped a second time (2026-07-26, same session) along
+ *  with every other header control after the user realized their 110% browser zoom had been
+ *  making both sizes look bigger than they actually render. */
 function HebrewModeToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <div
       className={
         on
-          ? "flex shrink-0 overflow-hidden rounded-full border border-border text-sm"
-          : "flex shrink-0 overflow-hidden rounded-full border border-border text-xs"
+          ? "flex shrink-0 overflow-hidden rounded-full border border-border text-base"
+          : "flex shrink-0 overflow-hidden rounded-full border border-border text-sm"
       }
     >
       {[false, true].map((v) => (
@@ -413,7 +415,7 @@ function HebrewModeToggle({ on, onChange }: { on: boolean; onChange: (v: boolean
           key={String(v)}
           onClick={() => onChange(v)}
           aria-label={v ? "Switch to Hebrew names" : "Switch to English names"}
-          className={on ? "px-3 py-1.5 transition-colors" : "px-2 py-1 transition-colors"}
+          className={on ? "px-4 py-2 transition-colors" : "px-3 py-1.5 transition-colors"}
           style={on === v ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
         >
           {v ? "עב" : "EN"}
@@ -426,7 +428,7 @@ function HebrewModeToggle({ on, onChange }: { on: boolean; onChange: (v: boolean
 /** Toggles Reverse Navigation Direction — swaps which physical arrow/chevron moves forward vs.
  *  backward, independent of hebrewMode (native has this as its own separate setting). `hebrewMode`
  *  here only drives sizing (same one-step-larger treatment as the rest of the header's Hebrew-mode
- *  buttons, 2026-07-26) — the toggle's own on/off state is unrelated. */
+ *  buttons) — the toggle's own on/off state is unrelated. */
 function ReverseNavToggle({
   on,
   onChange,
@@ -444,8 +446,8 @@ function ReverseNavToggle({
       title="Reverse navigation direction"
       className={
         hebrewMode
-          ? "shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
-          : "shrink-0 rounded-full border border-border px-2 py-1 text-xs transition-colors hover:border-[var(--accent)]"
+          ? "shrink-0 rounded-full border border-border px-4 py-2 text-base transition-colors hover:border-[var(--accent)]"
+          : "shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
       }
       style={on ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
     >
@@ -461,7 +463,7 @@ function VerticalDivider() {
 
 /** Star-with-list badge for the "view bookmarks" button — reads as "a list of starred items",
  *  distinct from the plain ★/☆ toggle next to it (which bookmarks/unbookmarks the current spot). */
-function BookmarkListIcon({ size = 13 }: { size?: number }) {
+function BookmarkListIcon({ size = 16 }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -485,7 +487,7 @@ function BookmarkListIcon({ size = 13 }: { size?: number }) {
  *  barrel + felt tip + a short highlighted stroke), not the crayon emoji this replaced, per
  *  explicit user reference image. Fixed marker colors (not theme-driven) since a highlighter's
  *  own color is part of what makes it read as a highlighter. */
-function HighlighterIcon({ size = 14 }: { size?: number }) {
+function HighlighterIcon({ size = 17 }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -1260,59 +1262,70 @@ export default function Reader() {
 
   // Header pill sizing: Hebrew labels/glyphs run visibly smaller than their English counterparts
   // at the same font size, and Hebrew mode was never actually short on toolbar width the way
-  // English mode is — so Hebrew mode gets one Tailwind step larger (matches this app's original,
-  // pre-2026-07-26 sizing) while English stays compact. Both full class strings must appear
-  // literally (not built via template interpolation) for Tailwind's JIT scanner to pick them up.
+  // English mode is — so Hebrew mode gets one Tailwind step larger than English. Bumped a second
+  // time (2026-07-26, same session) after the user realized their browser was at 110% zoom, which
+  // had made both sizes look bigger than they actually render at 100% — English now sits where
+  // Hebrew used to (px-3 py-1.5 text-sm) and Hebrew moved another step up (px-4 py-2 text-base).
+  // Both full class strings must appear literally (not built via template interpolation) for
+  // Tailwind's JIT scanner to pick them up.
   const tabsContainerClass = hebrewMode
-    ? "flex shrink-0 overflow-hidden rounded-full border border-border text-sm"
-    : "flex shrink-0 overflow-hidden rounded-full border border-border text-xs";
-  const tabButtonClass = hebrewMode ? "px-3 py-1.5 transition-colors" : "px-2 py-1 transition-colors";
+    ? "flex shrink-0 overflow-hidden rounded-full border border-border text-base"
+    : "flex shrink-0 overflow-hidden rounded-full border border-border text-sm";
+  const tabButtonClass = hebrewMode ? "px-4 py-2 transition-colors" : "px-3 py-1.5 transition-colors";
   const pillButtonClass = hebrewMode
-    ? "shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
-    : "shrink-0 rounded-full border border-border px-2 py-1 text-xs transition-colors hover:border-[var(--accent)]";
+    ? "shrink-0 rounded-full border border-border px-4 py-2 text-base transition-colors hover:border-[var(--accent)]"
+    : "shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]";
 
   return (
-    <div
-      className={`mx-auto flex h-screen w-full flex-col px-4 py-6 ${showDaf ? "max-w-[100rem]" : "max-w-7xl"}`}
-    >
-      {dedication && (
-        <p className="mb-2 shrink-0 text-center text-sm italic" style={{ opacity: 0.55 }}>
-          {formattedMessage(dedication)}
-        </p>
-      )}
-
-      {/* flex-wrap so the category-tabs/toggle cluster (shrink-0, doesn't compress) drops to its
-          own row instead of the logo/title block being crushed into it — that crushing is what
-          used to cause the two to visually overlap at narrow widths. shrink-0 on the logo block
-          keeps it at natural size on both rows for the same reason. */}
-      <header className="mb-6 flex flex-wrap shrink-0 items-center justify-between gap-y-3">
-        <div className="flex shrink-0 items-center gap-3">
+    <div className="flex h-screen w-full">
+      {/* Logo/title sidebar — a permanently reserved column (explicit user choice, 2026-07-26)
+          rather than floating in the page's outer margin only on wide screens. This used to sit
+          inside the header row itself; pulling it out means the header/toolbar below never has
+          to share its row with the logo's width, so the category tabs and buttons consistently
+          get the reading column's *full* width on one line, in both languages, at any viewport
+          wide enough for the reading column alone. mx-auto on the reading column (below) still
+          centers it within whatever space remains next to this column — flexbox respects auto
+          margins on a flex-grow item for exactly this "capped-width content, centered in the
+          leftover space" pattern. */}
+      <div className="flex shrink-0 flex-col items-start gap-4 px-6 py-6">
+        <div className="flex items-center gap-4">
           {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, no need for next/image */}
           <img src="/yct-logo-color.png" alt="YCT" className="yct-logo yct-logo-light" />
           {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, no need for next/image */}
           <img src="/yct-logo-white.png" alt="YCT" className="yct-logo yct-logo-dark" />
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "var(--accent)" }}>
-              AnyTorah
-            </h1>
-            {/* Matches the YCT logo's own tagline color. -mt-1 tightens the gap to the title so
-                the pairing reads closer to how the logo itself presents the two lines. Stays at
-                text-xs (not bumped back up with the logo/title, 2026-07-26) since this tagline is
-                the actual widest element in the block — keeping it compact still helps English
-                mode avoid wrapping even with a bigger logo/title above it. */}
-            <p className="-mt-1 text-xs italic" style={{ color: "#007cea" }}>
-              Powered by YCT and Sefaria
-            </p>
-          </div>
         </div>
-        {/* Category tabs and the rest of the buttons are deliberately two separate flex children
-            (not one cluster) inside this dir-flipped, justify-between wrapper, per explicit user
-            request: the main text picker sits at the row's start edge and every other button at
-            its end edge — "start"/"end" tracking dir, so English mode reads tabs-left/buttons-
-            right and Hebrew mode mirrors to tabs-right/buttons-left. flex-1 min-w-0 lets this
-            wrapper (not just its children) fill the line it wraps onto below the logo, so the two
-            groups actually spread to the full row width instead of sitting adjacent. */}
-        <div dir={hebrewMode ? "rtl" : "ltr"} className="flex min-w-0 flex-1 items-center justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight" style={{ color: "var(--accent)" }}>
+            AnyTorah
+          </h1>
+          {/* Matches the YCT logo's own tagline color. */}
+          <p className="-mt-1 text-sm italic" style={{ color: "#007cea" }}>
+            Powered by YCT and Sefaria
+          </p>
+        </div>
+      </div>
+
+      <div
+        className={`mx-auto flex min-w-0 flex-1 flex-col overflow-hidden px-4 py-6 ${showDaf ? "max-w-[100rem]" : "max-w-7xl"}`}
+      >
+        {dedication && (
+          <p className="mb-2 shrink-0 text-center text-sm italic" style={{ opacity: 0.55 }}>
+            {formattedMessage(dedication)}
+          </p>
+        )}
+
+        {/* Category tabs and the rest of the buttons are two separate flex children (not one
+            cluster) in this dir-flipped, justify-between header, per explicit user request: the
+            main text picker sits at the row's start edge and every other button at its end edge
+            — "start"/"end" tracking dir, so English mode reads tabs-left/buttons-right and
+            Hebrew mode mirrors to tabs-right/buttons-left. flex-wrap is a narrow-viewport
+            fallback only — now that the logo lives in its own sidebar column (see above) instead
+            of competing in this same row, tabs+buttons have the whole reading column's width to
+            themselves and shouldn't need it at any reasonable desktop width. */}
+        <header
+          dir={hebrewMode ? "rtl" : "ltr"}
+          className="mb-6 flex flex-wrap shrink-0 items-center justify-between gap-3"
+        >
           <div className={tabsContainerClass}>
             {READER_CATEGORIES.map((c) => (
               <button
@@ -1349,7 +1362,7 @@ export default function Reader() {
               title="View bookmarks"
               className={pillButtonClass}
             >
-              <BookmarkListIcon size={hebrewMode ? 16 : 13} />
+              <BookmarkListIcon size={hebrewMode ? 19 : 16} />
             </button>
             <VerticalDivider />
             <button
@@ -1376,11 +1389,10 @@ export default function Reader() {
               title="View highlights"
               className={pillButtonClass}
             >
-              <HighlighterIcon size={hebrewMode ? 17 : 14} />
+              <HighlighterIcon size={hebrewMode ? 20 : 17} />
             </button>
           </div>
-        </div>
-      </header>
+        </header>
 
       {/* dir on the outer toolbar itself makes the whole row a true mirror image in Hebrew mode
           (user-requested 2026-07-24, superseding the earlier "fixed macro order" design): source
@@ -1862,6 +1874,7 @@ export default function Reader() {
       )}
 
       <DedicationBanner />
+      </div>
     </div>
   );
 }
