@@ -223,50 +223,99 @@ the full staged plan.
 **Not yet built:** account-based sync. Local storage works standalone and should remain available
 even once accounts ship — not everyone will want to sign in just to save a bookmark.
 
-## Anchored Notes — design record (scrapped 2026-07-25, not in the codebase)
+## Highlights — shipped
 
-The bigger vision referenced above (notes tied to a specific text/commentary passage, not just a
-bookmark-level field) was fully designed and a v1 was built, verified live, and committed
-(`40ce5e4`) on 2026-07-24 — then **deliberately removed** from `main` on 2026-07-25 because the
-user decided they want a substantially different implementation approach. The code isn't gone:
-it's preserved on the `backup/anchored-notes-v1` git branch (never pushed, local-only) if it's
-ever worth referencing or cherry-picking from. This section is the design record in case a future
-session picks this feature back up — read it before re-deriving the plan from scratch, but don't
-assume the chosen approach is still what the user wants; confirm first.
+The bigger vision referenced above split into two separate features (design session 2026-07-25):
+**Highlights** (this section — a color mark + optional short note anchored to one paragraph,
+Kindle/book-margin style) and the **Notebook** (a long-form rich-text document per book/
+commentary with embedded navigation anchors — designed but **not yet built**, see the note at the
+end of this section). A first version of "anchored notes" as a single combined feature was built
+and committed (`40ce5e4`) on 2026-07-24, then scrapped on 2026-07-25 before this split was even
+decided; that commit is preserved, unpushed, on `backup/anchored-notes-v1` but is no longer a
+useful reference — the shipped implementation below replaced its data model, its dot-indicator UI,
+*and* its 6-color category scheme, all per direct user feedback during the rebuild.
 
-**Vision:** notes anchored directly to a specific verse/mishnah/Gemara line or commentary entry
-(e.g. "this Rashi"), not just a chapter-level bookmark. Meant to serve a range of users from a
-Daf Yomi listener wanting a one-tap highlight to a yeshiva student writing an extended chiddush
-with formatting and links — considered the app's most likely flagship differentiator.
+**Data model:** `lib/textAnchor.ts` — `TextAnchor` (category/index/chapter/halakha + source
+`"main"|"commentary"` + `segmentIndex` + optional `paragraphIndex` for a sub-paragraph within a
+multi-paragraph commentary entry), `anchorKey()` (chapter-scoped lookup key), `splitParagraphs()`,
+`formatAnchorLabel()` (reuses `buildDisplayTitle` from `lib/bookmarks.ts`). `lib/highlights.ts` —
+`Highlight` (anchor + `colorIndex` 0-3 + optional plain-text `note` + `tags` + auto-captured
+`anchorQuoteHe`/`En`), localStorage key `anytorah:highlights`, CRUD mirroring `lib/bookmarks.ts`.
+`lib/highlightCategories.ts` — 4 fixed colors (`HIGHLIGHT_CATEGORY_COUNT`), user-editable labels
+(`anytorah:highlightCategoryLabels`), colors are yellow/green/blue/pink (`--highlight-color-0..3`,
+`globals.css`) — yellow (`DEFAULT_HIGHLIGHT_COLOR_INDEX`) is Apple's system yellow (`#FFCC00`
+light / `#FFD60A` dark, matching the Notes app icon per explicit user request) and is the default
+color for a fresh highlight.
 
-**Decisions reached in the scrapped design** (full rationale, app comparisons, and session-by-
-session history in memory `project_anytorah_web_notes_feature`):
-- Segment-level anchors only (whole verse/mishnah/commentary-entry) — no arbitrary text-range
-  selection, that was judged too big a UI lift for v1.
-- Tiptap WYSIWYG rich text for the note body (bold/italic/bullets/links) over markdown-lite.
-- Fixed-color category swatches (6, Trello-style) with **user-editable labels** — colors are a
-  stable index, labels are freeform text stored separately, so renaming never migrates data.
-  Freeform tags layered on top for finer, many-per-note classification.
-- **One note per anchor point** — a quick color-only highlight and a full written note are the
-  same record; a highlight is just a note with an empty body until upgraded. Chosen over
-  multiple-notes-per-anchor specifically to keep the indicator/popover UI simple; explicitly
-  flagged as the main cost if this is ever revisited (indicator needs a stack/count, popover
-  needs a list-first step).
-- Local storage now, Supabase migration once account sync exists (not blocking the feature on
-  that heavier-lift item).
-- Build order: v1 = data model + quick highlight + full note w/ categories+tags+auto-quoted
-  anchor text; v1.1 = note-count badges on pickers + export/print; later = internal deep-links
-  (needs real URL routing first — this app has none today), review-resurfacing, sharing (needs
-  account sync).
+**Visual design — the highlight is the text, not an indicator next to it:** an early build in
+this same session used a small colored dot next to each paragraph (mirroring the scrapped v1's
+pattern); the user explicitly rejected this — "I want the user to be able to actually highlight
+the verse... just like they would in a book." The shipped design has two layered pieces:
+- `components/HighlightMark.tsx` wraps the whole clickable block (a paragraph, or a main-text
+  segment) but paints **no background of its own** — only a faint hover tint on unhighlighted
+  text as a discovery hint (`.highlight-mark:hover`, `globals.css`). Click routes one of two ways:
+  unhighlighted → opens a small color-swatch popover to create the highlight; already highlighted
+  → opens `HighlightEditModal` directly (color/note/tags/delete).
+- The actual color wash is a separate inline `<span className="highlight-text highlight-text-N">`
+  wrapped around *just the anchored text* at each call site (`Reader.tsx`'s main-text segments,
+  `CommentaryPanel.tsx`'s per-paragraph rendering) — inline elements hug their content and wrap
+  per line like a real highlighter, rather than stretching to the reading column's full width the
+  way painting the outer block would. When main text carries raw HTML (SA inline markers, bold-
+  editorial spans), the `dangerouslySetInnerHTML` moved from the `<p>` onto this inner `<span>` so
+  the highlight class can still wrap it.
+- A small 📝 (`.highlight-note-indicator`) renders once per highlighted block, only when
+  `highlight.note` is non-empty — the color wash alone doesn't distinguish "colored, no note" from
+  "colored, has a note to read."
 
-**A real lesson from the build-and-revert, worth keeping regardless of the next approach:** the
-"click here to add a note" empty-state indicator was styled as a dashed, half-opacity ring in
-`--border`, which in dark mode is nearly the same color as the page background — the *entire*
-feature's discovery affordance was effectively invisible, and neither `tsc`/`eslint`/build nor
-automated click-testing via accessibility-tree refs caught it (refs resolve and click regardless
-of visual contrast). Only caught when the user looked at the actual rendered page. Whatever the
-next indicator design looks like, verify it with an actual screenshot at rest, not just DOM
-presence or successful ref-clicks.
+**Popover positioning gotcha:** the reading/commentary panels are `overflow-y-auto` columns: a
+normal `position: absolute` popover anchored under the clicked paragraph gets clipped by that
+ancestor whenever the paragraph is near the bottom (or, as hit during testing, when a single
+unsplit Hebrew paragraph is taller than the viewport itself) of the visible scrolled area.
+`HighlightMark` instead computes `position: fixed` coordinates from the trigger's
+`getBoundingClientRect()` in a `useLayoutEffect`, flipping above vs. below based on actual
+remaining viewport space — `position: fixed` isn't clipped by ancestor `overflow`, so this stays
+visible regardless of where in the panel the click happened. Closes on scroll/resize/outside-
+click/Escape.
+
+**Paragraph-splitting gotcha (real bug, found and fixed during testing, not just a design note):**
+`CommentaryPanel.tsx` splits a multi-paragraph commentary entry's Hebrew and English independently
+via `splitParagraphs()`, since they're separate Sefaria fields — but the Hebrew original
+frequently has **no internal paragraph breaks at all** even when the English translation does
+(confirmed live: Ramban on Genesis 1:1 — the English splits into several paragraphs, the Hebrew is
+one unbroken block). Pairing `heParagraphs[i]`/`enParagraphs[i]` by index unconditionally, sized
+off `Math.max()` of both counts, produced one giant mark containing the entire unsplit Hebrew text
+plus several invisible zero-height "phantom" marks for the extra English-only paragraph indices —
+only surfaced by inspecting rendered DOM rects directly, not by `tsc`/`eslint`/build. Fixed by
+only splitting whichever language(s) the current `displayMode` actually shows (`showHe`/`showEn`
+gates before calling `splitParagraphs`) — a hidden language's split count must never manufacture
+rows for the visible one. The same `displayMode`-gating applies to the auto-captured
+`anchorQuoteHe`/`En` snapshot (both `Reader.tsx` and `CommentaryPanel.tsx`) — it used to capture
+both languages unconditionally, so a highlight created while reading Hebrew-only would still show
+an English quote line in the note editor; now it only captures whichever language(s) were actually
+on screen at creation time.
+
+**Label discoverability:** `HighlightColorPicker.tsx`'s per-swatch ✎ rename button (shared by
+`HighlightEditModal`'s color section and `HighlightsListModal`'s filter row) is the only place to
+rename what a color means to you — raised by the user as hard to find; addressed by bumping the
+pencil's default opacity/size and adding an explicit label above the swatch row in the edit modal
+("tap ✎ to assign a label or category name to the color"), rather than adding a separate settings
+surface.
+
+**A real lesson from the original build-and-revert, still true today:** an empty-state discovery
+affordance that only differs by a few percent of opacity against the theme background can be
+functionally invisible in dark mode, and neither `tsc`/`eslint`/build nor ref-based click-testing
+catches this (refs resolve and click regardless of visual contrast) — only an actual screenshot at
+rest does. Verified this way for both the (now-removed) dot design and the current inline-mark
+design, in both themes, before calling either done.
+
+**Not yet built — the Notebook:** a separate, long-form rich-text document per book/commentary
+(e.g. "notes on Gittin" or "notes on Ramban on Bereishit"), with embedded clickable anchors that
+jump the reader to a specific location and, in reverse, scroll the notebook to the anchor matching
+wherever the reader currently is. `lib/notebooks.ts` (the data layer — `Notebook`/`NotebookScope`
+types, Tiptap/ProseMirror JSON storage, `extractAnchors`/`extractPlainText`) and the `@tiptap/*`
+dependencies are already in `package.json`, but no editor UI, no `AnchorNode` Tiptap extension, no
+panel, and no navigation wiring exist yet — this is the next phase, intentionally picked up in a
+separate session.
 
 ## Daily learning dedication banner — shipped
 

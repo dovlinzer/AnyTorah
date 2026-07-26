@@ -5,7 +5,10 @@ import { type CommentaryType, displayName, hebrewDisplayName, hasInlineSAMarkers
 import { fetchCategoryFor, type ReaderCategory, type PoolInfo } from "@/lib/commentaryPools";
 import { saHebrewLetter, SA_SLOT_STYLES, type TextDisplayMode, type CommentaryEntry } from "@/lib/textModels";
 import { fontSizePx, fontSizeLineHeight, fontSizeSpacingScale } from "@/lib/fontSizeLevels";
+import { splitParagraphs } from "@/lib/textAnchor";
+import type { Highlight } from "@/lib/highlights";
 import FontSizeSlider from "@/components/FontSizeSlider";
+import HighlightMark from "@/components/HighlightMark";
 
 export default function CommentaryPanel({
   category,
@@ -22,6 +25,9 @@ export default function CommentaryPanel({
   onFontSizeLevelChange,
   hebrewMode = false,
   halakha,
+  getHighlight,
+  onHighlightQuickPick,
+  onHighlightOpenEditor,
 }: {
   category: ReaderCategory;
   index: number;
@@ -30,6 +36,26 @@ export default function CommentaryPanel({
   poolInfo: PoolInfo;
   /** Yerushalmi only — halakha within the chapter. */
   halakha?: number;
+  /** Looks up an existing highlight for a given entry/paragraph of the active commentary —
+   *  Reader.tsx owns the actual Highlight[] state and localStorage, this panel is purely
+   *  presentational; commentaryType is threaded through since it's part of the anchor and only
+   *  this panel knows which commentary tab is currently active. */
+  getHighlight: (segmentIndex: number, paragraphIndex: number, commentaryType: CommentaryType) => Highlight | undefined;
+  onHighlightQuickPick: (
+    segmentIndex: number,
+    paragraphIndex: number,
+    commentaryType: CommentaryType,
+    colorIndex: number,
+    anchorQuoteHe: string,
+    anchorQuoteEn: string,
+  ) => void;
+  onHighlightOpenEditor: (
+    segmentIndex: number,
+    paragraphIndex: number,
+    commentaryType: CommentaryType,
+    anchorQuoteHe: string,
+    anchorQuoteEn: string,
+  ) => void;
   /** The user's raw slot assignments — what the swap picker writes to and persists. */
   slots: CommentaryType[];
   /** slots with any context-unavailable entry substituted for a fallback — what's shown/fetched. */
@@ -243,24 +269,71 @@ export default function CommentaryPanel({
             ) : (
               <span className="mt-1 w-5 shrink-0 text-right text-xs tabular-nums opacity-50">{num}</span>
             );
+            // A single entry (e.g. one long Ramban comment) can contain multiple logical
+            // paragraphs — split so each gets its own highlight affordance, rather than treating
+            // the whole entry as one anchor point. Hebrew/English are split independently since
+            // they come from different Sefaria fields, and the Hebrew original frequently has no
+            // internal paragraph breaks at all even when the English translation does (confirmed:
+            // Ramban on Genesis 1:1, English splits into several paragraphs, Hebrew is one
+            // unbroken block) — pairing them by index unconditionally used to produce one giant
+            // mark for the unsplit language plus several empty phantom rows for the extra
+            // paragraphs on the other side. Only split whichever language(s) the current
+            // displayMode actually shows, and size paragraphCount off of those — a hidden
+            // language's split count should never manufacture empty rows.
+            const showHe = displayMode === "source" || displayMode === "both";
+            const showEn = displayMode === "translation" || displayMode === "both";
+            const heParagraphs = showHe ? splitParagraphs(entry.he) : [];
+            const enParagraphs = showEn ? splitParagraphs(entry.en) : [];
+            // A hidden language's paragraph count never contributes rows — it's [] above — so
+            // this is naturally driven only by whichever language(s) are actually visible.
+            const paragraphCount = Math.max(heParagraphs.length, enParagraphs.length, 1);
             return (
               <div key={i} className={`flex gap-2 ${numberOnRight ? "flex-row-reverse" : ""}`}>
                 {labelNode}
                 <div className="flex-1" style={{ display: "flex", flexDirection: "column", gap: entryLineGap }}>
-                  {(displayMode === "source" || displayMode === "both") && entry.he && (
-                    <p
-                      dir="rtl"
-                      lang="he"
-                      style={{ fontFamily: "var(--font-hebrew)", fontSize: hebrewFontPx, lineHeight }}
-                    >
-                      {entry.he}
-                    </p>
-                  )}
-                  {(displayMode === "translation" || displayMode === "both") && entry.en && (
-                    <p className="opacity-90" style={{ fontSize: englishFontPx, lineHeight }}>
-                      {entry.en}
-                    </p>
-                  )}
+                  {Array.from({ length: paragraphCount }, (_, pIdx) => {
+                    const he = heParagraphs[pIdx];
+                    const en = enParagraphs[pIdx];
+                    const highlight = getHighlight(entry.index, pIdx, activeType);
+                    const markClass = highlight ? `highlight-text highlight-text-${highlight.colorIndex}` : undefined;
+                    // Anchor-quote snapshot only captures whichever language(s) are actually
+                    // visible under the current display mode, matching Reader.tsx's main-text
+                    // segments — not both languages unconditionally.
+                    const quoteHe = displayMode === "source" || displayMode === "both" ? he ?? "" : "";
+                    const quoteEn = displayMode === "translation" || displayMode === "both" ? en ?? "" : "";
+                    return (
+                      <HighlightMark
+                        key={pIdx}
+                        colorIndex={highlight?.colorIndex ?? null}
+                        onQuickPick={(c) => onHighlightQuickPick(entry.index, pIdx, activeType, c, quoteHe, quoteEn)}
+                        onOpenEditor={() => onHighlightOpenEditor(entry.index, pIdx, activeType, quoteHe, quoteEn)}
+                      >
+                        <div className="flex items-start gap-1">
+                          <div className="min-w-0 flex-1" style={{ display: "flex", flexDirection: "column", gap: entryLineGap }}>
+                            {(displayMode === "source" || displayMode === "both") && he && (
+                              <p
+                                dir="rtl"
+                                lang="he"
+                                style={{ fontFamily: "var(--font-hebrew)", fontSize: hebrewFontPx, lineHeight }}
+                              >
+                                <span className={markClass}>{he}</span>
+                              </p>
+                            )}
+                            {(displayMode === "translation" || displayMode === "both") && en && (
+                              <p className="opacity-90" style={{ fontSize: englishFontPx, lineHeight }}>
+                                <span className={markClass}>{en}</span>
+                              </p>
+                            )}
+                          </div>
+                          {highlight?.note && (
+                            <span className="highlight-note-indicator shrink-0" aria-label="Has note">
+                              📝
+                            </span>
+                          )}
+                        </div>
+                      </HighlightMark>
+                    );
+                  })}
                 </div>
               </div>
             );

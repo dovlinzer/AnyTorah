@@ -34,6 +34,11 @@ import {
 } from "@/lib/bookmarks";
 import type { YomiToday, YomiResult } from "@/lib/yomiService";
 import { toHebrewNumeral } from "@/lib/textModels";
+import { loadHighlights, saveHighlights, findHighlight, type Highlight } from "@/lib/highlights";
+import { anchorKey, stripAnchorHTML, type TextAnchor } from "@/lib/textAnchor";
+import HighlightMark from "@/components/HighlightMark";
+import HighlightEditModal from "@/components/HighlightEditModal";
+import HighlightsListModal from "@/components/HighlightsListModal";
 
 interface ChapterResponse {
   ref: string;
@@ -883,6 +888,119 @@ export default function Reader() {
     setBookmarkListOpen(false);
   };
 
+  // Highlights — a color (+ optional short plain-text note) anchored to a specific paragraph of
+  // main text or commentary (see lib/highlights.ts, lib/textAnchor.ts). Distinct from bookmarks
+  // (a saved chapter-level *place*) and from the Notebook (a long-form rich-text document with
+  // embedded navigation anchors, built separately).
+  const [highlights, setHighlightsState] = useState<Highlight[]>([]);
+  useEffect(() => setHighlightsState(loadHighlights()), []);
+  const [highlightEditorAnchor, setHighlightEditorAnchor] = useState<TextAnchor | null>(null);
+  const [highlightEditorQuote, setHighlightEditorQuote] = useState({ he: "", en: "" });
+  const [highlightsListOpen, setHighlightsListOpen] = useState(false);
+
+  // Scoped to the current chapter/halakha selection, same pattern v1 used for its notesLookup —
+  // anchorKey alone is only unique within one chapter, so entries outside the current selection
+  // are filtered out here rather than baked into the key itself.
+  const highlightsLookup = useMemo(() => {
+    const map = new Map<string, Highlight>();
+    for (const h of highlights) {
+      if (
+        h.anchor.category === category &&
+        h.anchor.index === index &&
+        h.anchor.chapter === chapter &&
+        (h.anchor.halakha ?? undefined) === (halakha ?? undefined)
+      ) {
+        map.set(anchorKey(h.anchor), h);
+      }
+    }
+    return map;
+  }, [highlights, category, index, chapter, halakha]);
+
+  const buildAnchor = useCallback(
+    (source: "main" | "commentary", segmentIndex: number, paragraphIndex: number, commentaryType?: CommentaryType): TextAnchor => ({
+      category,
+      index,
+      chapter,
+      halakha,
+      source,
+      commentaryType,
+      segmentIndex,
+      paragraphIndex: paragraphIndex || undefined,
+    }),
+    [category, index, chapter, halakha],
+  );
+
+  const upsertHighlight = (
+    anchor: TextAnchor,
+    colorIndex: number,
+    note: string | null,
+    tags: string[],
+    anchorQuoteHe: string,
+    anchorQuoteEn: string,
+  ) => {
+    setHighlightsState((list) => {
+      const existing = findHighlight(list, anchor);
+      const now = new Date().toISOString();
+      const next = existing
+        ? list.map((h) => (h.id === existing.id ? { ...h, colorIndex, note, tags, updatedAt: now } : h))
+        : [
+            { id: crypto.randomUUID(), createdAt: now, updatedAt: now, anchor, colorIndex, note, tags, anchorQuoteHe, anchorQuoteEn },
+            ...list,
+          ];
+      saveHighlights(next);
+      return next;
+    });
+  };
+
+  const handleQuickPickHighlight = (anchor: TextAnchor, colorIndex: number, anchorQuoteHe: string, anchorQuoteEn: string) => {
+    const existing = findHighlight(highlights, anchor);
+    upsertHighlight(anchor, colorIndex, existing?.note ?? null, existing?.tags ?? [], existing?.anchorQuoteHe ?? anchorQuoteHe, existing?.anchorQuoteEn ?? anchorQuoteEn);
+  };
+
+  const handleDeleteHighlightAt = (anchor: TextAnchor) => {
+    setHighlightsState((list) => {
+      const existing = findHighlight(list, anchor);
+      if (!existing) return list;
+      const next = list.filter((h) => h.id !== existing.id);
+      saveHighlights(next);
+      return next;
+    });
+  };
+
+  const handleOpenHighlightEditor = (anchor: TextAnchor, anchorQuoteHe: string, anchorQuoteEn: string) => {
+    setHighlightEditorAnchor(anchor);
+    setHighlightEditorQuote({ he: anchorQuoteHe, en: anchorQuoteEn });
+  };
+
+  const handleSaveHighlightFromEditor = (colorIndex: number, note: string | null, tags: string[]) => {
+    if (!highlightEditorAnchor) return;
+    const existing = findHighlight(highlights, highlightEditorAnchor);
+    upsertHighlight(
+      highlightEditorAnchor,
+      colorIndex,
+      note,
+      tags,
+      existing?.anchorQuoteHe ?? highlightEditorQuote.he,
+      existing?.anchorQuoteEn ?? highlightEditorQuote.en,
+    );
+    setHighlightEditorAnchor(null);
+  };
+
+  const handleDeleteHighlightFromEditor = () => {
+    if (!highlightEditorAnchor) return;
+    handleDeleteHighlightAt(highlightEditorAnchor);
+    setHighlightEditorAnchor(null);
+  };
+
+  const handleNavigateHighlight = (h: Highlight) => {
+    setCategory(h.anchor.category);
+    setSelection((s) => ({
+      ...s,
+      [h.anchor.category]: { index: h.anchor.index, chapter: h.anchor.chapter, halakha: h.anchor.halakha },
+    }));
+    setHighlightsListOpen(false);
+  };
+
   // Shared "advance/retreat one reading step" used by both arrow keys and the chevron buttons.
   // For Talmud, a step moves one amud at a time (a→b within a daf, then b→a of the next/previous
   // daf) rather than jumping a whole daf, matching how the text actually scrolls.
@@ -1076,6 +1194,14 @@ export default function Reader() {
           >
             🔖{bookmarks.length > 0 ? ` ${bookmarks.length}` : ""}
           </button>
+          <button
+            onClick={() => setHighlightsListOpen(true)}
+            aria-label="View highlights"
+            title="View highlights"
+            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+          >
+            🖍️{highlights.length > 0 ? ` ${highlights.length}` : ""}
+          </button>
         </div>
       </header>
 
@@ -1253,66 +1379,99 @@ export default function Reader() {
                       <div className="h-px flex-1 bg-border" />
                     </div>
                   ) : (
-                    <div key={seg.id} className={`flex gap-3 ${textDisplayMode !== "translation" ? "flex-row-reverse" : ""}`}>
-                      {seg.label && (
-                        <span className="mt-1.5 w-5 shrink-0 text-right text-xs tabular-nums opacity-50">
-                          {seg.label}
-                        </span>
-                      )}
-                      <div className="flex-1" style={{ display: "flex", flexDirection: "column", gap: mainLineGap }}>
-                        {(textDisplayMode === "source" || textDisplayMode === "both") && seg.hebrewHTML && (
-                          category === "shulchanArukh" ? (
-                            // SA Hebrew carries <span class="sa-mark sa-mark-N"> spans for its
-                            // inline commentary-marker brackets (see processedHebrewWithMarkers)
-                            // — everything else in this string is plain-texted server-side, so
-                            // this is safe despite the raw HTML.
-                            <p
-                              dir="rtl"
-                              lang="he"
-                              style={{
-                                fontFamily: "var(--font-hebrew)",
-                                fontSize: mainHebrewFontPx,
-                                lineHeight: mainLineHeight,
-                              }}
-                              dangerouslySetInnerHTML={{ __html: seg.hebrewHTML }}
-                            />
-                          ) : (
-                            <p
-                              dir="rtl"
-                              lang="he"
-                              style={{
-                                fontFamily: "var(--font-hebrew)",
-                                fontSize: mainHebrewFontPx,
-                                lineHeight: mainLineHeight,
-                                whiteSpace: "pre-line",
-                              }}
-                            >
-                              {seg.hebrewHTML}
-                            </p>
-                          )
-                        )}
-                        {(textDisplayMode === "translation" || textDisplayMode === "both") && seg.englishHTML && (
-                          isBoldEnglishCategory ? (
-                            // Carries <span class="en-editorial"> for Sefaria's bolded "glue"
-                            // words (see processedEnglishWithBold) — everything else in this
-                            // string is plain-texted server-side, so this is safe despite the
-                            // raw HTML, matching the SA-Hebrew case above.
-                            <p
-                              className="opacity-90"
-                              style={{ fontSize: mainEnglishFontPx, lineHeight: mainLineHeight, whiteSpace: "pre-line" }}
-                              dangerouslySetInnerHTML={{ __html: seg.englishHTML }}
-                            />
-                          ) : (
-                            <p
-                              className="opacity-90"
-                              style={{ fontSize: mainEnglishFontPx, lineHeight: mainLineHeight, whiteSpace: "pre-line" }}
-                            >
-                              {seg.englishHTML}
-                            </p>
-                          )
-                        )}
-                      </div>
-                    </div>
+                    (() => {
+                      const highlight = highlightsLookup.get(anchorKey(buildAnchor("main", seg.index, 0)));
+                      const markClass = highlight ? `highlight-text highlight-text-${highlight.colorIndex}` : undefined;
+                      // Anchor-quote snapshot only captures whichever language(s) are actually
+                      // visible under the current display mode — not both languages
+                      // unconditionally — so the note editor reflects what was actually being
+                      // read, not a language the reader had toggled off.
+                      const quoteHe =
+                        textDisplayMode === "source" || textDisplayMode === "both" ? stripAnchorHTML(seg.hebrewHTML) : "";
+                      const quoteEn =
+                        textDisplayMode === "translation" || textDisplayMode === "both"
+                          ? stripAnchorHTML(seg.englishHTML)
+                          : "";
+                      return (
+                        <div key={seg.id} className={`flex gap-3 ${textDisplayMode !== "translation" ? "flex-row-reverse" : ""}`}>
+                          {seg.label && (
+                            <span className="mt-1.5 w-5 shrink-0 text-right text-xs tabular-nums opacity-50">
+                              {seg.label}
+                            </span>
+                          )}
+                          <HighlightMark
+                            className="flex-1"
+                            colorIndex={highlight?.colorIndex ?? null}
+                            onQuickPick={(c) => handleQuickPickHighlight(buildAnchor("main", seg.index, 0), c, quoteHe, quoteEn)}
+                            onOpenEditor={() => handleOpenHighlightEditor(buildAnchor("main", seg.index, 0), quoteHe, quoteEn)}
+                          >
+                            <div className="flex items-start gap-1">
+                              <div className="min-w-0 flex-1" style={{ display: "flex", flexDirection: "column", gap: mainLineGap }}>
+                                {(textDisplayMode === "source" || textDisplayMode === "both") && seg.hebrewHTML && (
+                                  category === "shulchanArukh" ? (
+                                    // SA Hebrew carries <span class="sa-mark sa-mark-N"> spans for
+                                    // its inline commentary-marker brackets (see
+                                    // processedHebrewWithMarkers) — everything else in this string
+                                    // is plain-texted server-side, so this is safe despite the raw
+                                    // HTML.
+                                    <p
+                                      dir="rtl"
+                                      lang="he"
+                                      style={{
+                                        fontFamily: "var(--font-hebrew)",
+                                        fontSize: mainHebrewFontPx,
+                                        lineHeight: mainLineHeight,
+                                      }}
+                                    >
+                                      <span className={markClass} dangerouslySetInnerHTML={{ __html: seg.hebrewHTML }} />
+                                    </p>
+                                  ) : (
+                                    <p
+                                      dir="rtl"
+                                      lang="he"
+                                      style={{
+                                        fontFamily: "var(--font-hebrew)",
+                                        fontSize: mainHebrewFontPx,
+                                        lineHeight: mainLineHeight,
+                                        whiteSpace: "pre-line",
+                                      }}
+                                    >
+                                      <span className={markClass}>{seg.hebrewHTML}</span>
+                                    </p>
+                                  )
+                                )}
+                                {(textDisplayMode === "translation" || textDisplayMode === "both") && seg.englishHTML && (
+                                  isBoldEnglishCategory ? (
+                                    // Carries <span class="en-editorial"> for Sefaria's bolded
+                                    // "glue" words (see processedEnglishWithBold) — everything else
+                                    // in this string is plain-texted server-side, so this is safe
+                                    // despite the raw HTML, matching the SA-Hebrew case above.
+                                    <p
+                                      className="opacity-90"
+                                      style={{ fontSize: mainEnglishFontPx, lineHeight: mainLineHeight, whiteSpace: "pre-line" }}
+                                    >
+                                      <span className={markClass} dangerouslySetInnerHTML={{ __html: seg.englishHTML }} />
+                                    </p>
+                                  ) : (
+                                    <p
+                                      className="opacity-90"
+                                      style={{ fontSize: mainEnglishFontPx, lineHeight: mainLineHeight, whiteSpace: "pre-line" }}
+                                    >
+                                      <span className={markClass}>{seg.englishHTML}</span>
+                                    </p>
+                                  )
+                                )}
+                              </div>
+                              {highlight?.note && (
+                                <span className="highlight-note-indicator shrink-0" aria-label="Has note">
+                                  📝
+                                </span>
+                              )}
+                            </div>
+                          </HighlightMark>
+                        </div>
+                      );
+                    })()
                   ),
                 )}
               </div>
@@ -1356,6 +1515,24 @@ export default function Reader() {
             onFontSizeLevelChange={setCommentaryFontSizeLevel}
             hebrewMode={hebrewMode}
             halakha={isYerushalmi ? halakha : undefined}
+            getHighlight={(segmentIndex, paragraphIndex, commentaryType) =>
+              highlightsLookup.get(anchorKey(buildAnchor("commentary", segmentIndex, paragraphIndex, commentaryType)))
+            }
+            onHighlightQuickPick={(segmentIndex, paragraphIndex, commentaryType, colorIndex, heQuote, enQuote) =>
+              handleQuickPickHighlight(
+                buildAnchor("commentary", segmentIndex, paragraphIndex, commentaryType),
+                colorIndex,
+                heQuote,
+                enQuote,
+              )
+            }
+            onHighlightOpenEditor={(segmentIndex, paragraphIndex, commentaryType, heQuote, enQuote) =>
+              handleOpenHighlightEditor(
+                buildAnchor("commentary", segmentIndex, paragraphIndex, commentaryType),
+                heQuote,
+                enQuote,
+              )
+            }
           />
         </div>
       </div>
@@ -1421,6 +1598,26 @@ export default function Reader() {
           onNavigate={handleNavigateBookmark}
           onDelete={handleDeleteBookmark}
           onClose={() => setBookmarkListOpen(false)}
+        />
+      )}
+
+      {highlightEditorAnchor && (
+        <HighlightEditModal
+          existing={findHighlight(highlights, highlightEditorAnchor) ?? null}
+          anchorQuoteHe={highlightEditorQuote.he}
+          anchorQuoteEn={highlightEditorQuote.en}
+          onSave={handleSaveHighlightFromEditor}
+          onDelete={handleDeleteHighlightFromEditor}
+          onClose={() => setHighlightEditorAnchor(null)}
+        />
+      )}
+
+      {highlightsListOpen && (
+        <HighlightsListModal
+          highlights={highlights}
+          onNavigate={handleNavigateHighlight}
+          onDelete={(h) => handleDeleteHighlightAt(h.anchor)}
+          onClose={() => setHighlightsListOpen(false)}
         />
       )}
 

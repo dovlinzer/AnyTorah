@@ -11,6 +11,13 @@
   --accent-foreground: #ffffff;
   --card: #f7f7f8;
   --border: #e5e5e5;
+  /* Highlight colors — fixed, user-editable labels (see lib/highlightCategories.ts). A real
+   * 4-color highlighter set: 0 Yellow (the default color; Apple's system yellow, #FFCC00 light /
+   * #FFD60A dark, per the Notes app icon), 1 Green, 2 Blue, 3 Pink. */
+  --highlight-color-0: #ffcc00;
+  --highlight-color-1: #22c55e;
+  --highlight-color-2: #0ea5e9;
+  --highlight-color-3: #ec4899;
 }
 
 @theme inline {
@@ -33,6 +40,11 @@
     --accent-foreground: #0f1c47;
     --card: #16255c;
     --border: #24357a;
+    /* Brighter variants for legibility against the dark theme's navy background. */
+    --highlight-color-0: #ffd60a;
+    --highlight-color-1: #4ade80;
+    --highlight-color-2: #38bdf8;
+    --highlight-color-3: #f472b6;
   }
 }
 
@@ -83,6 +95,74 @@ body {
 .en-editorial {
   color: var(--accent);
   font-weight: 400;
+}
+
+/*
+ * Highlight color-swatch dot — used in the quick create-popover and the color picker/filter
+ * (HighlightColorPicker), colored by the highlight's fixed colorIndex (0-3, see
+ * --highlight-color-N above). One class per index so the color survives a category label rename
+ * (labels are stored separately from the index, see lib/highlightCategories.ts).
+ */
+.highlight-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  transition: opacity 0.1s, transform 0.1s;
+}
+.highlight-dot:hover {
+  opacity: 1;
+  transform: scale(1.25);
+}
+.highlight-dot-0 { background: var(--highlight-color-0); }
+.highlight-dot-1 { background: var(--highlight-color-1); }
+.highlight-dot-2 { background: var(--highlight-color-2); }
+.highlight-dot-3 { background: var(--highlight-color-3); }
+.highlight-dot-empty {
+  background: transparent;
+  border: 1.5px solid var(--accent);
+  opacity: 0.55;
+}
+
+/*
+ * Highlight click target (HighlightMark) — wraps a whole segment/paragraph so it's easy to
+ * click, but carries no background of its own. Clicking unhighlighted text opens the small
+ * color-swatch popover above; clicking already-highlighted text opens the full note editor
+ * directly. Only a faint hover tint hints that unhighlighted text is clickable — matching how a
+ * real book has no visible affordance until you've actually highlighted something.
+ */
+.highlight-mark {
+  cursor: pointer;
+  border-radius: 0.2rem;
+  transition: background-color 0.15s;
+}
+.highlight-mark:hover {
+  background-color: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+/*
+ * Highlight text — the actual color wash, applied as an inline span wrapping just the anchored
+ * text itself (not the whole click target above), so the highlight ends where the sentence ends
+ * instead of stretching to the width of the reading column. Inline elements naturally hug their
+ * content and wrap per line, the same as a real highlighter across a line break.
+ */
+.highlight-text {
+  border-radius: 0.15rem;
+  padding: 0.05rem 0.25rem;
+  margin: 0 -0.25rem;
+}
+.highlight-text-0 { background-color: color-mix(in srgb, var(--highlight-color-0) 45%, transparent); }
+.highlight-text-1 { background-color: color-mix(in srgb, var(--highlight-color-1) 38%, transparent); }
+.highlight-text-2 { background-color: color-mix(in srgb, var(--highlight-color-2) 38%, transparent); }
+.highlight-text-3 { background-color: color-mix(in srgb, var(--highlight-color-3) 38%, transparent); }
+
+/* Small trailing marker shown only when a highlight also has a written note attached. */
+.highlight-note-indicator {
+  font-size: 0.75em;
+  opacity: 0.75;
+  line-height: 1;
 }
 
 /*
