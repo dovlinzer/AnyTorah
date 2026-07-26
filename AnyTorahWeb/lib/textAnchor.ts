@@ -98,13 +98,24 @@ export function splitParagraphs(text: string): string[] {
   return bySingleNewline.length > 0 ? bySingleNewline : [text.trim()];
 }
 
+/** Highlight quote snapshots (anchorQuoteHe/En) are capped at this length — a highlighted Rashi
+ *  or other long commentary entry could otherwise copy hundreds of words into the note editor. */
+const MAX_ANCHOR_QUOTE_LENGTH = 250;
+
+/** Caps a captured highlight quote to MAX_ANCHOR_QUOTE_LENGTH, used by both the main-text path
+ *  (via stripAnchorHTML below) and CommentaryPanel's paragraph path (which has no HTML to strip
+ *  but still needs the same length cap). */
+export function truncateAnchorQuote(text: string): string {
+  return text.length > MAX_ANCHOR_QUOTE_LENGTH ? `${text.slice(0, MAX_ANCHOR_QUOTE_LENGTH).trim()}…` : text;
+}
+
 /** Strips HTML tags and collapses whitespace — used when snapshotting a main-text segment's
  *  hebrewHTML/englishHTML into a highlight's anchorQuoteHe/En, since those fields can carry raw
  *  markup (SA inline-marker spans, bold-editorial spans) that shouldn't show up in a quote
  *  preview. CommentaryEntry paragraphs never carry HTML, so callers only need this for
  *  main-text segments. */
 export function stripAnchorHTML(html: string): string {
-  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return truncateAnchorQuote(html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
 }
 
 /** Human-readable label for an anchor — used for the Notebook's anchor pills and for highlight/

@@ -318,7 +318,7 @@ body {
  * variant there instead of hiding the logo entirely.
  */
 .yct-logo {
-  height: 64px;
+  height: 48px;
   width: auto;
 }
 .yct-logo-dark {

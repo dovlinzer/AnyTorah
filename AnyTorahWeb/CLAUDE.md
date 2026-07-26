@@ -223,6 +223,14 @@ margins that make the logo look tiny at any reasonable `height` in `.yct-logo`.
 The "Powered by YCT and Sefaria" caption under the title is copied verbatim (including
 italic/55%-opacity styling) from native's `SplashView.swift`.
 
+**Logo/title size (revised 2026-07-26):** `.yct-logo`'s `height` was 64px, and the title/tagline
+were `text-2xl`/`text-sm` — wide enough in English mode (where "Tanakh" etc. run longer than their
+Hebrew equivalents) that the logo block alone could push the header row's `flex-wrap` to trigger
+sooner than in Hebrew mode. Shrunk to `height: 48px` / `text-xl` / `text-xs` (tagline is the
+actual widest element in the block, wider than the "AnyTorah" title itself, so it needed the cut
+too) specifically to buy back width for the category-tab cluster in English mode. `flex-wrap`
+itself is unchanged — this narrows the trigger, it doesn't remove the wrap fallback.
+
 ## Bookmarks + Notes (phase 1: local storage) — shipped
 
 `lib/bookmarks.ts` (localStorage CRUD, key `anytorah:bookmarks`) + `components/BookmarkEditModal.tsx`
@@ -236,6 +244,18 @@ the full staged plan.
 
 **Not yet built:** account-based sync. Local storage works standalone and should remain available
 even once accounts ship — not everyone will want to sign in just to save a bookmark.
+
+**List-button icon + header grouping (revised 2026-07-26):** the list button was a 🔖 emoji with
+a bookmark count; replaced with `BookmarkListIcon` (`Reader.tsx`) — a custom outline star-with-
+list-badge SVG (`currentColor` stroke so it matches the button's theme color automatically,
+`var(--background)` knockout circle behind the badge) — per an explicit user reference image, and
+the count suffix was dropped entirely (space-saving, same call the highlight button's count got,
+see "Highlights" below). The header row's button cluster is now split into four groups by
+`VerticalDivider` (already used elsewhere for the second toolbar row, reused as-is): category
+tabs | Hebrew-mode + reverse-nav toggles | bookmark star + bookmark list | notebook + notebook-
+search + highlights — explicit user request to visually group "associated" controls. The
+notebook/notebook-search/highlights trio was also reordered into that exact sequence (was
+highlights, notebook, notebook-search before) per the same request.
 
 ## Highlights — shipped
 
@@ -321,6 +341,20 @@ functionally invisible in dark mode, and neither `tsc`/`eslint`/build nor ref-ba
 catches this (refs resolve and click regardless of visual contrast) — only an actual screenshot at
 rest does. Verified this way for both the (now-removed) dot design and the current inline-mark
 design, in both themes, before calling either done.
+
+**Header button icon + quote-length cap (2026-07-26):** the header's "view highlights" button was
+a 🖍️ crayon emoji with a highlight-count suffix; replaced with `HighlighterIcon` (`Reader.tsx`) — a
+custom SVG built to actually look like a highlighter marker (angled barrel + felt tip + a short
+highlighted stroke, fixed orange/black colors rather than `currentColor` since the marker's own
+color is part of what reads as "highlighter") — per an explicit user reference image. The count
+suffix was dropped (see "Bookmarks + Notes" above for the same treatment on the bookmark-list
+button). Separately, `anchorQuoteHe`/`En` are now capped at 250 characters
+(`truncateAnchorQuote()`, `lib/textAnchor.ts`, appended with `…` when cut) — a highlighted long
+Rashi or other verbose commentary entry used to copy its entire text into the note editor
+uncapped. Wired into both capture paths: `stripAnchorHTML` (main-text segments, `Reader.tsx`) now
+truncates as its last step, and `CommentaryPanel.tsx`'s paragraph path (which has no HTML to
+strip, so it couldn't route through `stripAnchorHTML`) calls `truncateAnchorQuote` directly on its
+already-`displayMode`-gated `he`/`en` strings.
 
 ## Notebook — Phase 1 shipped (editor core + anchor creation)
 
@@ -658,6 +692,12 @@ session).
   every `onUpdate`/`onCreate` alongside the existing `headings` tracking. Clicking a chip sets the
   find query to that tag's label, reusing `SearchExtension`'s existing tag-matching (no new search
   logic needed — this was purely a missing *listing* of what's already searchable).
+  **Not a bug, but caused real user confusion, worth flagging for next time:** this row is
+  `noteTags.length > 0 &&`-gated, same convention as the cross-notebook modal's own `allTags.length
+  > 0` gate — it's invisible in any notebook that has zero tag chips inserted, by design, not a
+  loading/rendering issue. The user reported "not seeing" it while testing in a notebook that
+  simply had no tags yet; confirmed working as soon as a tag existed. If this comes up again,
+  check for an actual `.notebook-tag-chip` in that notebook's content before assuming a regression.
 
 ## Daily learning dedication banner — shipped
 

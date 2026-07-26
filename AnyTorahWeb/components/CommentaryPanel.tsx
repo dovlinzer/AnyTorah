@@ -5,7 +5,7 @@ import { type CommentaryType, displayName, hebrewDisplayName, hasInlineSAMarkers
 import { fetchCategoryFor, type ReaderCategory, type PoolInfo } from "@/lib/commentaryPools";
 import { saHebrewLetter, SA_SLOT_STYLES, type TextDisplayMode, type CommentaryEntry } from "@/lib/textModels";
 import { fontSizePx, fontSizeLineHeight, fontSizeSpacingScale } from "@/lib/fontSizeLevels";
-import { splitParagraphs, buildSegmentLabel } from "@/lib/textAnchor";
+import { splitParagraphs, buildSegmentLabel, truncateAnchorQuote } from "@/lib/textAnchor";
 import type { Highlight } from "@/lib/highlights";
 import FontSizeSlider from "@/components/FontSizeSlider";
 import DisplayModePill from "@/components/DisplayModePill";
@@ -332,8 +332,10 @@ export default function CommentaryPanel({
                     // Anchor-quote snapshot only captures whichever language(s) are actually
                     // visible under the current display mode, matching Reader.tsx's main-text
                     // segments — not both languages unconditionally.
-                    const quoteHe = displayMode === "source" || displayMode === "both" ? he ?? "" : "";
-                    const quoteEn = displayMode === "translation" || displayMode === "both" ? en ?? "" : "";
+                    const quoteHe =
+                      displayMode === "source" || displayMode === "both" ? truncateAnchorQuote(he ?? "") : "";
+                    const quoteEn =
+                      displayMode === "translation" || displayMode === "both" ? truncateAnchorQuote(en ?? "") : "";
                     return (
                       <HighlightMark
                         key={pIdx}

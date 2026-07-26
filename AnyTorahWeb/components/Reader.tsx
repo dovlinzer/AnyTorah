@@ -397,13 +397,13 @@ function CommitInput({
 /** EN/עב pill toggling saHebrewMode — Hebrew names, Hebrew numerals, and RTL toolbar layout. */
 function HebrewModeToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div className="flex shrink-0 overflow-hidden rounded-full border border-border text-sm">
+    <div className="flex shrink-0 overflow-hidden rounded-full border border-border text-xs">
       {[false, true].map((v) => (
         <button
           key={String(v)}
           onClick={() => onChange(v)}
           aria-label={v ? "Switch to Hebrew names" : "Switch to English names"}
-          className="px-3 py-1.5 transition-colors"
+          className="px-2 py-1 transition-colors"
           style={on === v ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
         >
           {v ? "עב" : "EN"}
@@ -422,7 +422,7 @@ function ReverseNavToggle({ on, onChange }: { on: boolean; onChange: (v: boolean
       aria-pressed={on}
       aria-label="Reverse navigation direction"
       title="Reverse navigation direction"
-      className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+      className="shrink-0 rounded-full border border-border px-2 py-1 text-xs transition-colors hover:border-[var(--accent)]"
       style={on ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
     >
       ⇄
@@ -433,6 +433,50 @@ function ReverseNavToggle({ on, onChange }: { on: boolean; onChange: (v: boolean
 /** Thin vertical rule separating the Text and Commentary control groups. */
 function VerticalDivider() {
   return <div className="h-8 w-px shrink-0 self-center bg-border" />;
+}
+
+/** Star-with-list badge for the "view bookmarks" button — reads as "a list of starred items",
+ *  distinct from the plain ★/☆ toggle next to it (which bookmarks/unbookmarks the current spot). */
+function BookmarkListIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinejoin="round"
+      style={{ display: "inline-block", verticalAlign: "-2px" }}
+      aria-hidden="true"
+    >
+      <path d="M12 2.5 15 8.8 22 9.8 17 14.6 18.2 21.5 12 18.2 5.8 21.5 7 14.6 2 9.8 9 8.8Z" />
+      <circle cx="17.5" cy="17.5" r="5.3" fill="var(--background)" stroke="currentColor" />
+      <path d="M15.4 15.8h4.2M15.4 17.5h4.2M15.4 19.2h4.2" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** Highlighter-marker glyph for the "view highlights" button — a real marker pen shape (angled
+ *  barrel + felt tip + a short highlighted stroke), not the crayon emoji this replaced, per
+ *  explicit user reference image. Fixed marker colors (not theme-driven) since a highlighter's
+ *  own color is part of what makes it read as a highlighter. */
+function HighlighterIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      style={{ display: "inline-block", verticalAlign: "-2px" }}
+      aria-hidden="true"
+    >
+      <g transform="rotate(45 12 12)">
+        <rect x="9" y="1.5" width="6" height="11" rx="1.2" fill="#f2a127" stroke="#c97f0d" strokeWidth="0.6" />
+        <path d="M8.7 12.5h6.6l-2.2 5.2a1.2 1.2 0 0 1-2.2 0Z" fill="#1f1f1f" />
+      </g>
+      <path d="M4 20.5h5" stroke="#f2a127" strokeWidth="2.4" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 /** Jumps to today's Daf/Mishnah/Rambam Yomi, 929 chapter, or weekly Parsha — one per relevant
@@ -1204,18 +1248,20 @@ export default function Reader() {
           used to cause the two to visually overlap at narrow widths. shrink-0 on the logo block
           keeps it at natural size on both rows for the same reason. */}
       <header className="mb-6 flex flex-wrap shrink-0 items-center justify-between gap-y-3">
-        <div className="flex shrink-0 items-center gap-5">
+        <div className="flex shrink-0 items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, no need for next/image */}
           <img src="/yct-logo-color.png" alt="YCT" className="yct-logo yct-logo-light" />
           {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, no need for next/image */}
           <img src="/yct-logo-white.png" alt="YCT" className="yct-logo yct-logo-dark" />
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "var(--accent)" }}>
+            <h1 className="text-xl font-semibold tracking-tight" style={{ color: "var(--accent)" }}>
               AnyTorah
             </h1>
             {/* Matches the YCT logo's own tagline color. -mt-1 tightens the gap to the title so
-                the pairing reads closer to how the logo itself presents the two lines. */}
-            <p className="-mt-1 text-sm italic" style={{ color: "#007cea" }}>
+                the pairing reads closer to how the logo itself presents the two lines. Smaller
+                (text-xs, 2026-07-26) than the title above it so the English tagline — the widest
+                element in this block — doesn't dictate how soon the toolbar wraps in English mode. */}
+            <p className="-mt-1 text-xs italic" style={{ color: "#007cea" }}>
               Powered by YCT and Sefaria
             </p>
           </div>
@@ -1225,27 +1271,29 @@ export default function Reader() {
             category tabs plus the toggles and bookmark buttons. Scroll it internally rather than
             letting it overflow the whole page horizontally, the same pattern the chapter-selector
             toolbar below already uses. */}
-        <div dir={hebrewMode ? "rtl" : "ltr"} className="flex max-w-full shrink-0 items-center gap-3 overflow-x-auto">
-          <div className="flex shrink-0 overflow-hidden rounded-full border border-border text-sm">
+        <div dir={hebrewMode ? "rtl" : "ltr"} className="flex max-w-full shrink-0 items-center gap-2 overflow-x-auto">
+          <div className="flex shrink-0 overflow-hidden rounded-full border border-border text-xs">
             {READER_CATEGORIES.map((c) => (
               <button
                 key={c}
                 onClick={() => setCategory(c)}
-                className="px-3 py-1.5 transition-colors"
+                className="px-2 py-1 transition-colors"
                 style={category === c ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
               >
                 {getCategoryDisplayName(c, hebrewMode)}
               </button>
             ))}
           </div>
+          <VerticalDivider />
           <HebrewModeToggle on={hebrewMode} onChange={setHebrewMode} />
           <ReverseNavToggle on={reverseNavigation} onChange={setReverseNavigation} />
+          <VerticalDivider />
           <button
             onClick={() => setBookmarkEditOpen(true)}
             aria-pressed={!!currentBookmark}
             aria-label={currentBookmark ? "Edit bookmark" : "Bookmark this location"}
             title={currentBookmark ? "Edit bookmark" : "Bookmark this location"}
-            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+            className="shrink-0 rounded-full border border-border px-2 py-1 text-xs transition-colors hover:border-[var(--accent)]"
             style={currentBookmark ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
           >
             {currentBookmark ? "★" : "☆"}
@@ -1254,24 +1302,17 @@ export default function Reader() {
             onClick={() => setBookmarkListOpen(true)}
             aria-label="View bookmarks"
             title="View bookmarks"
-            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+            className="shrink-0 rounded-full border border-border px-2 py-1 text-xs transition-colors hover:border-[var(--accent)]"
           >
-            🔖{bookmarks.length > 0 ? ` ${bookmarks.length}` : ""}
+            <BookmarkListIcon />
           </button>
-          <button
-            onClick={() => setHighlightsListOpen(true)}
-            aria-label="View highlights"
-            title="View highlights"
-            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
-          >
-            🖍️{highlights.length > 0 ? ` ${highlights.length}` : ""}
-          </button>
+          <VerticalDivider />
           <button
             onClick={() => setNotebookOpen((o) => !o)}
             aria-pressed={notebookOpen}
             aria-label={notebookOpen ? "Close notebook" : "Open notebook"}
             title={notebookOpen ? "Close notebook" : "Open notebook"}
-            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+            className="shrink-0 rounded-full border border-border px-2 py-1 text-xs transition-colors hover:border-[var(--accent)]"
             style={notebookOpen ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
           >
             📓
@@ -1280,9 +1321,17 @@ export default function Reader() {
             onClick={() => setNotebookSearchOpen(true)}
             aria-label="Search all notebooks"
             title="Search all notebooks"
-            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+            className="shrink-0 rounded-full border border-border px-2 py-1 text-xs transition-colors hover:border-[var(--accent)]"
           >
             🔎
+          </button>
+          <button
+            onClick={() => setHighlightsListOpen(true)}
+            aria-label="View highlights"
+            title="View highlights"
+            className="shrink-0 rounded-full border border-border px-2 py-1 text-xs transition-colors hover:border-[var(--accent)]"
+          >
+            <HighlighterIcon />
           </button>
         </div>
       </header>
