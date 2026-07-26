@@ -83,6 +83,16 @@ export interface ShulchanArukhSection {
   simanim: number;
 }
 
+// MARK: - Tur
+
+export interface TurSection {
+  id: number;
+  name: string;
+  hebrewName: string;
+  sefariaName: string;
+  simanim: number;
+}
+
 function book(
   id: number,
   name: string,
@@ -634,6 +644,17 @@ export const shulchanArukhSections: ShulchanArukhSection[] = [
   { id: 3, name: "Choshen Mishpat", hebrewName: "חֹשֶׁן מִשְׁפָּט", sefariaName: "Shulchan Arukh, Choshen Mishpat", simanim: 427 },
 ];
 
+// MARK: Tur
+// Section names/siman counts confirmed live against Sefaria's index/shape APIs (697/403/178/426) —
+// close to but not identical to Shulchan Arukh's own counts (697/403/178/427).
+
+export const turSections: TurSection[] = [
+  { id: 0, name: "Orach Chayim", hebrewName: "אוֹרַח חַיִּים", sefariaName: "Tur, Orach Chayim", simanim: 697 },
+  { id: 1, name: "Yoreh Deah", hebrewName: "יוֹרֶה דֵּעָה", sefariaName: "Tur, Yoreh De'ah", simanim: 403 },
+  { id: 2, name: "Even HaEzer", hebrewName: "אֶבֶן הָעֵזֶר", sefariaName: "Tur, Even HaEzer", simanim: 178 },
+  { id: 3, name: "Choshen Mishpat", hebrewName: "חֹשֶׁן מִשְׁפָּט", sefariaName: "Tur, Choshen Mishpat", simanim: 426 },
+];
+
 export const TextCatalog = {
   tanakhSections,
   allTanakhBooks,
@@ -644,4 +665,5 @@ export const TextCatalog = {
   rambamSefarim,
   allRambamWorks,
   shulchanArukhSections,
+  turSections,
 };

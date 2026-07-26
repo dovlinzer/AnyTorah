@@ -155,7 +155,12 @@ export type CommentaryType =
   | "ktzotHaChoshen"
   | "netivotHaMishpat"
   | "urimVTumim"
-  | "hagahotRAE";
+  | "hagahotRAE"
+  // Tur
+  | "beitYosef"
+  | "bach"
+  | "darkheiMoshe"
+  | "prishaDrisha";
 
 // MARK: - Curated pools per context
 
@@ -216,6 +221,9 @@ export const mishnahPool: CommentaryType[] = [
   "rashash", "derekhChayyim", "nachalatAvot", "yeshSederLaMishnah",
   "mishnatEretzYisrael", "englishExplanation",
 ];
+
+/** All 4 Tur commentators (same set in every section — unlike SA, no per-section pool needed). */
+export const turPool: CommentaryType[] = ["beitYosef", "bach", "darkheiMoshe", "prishaDrisha"];
 
 /** Full curated pool of SA commentators for the given section (0=OC, 1=YD, 2=EH, 3=CM). */
 export function saPool(section: number): CommentaryType[] {
@@ -417,6 +425,10 @@ export const displayName: Record<CommentaryType, string> = {
   netivotHaMishpat: "Netivot HaMishpat",
   urimVTumim: "Urim v'Tumim",
   hagahotRAE: "Hagahot R. Akiva Eiger",
+  beitYosef: "Beit Yosef",
+  bach: "Bach",
+  darkheiMoshe: "Darkhei Moshe",
+  prishaDrisha: "Prisha + Drisha",
 };
 
 export const hebrewDisplayName: Record<CommentaryType, string> = {
@@ -544,6 +556,10 @@ export const hebrewDisplayName: Record<CommentaryType, string> = {
   netivotHaMishpat: "נתיבות המשפט",
   urimVTumim: "אורים ותומים",
   hagahotRAE: "הגהות ר׳ עקיבא איגר",
+  beitYosef: "בית יוסף",
+  bach: "ב״ח",
+  darkheiMoshe: "דרכי משה",
+  prishaDrisha: "פרישה + דרישה",
 };
 
 // MARK: - Sefaria ref building
@@ -660,6 +676,18 @@ function biurHalakhaRef(mainRef: string): string {
   const m = mainRef.match(/(\d+)$/);
   // Biur Halakha is depth-3 (Siman -> Seif -> Comment); bare siman ref returns only seif 1.
   return m ? `Biur Halakha ${m[1]}:1-50` : "Biur Halakha 1:1-50";
+}
+
+/**
+ * Tur's commentaries are each their own top-level Sefaria title (not "on Tur, ...") — e.g.
+ * "Beit Yosef, Orach Chayim 1", not "Beit Yosef on Tur, Orach Chayim 1". mainRef is built as
+ * "Tur, Orach Chayim 1" (see ref() in sefariaClient.ts); this swaps the "Tur" prefix for the
+ * commentary's own title. All are depth-3 (Siman -> Seif Katan -> Paragraph, or for Choshen
+ * Mishpat, Siman -> Seif -> Seif Katan) — the range fix is applied uniformly in depthFixedRef.
+ */
+function turCommentaryRef(title: string, mainRef: string): string {
+  const rest = mainRef.startsWith("Tur, ") ? mainRef.slice("Tur, ".length) : mainRef;
+  return `${title}, ${rest}`;
 }
 
 /** Returns the Sefaria ref for this commentary given the main text ref. */
@@ -801,6 +829,11 @@ export function sefariaRef(type: CommentaryType, mainRef: string): string {
       return `Netivot HaMishpat, Hidushim on Shulchan Arukh, Choshen Mishpat ${extractChapter(mainRef)}`;
     case "urimVTumim": return `Urim VeTumim, Urim ${extractChapter(mainRef)}`;
     case "hagahotRAE": return `Rabbi Akiva Eiger on ${mainRef}`;
+    case "beitYosef": return turCommentaryRef("Beit Yosef", mainRef);
+    case "bach": return turCommentaryRef("Bach", mainRef);
+    case "darkheiMoshe": return turCommentaryRef("Darkhei Moshe", mainRef);
+    // Single-ref fallback; sefariaRefVersions returns the real Prisha+Drisha combo.
+    case "prishaDrisha": return turCommentaryRef("Prisha", mainRef);
   }
 }
 
@@ -822,6 +855,7 @@ export function usesBookDivider(type: CommentaryType): boolean {
     case "keretiUPeleti":
     case "netivotHaMishpat":
     case "urimVTumim":
+    case "prishaDrisha":
       return true;
     default:
       return false;
@@ -884,6 +918,13 @@ export function sefariaRefVersions(type: CommentaryType, mainRef: string): RefVe
         { ref: `Urim VeTumim, Tumim ${siman}`, label: "תומים" },
       ];
     }
+    // Prisha and Drisha are a matched pair by the same author (R. Yehoshua Falk) traditionally
+    // printed together — combined into one tab like Yachin+Boaz, Prisha first per explicit
+    // user request.
+    case "prishaDrisha": return [
+      { ref: turCommentaryRef("Prisha", mainRef), label: "פרישה" },
+      { ref: turCommentaryRef("Drisha", mainRef), label: "דרישה" },
+    ];
     default:
       return [{ ref: sefariaRef(type, mainRef), label: null }];
   }

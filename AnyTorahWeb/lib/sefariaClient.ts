@@ -235,6 +235,11 @@ export function ref(
         ?? TextCatalog.shulchanArukhSections[0];
       return `${section.sefariaName} ${chapterOrDaf}`;
     }
+    case "tur": {
+      const section = TextCatalog.turSections.find((s) => s.id === bookOrTractateIndex)
+        ?? TextCatalog.turSections[0];
+      return `${section.sefariaName} ${chapterOrDaf}`;
+    }
     case "midrash":
       // Midrash uses verse-based navigation; this fallback shouldn't be called.
       return "";
@@ -666,12 +671,21 @@ export async function fetchChapter(
     : category === "mishnah" ? "mishnah"
     : category === "rambam" ? "halakha"
     : category === "shulchanArukh" ? "sif"
+    : category === "tur" ? "sif"
     : "none";
   const isSA = category === "shulchanArukh";
+  // Tur bakes the same leading-<b>siman-title</b> block into seif 1's Hebrew as SA does
+  // (confirmed live, e.g. Tur Orach Chayim 8 -> "<b>הלכות ציצית </b><br>...") — reuse
+  // splitSimanHeader for the title, but Tur's own inline commentator markers (empty
+  // <i data-commentator="Bach" data-order="1.1"></i> position tags, structurally unlike SA's
+  // text-wrapping spans) are deliberately left alone here and just fall out via the generic
+  // stripHTML tag-stripping pass in the API route's plainText() — no bracket-matching feature,
+  // per explicit user decision.
+  const isTur = category === "tur";
 
-  if (isSA) {
+  if (isSA || isTur) {
     // Use a loop so shared counters thread across seifim, ensuring sequential markers
-    // number continuously throughout the siman.
+    // number continuously throughout the siman (SA only — harmless unused object for Tur).
     const sharedCounters: Record<string, number> = {};
     const segments: TextSegment[] = [];
     for (let i = 0; i < count; i++) {
@@ -689,7 +703,9 @@ export async function fetchChapter(
           heText = split.rest;
         }
       }
-      heText = processCommentaryMarkers(heText, bookOrTractateIndex, selectedCommentaries, sharedCounters);
+      if (isSA) {
+        heText = processCommentaryMarkers(heText, bookOrTractateIndex, selectedCommentaries, sharedCounters);
+      }
       segments.push(contentSegment(i, heText, enText, label));
     }
     return segments;
@@ -812,6 +828,12 @@ function depthFixedRef(
     return `${ref}:1-${n}`;
   }
   if (category === "shulchanArukh" && type === "shakh") return `${ref}:1-100`;
+  // All 5 Tur commentaries (Beit Yosef, Bach, Darkhei Moshe, Prisha, Drisha) are depth-3
+  // (Siman -> Seif Katan -> Paragraph, or for Choshen Mishpat, Siman -> Seif -> Seif Katan) —
+  // confirmed live against Sefaria's API: a bare "Beit Yosef, Orach Chayim 1" returns only 1
+  // entry vs. 17 for "...1:1-50"/"...1:1-500" (the generous range doesn't error even when it
+  // exceeds the siman's real count, same pattern as Tanakh's blanket :1-200 fix below).
+  if (category === "tur") return `${ref}:1-500`;
   // Tosefta Kifshutah / Brief Commentary are depth-3 (Chapter → Mishnah → Comment) — same fix
   // as the Mishnah depth-3 list below, but keyed on subcategory rather than commentary type.
   if (category === "mishnah" && isTosefta) return `${ref}:1-200`;

@@ -52,7 +52,8 @@ interface ChapterResponse {
   halakhaCount?: number;
 }
 
-const READER_CATEGORIES: ReaderCategory[] = ["tanakh", "mishnah", "tosefta", "talmud", "yerushalmi", "rambam", "shulchanArukh"];
+const READER_CATEGORIES: ReaderCategory[] =
+  ["tanakh", "mishnah", "tosefta", "talmud", "yerushalmi", "rambam", "tur", "shulchanArukh"];
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(Math.max(n, min), max);
@@ -394,16 +395,25 @@ function CommitInput({
 }
 
 
-/** EN/עב pill toggling saHebrewMode — Hebrew names, Hebrew numerals, and RTL toolbar layout. */
+/** EN/עב pill toggling saHebrewMode — Hebrew names, Hebrew numerals, and RTL toolbar layout.
+ *  Sized one step larger (px-3 py-1.5 text-sm vs. px-2 py-1 text-xs) when `on` — Hebrew glyphs
+ *  render visibly smaller than Latin ones at the same font size, and Hebrew mode never actually
+ *  needed the compact English-mode sizing (2026-07-26). */
 function HebrewModeToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div className="flex shrink-0 overflow-hidden rounded-full border border-border text-xs">
+    <div
+      className={
+        on
+          ? "flex shrink-0 overflow-hidden rounded-full border border-border text-sm"
+          : "flex shrink-0 overflow-hidden rounded-full border border-border text-xs"
+      }
+    >
       {[false, true].map((v) => (
         <button
           key={String(v)}
           onClick={() => onChange(v)}
           aria-label={v ? "Switch to Hebrew names" : "Switch to English names"}
-          className="px-2 py-1 transition-colors"
+          className={on ? "px-3 py-1.5 transition-colors" : "px-2 py-1 transition-colors"}
           style={on === v ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
         >
           {v ? "עב" : "EN"}
@@ -414,15 +424,29 @@ function HebrewModeToggle({ on, onChange }: { on: boolean; onChange: (v: boolean
 }
 
 /** Toggles Reverse Navigation Direction — swaps which physical arrow/chevron moves forward vs.
- *  backward, independent of hebrewMode (native has this as its own separate setting). */
-function ReverseNavToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+ *  backward, independent of hebrewMode (native has this as its own separate setting). `hebrewMode`
+ *  here only drives sizing (same one-step-larger treatment as the rest of the header's Hebrew-mode
+ *  buttons, 2026-07-26) — the toggle's own on/off state is unrelated. */
+function ReverseNavToggle({
+  on,
+  onChange,
+  hebrewMode,
+}: {
+  on: boolean;
+  onChange: (v: boolean) => void;
+  hebrewMode: boolean;
+}) {
   return (
     <button
       onClick={() => onChange(!on)}
       aria-pressed={on}
       aria-label="Reverse navigation direction"
       title="Reverse navigation direction"
-      className="shrink-0 rounded-full border border-border px-2 py-1 text-xs transition-colors hover:border-[var(--accent)]"
+      className={
+        hebrewMode
+          ? "shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+          : "shrink-0 rounded-full border border-border px-2 py-1 text-xs transition-colors hover:border-[var(--accent)]"
+      }
       style={on ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
     >
       ⇄
@@ -437,11 +461,11 @@ function VerticalDivider() {
 
 /** Star-with-list badge for the "view bookmarks" button — reads as "a list of starred items",
  *  distinct from the plain ★/☆ toggle next to it (which bookmarks/unbookmarks the current spot). */
-function BookmarkListIcon() {
+function BookmarkListIcon({ size = 13 }: { size?: number }) {
   return (
     <svg
-      width="13"
-      height="13"
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -461,11 +485,11 @@ function BookmarkListIcon() {
  *  barrel + felt tip + a short highlighted stroke), not the crayon emoji this replaced, per
  *  explicit user reference image. Fixed marker colors (not theme-driven) since a highlighter's
  *  own color is part of what makes it read as a highlighter. */
-function HighlighterIcon() {
+function HighlighterIcon({ size = 14 }: { size?: number }) {
   return (
     <svg
-      width="14"
-      height="14"
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       style={{ display: "inline-block", verticalAlign: "-2px" }}
       aria-hidden="true"
@@ -536,6 +560,7 @@ const INITIAL_SELECTION: Selection = {
   talmud: { index: 0, chapter: getChapterMin("talmud", 0) },
   yerushalmi: { index: 0, chapter: 1, halakha: 1 },
   rambam: { index: 0, chapter: getChapterMin("rambam", 0) },
+  tur: { index: 0, chapter: 1 },
   shulchanArukh: { index: 0, chapter: 1 },
 };
 
@@ -1233,6 +1258,19 @@ export default function Reader() {
     }
   }
 
+  // Header pill sizing: Hebrew labels/glyphs run visibly smaller than their English counterparts
+  // at the same font size, and Hebrew mode was never actually short on toolbar width the way
+  // English mode is — so Hebrew mode gets one Tailwind step larger (matches this app's original,
+  // pre-2026-07-26 sizing) while English stays compact. Both full class strings must appear
+  // literally (not built via template interpolation) for Tailwind's JIT scanner to pick them up.
+  const tabsContainerClass = hebrewMode
+    ? "flex shrink-0 overflow-hidden rounded-full border border-border text-sm"
+    : "flex shrink-0 overflow-hidden rounded-full border border-border text-xs";
+  const tabButtonClass = hebrewMode ? "px-3 py-1.5 transition-colors" : "px-2 py-1 transition-colors";
+  const pillButtonClass = hebrewMode
+    ? "shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+    : "shrink-0 rounded-full border border-border px-2 py-1 text-xs transition-colors hover:border-[var(--accent)]";
+
   return (
     <div
       className={`mx-auto flex h-screen w-full flex-col px-4 py-6 ${showDaf ? "max-w-[100rem]" : "max-w-7xl"}`}
@@ -1254,85 +1292,93 @@ export default function Reader() {
           {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, no need for next/image */}
           <img src="/yct-logo-white.png" alt="YCT" className="yct-logo yct-logo-dark" />
           <div>
-            <h1 className="text-xl font-semibold tracking-tight" style={{ color: "var(--accent)" }}>
+            <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "var(--accent)" }}>
               AnyTorah
             </h1>
             {/* Matches the YCT logo's own tagline color. -mt-1 tightens the gap to the title so
-                the pairing reads closer to how the logo itself presents the two lines. Smaller
-                (text-xs, 2026-07-26) than the title above it so the English tagline — the widest
-                element in this block — doesn't dictate how soon the toolbar wraps in English mode. */}
+                the pairing reads closer to how the logo itself presents the two lines. Stays at
+                text-xs (not bumped back up with the logo/title, 2026-07-26) since this tagline is
+                the actual widest element in the block — keeping it compact still helps English
+                mode avoid wrapping even with a bigger logo/title above it. */}
             <p className="-mt-1 text-xs italic" style={{ color: "#007cea" }}>
               Powered by YCT and Sefaria
             </p>
           </div>
         </div>
-        {/* max-w-full + overflow-x-auto: once this cluster wraps onto its own row (see the
-            flex-wrap comment above), it's still wider than a narrow viewport on its own — 7
-            category tabs plus the toggles and bookmark buttons. Scroll it internally rather than
-            letting it overflow the whole page horizontally, the same pattern the chapter-selector
-            toolbar below already uses. */}
-        <div dir={hebrewMode ? "rtl" : "ltr"} className="flex max-w-full shrink-0 items-center gap-2 overflow-x-auto">
-          <div className="flex shrink-0 overflow-hidden rounded-full border border-border text-xs">
+        {/* Category tabs and the rest of the buttons are deliberately two separate flex children
+            (not one cluster) inside this dir-flipped, justify-between wrapper, per explicit user
+            request: the main text picker sits at the row's start edge and every other button at
+            its end edge — "start"/"end" tracking dir, so English mode reads tabs-left/buttons-
+            right and Hebrew mode mirrors to tabs-right/buttons-left. flex-1 min-w-0 lets this
+            wrapper (not just its children) fill the line it wraps onto below the logo, so the two
+            groups actually spread to the full row width instead of sitting adjacent. */}
+        <div dir={hebrewMode ? "rtl" : "ltr"} className="flex min-w-0 flex-1 items-center justify-between gap-3">
+          <div className={tabsContainerClass}>
             {READER_CATEGORIES.map((c) => (
               <button
                 key={c}
                 onClick={() => setCategory(c)}
-                className="px-2 py-1 transition-colors"
+                className={tabButtonClass}
                 style={category === c ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
               >
                 {getCategoryDisplayName(c, hebrewMode)}
               </button>
             ))}
           </div>
-          <VerticalDivider />
-          <HebrewModeToggle on={hebrewMode} onChange={setHebrewMode} />
-          <ReverseNavToggle on={reverseNavigation} onChange={setReverseNavigation} />
-          <VerticalDivider />
-          <button
-            onClick={() => setBookmarkEditOpen(true)}
-            aria-pressed={!!currentBookmark}
-            aria-label={currentBookmark ? "Edit bookmark" : "Bookmark this location"}
-            title={currentBookmark ? "Edit bookmark" : "Bookmark this location"}
-            className="shrink-0 rounded-full border border-border px-2 py-1 text-xs transition-colors hover:border-[var(--accent)]"
-            style={currentBookmark ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
-          >
-            {currentBookmark ? "★" : "☆"}
-          </button>
-          <button
-            onClick={() => setBookmarkListOpen(true)}
-            aria-label="View bookmarks"
-            title="View bookmarks"
-            className="shrink-0 rounded-full border border-border px-2 py-1 text-xs transition-colors hover:border-[var(--accent)]"
-          >
-            <BookmarkListIcon />
-          </button>
-          <VerticalDivider />
-          <button
-            onClick={() => setNotebookOpen((o) => !o)}
-            aria-pressed={notebookOpen}
-            aria-label={notebookOpen ? "Close notebook" : "Open notebook"}
-            title={notebookOpen ? "Close notebook" : "Open notebook"}
-            className="shrink-0 rounded-full border border-border px-2 py-1 text-xs transition-colors hover:border-[var(--accent)]"
-            style={notebookOpen ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
-          >
-            📓
-          </button>
-          <button
-            onClick={() => setNotebookSearchOpen(true)}
-            aria-label="Search all notebooks"
-            title="Search all notebooks"
-            className="shrink-0 rounded-full border border-border px-2 py-1 text-xs transition-colors hover:border-[var(--accent)]"
-          >
-            🔎
-          </button>
-          <button
-            onClick={() => setHighlightsListOpen(true)}
-            aria-label="View highlights"
-            title="View highlights"
-            className="shrink-0 rounded-full border border-border px-2 py-1 text-xs transition-colors hover:border-[var(--accent)]"
-          >
-            <HighlighterIcon />
-          </button>
+          {/* overflow-x-auto: on a narrow viewport this group (toggles + bookmark + notebook
+              buttons) can still be wider than the space left after the tabs above take their
+              share of the row — scroll it internally rather than letting it overflow the page,
+              same pattern the chapter-selector toolbar below already uses. */}
+          <div className="flex shrink-0 items-center gap-2 overflow-x-auto">
+            <HebrewModeToggle on={hebrewMode} onChange={setHebrewMode} />
+            <ReverseNavToggle on={reverseNavigation} onChange={setReverseNavigation} hebrewMode={hebrewMode} />
+            <VerticalDivider />
+            <button
+              onClick={() => setBookmarkEditOpen(true)}
+              aria-pressed={!!currentBookmark}
+              aria-label={currentBookmark ? "Edit bookmark" : "Bookmark this location"}
+              title={currentBookmark ? "Edit bookmark" : "Bookmark this location"}
+              className={pillButtonClass}
+              style={currentBookmark ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+            >
+              {currentBookmark ? "★" : "☆"}
+            </button>
+            <button
+              onClick={() => setBookmarkListOpen(true)}
+              aria-label="View bookmarks"
+              title="View bookmarks"
+              className={pillButtonClass}
+            >
+              <BookmarkListIcon size={hebrewMode ? 16 : 13} />
+            </button>
+            <VerticalDivider />
+            <button
+              onClick={() => setNotebookOpen((o) => !o)}
+              aria-pressed={notebookOpen}
+              aria-label={notebookOpen ? "Close notebook" : "Open notebook"}
+              title={notebookOpen ? "Close notebook" : "Open notebook"}
+              className={pillButtonClass}
+              style={notebookOpen ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+            >
+              📓
+            </button>
+            <button
+              onClick={() => setNotebookSearchOpen(true)}
+              aria-label="Search all notebooks"
+              title="Search all notebooks"
+              className={pillButtonClass}
+            >
+              🔎
+            </button>
+            <button
+              onClick={() => setHighlightsListOpen(true)}
+              aria-label="View highlights"
+              title="View highlights"
+              className={pillButtonClass}
+            >
+              <HighlighterIcon size={hebrewMode ? 17 : 14} />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -1377,8 +1423,8 @@ export default function Reader() {
           />
           <button
             onClick={openChapterPicker}
-            aria-label={category === "shulchanArukh" ? "Browse simanim" : "Browse chapters"}
-            title={category === "shulchanArukh" ? "Browse simanim" : "Browse chapters"}
+            aria-label={category === "shulchanArukh" || category === "tur" ? "Browse simanim" : "Browse chapters"}
+            title={category === "shulchanArukh" || category === "tur" ? "Browse simanim" : "Browse chapters"}
             className="shrink-0 rounded-full border border-border px-2 py-1 text-xs opacity-70 transition-opacity hover:opacity-100"
           >
             ▾

@@ -47,7 +47,7 @@ function isCommentaryType(value: string): value is CommentaryType {
   return Object.prototype.hasOwnProperty.call(displayName, value);
 }
 
-const VALID_CATEGORIES: TextCategory[] = ["tanakh", "mishnah", "talmud", "rambam", "shulchanArukh", "midrash"];
+const VALID_CATEGORIES: TextCategory[] = ["tanakh", "mishnah", "talmud", "rambam", "shulchanArukh", "tur", "midrash"];
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);

@@ -11,6 +11,7 @@ export type TextCategory =
   | "talmud"
   | "rambam"
   | "shulchanArukh"
+  | "tur"
   | "midrash";
 
 export type SegmentLabelStyle = "verse" | "mishnah" | "halakha" | "sif" | "none";
@@ -53,6 +54,12 @@ export const textCategoryMeta: Record<TextCategory, TextCategoryMeta> = {
     displayName: "Shulkhan Arukh",
     hebrewName: "שולחן ערוך",
     defaultCommentaries: ["mishnahBerurah", "biurHalakha"],
+    segmentLabelStyle: "sif",
+  },
+  tur: {
+    displayName: "Tur",
+    hebrewName: "טור",
+    defaultCommentaries: ["beitYosef", "bach", "darkheiMoshe"],
     segmentLabelStyle: "sif",
   },
   midrash: {

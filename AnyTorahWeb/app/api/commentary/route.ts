@@ -10,7 +10,7 @@ import { displayName, type CommentaryType } from "@/lib/commentaryTypes";
 import { TextCatalog } from "@/lib/textCatalog";
 import type { TextCategory, CommentaryEntry } from "@/lib/textModels";
 
-const VALID_CATEGORIES: TextCategory[] = ["tanakh", "mishnah", "talmud", "rambam", "shulchanArukh", "midrash"];
+const VALID_CATEGORIES: TextCategory[] = ["tanakh", "mishnah", "talmud", "rambam", "shulchanArukh", "tur", "midrash"];
 
 function isCommentaryType(value: string | null): value is CommentaryType {
   return value !== null && Object.prototype.hasOwnProperty.call(displayName, value);

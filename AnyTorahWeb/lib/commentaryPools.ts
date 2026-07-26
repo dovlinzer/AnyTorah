@@ -12,6 +12,7 @@ import {
   mishnahPool,
   rambamGrouped,
   saPool,
+  turPool,
   toseftaPool,
   yerushalmiPool,
   isAvailableForTanakhBook,
@@ -27,7 +28,8 @@ import type { TextCategory } from "./textModels";
 // Tosefta and Yerushalmi are first-class top-level tabs in the UI, but under the hood they
 // piggyback on Mishnah's/Talmud's Sefaria-fetch mechanics (ref format, HTML processing, depth-3
 // fixes) via the existing category+subcategory contract in sefariaClient.ts/the API routes.
-export type ReaderCategory = "tanakh" | "mishnah" | "tosefta" | "talmud" | "yerushalmi" | "rambam" | "shulchanArukh";
+export type ReaderCategory =
+  | "tanakh" | "mishnah" | "tosefta" | "talmud" | "yerushalmi" | "rambam" | "tur" | "shulchanArukh";
 
 /** Translates a UI-level ReaderCategory into the underlying TextCategory (+ subcategory flag)
  *  that sefariaClient.ts and the API routes understand. */
@@ -177,6 +179,18 @@ export function getPoolInfo(category: ReaderCategory, index: number): PoolInfo {
         groups: [saPool(index)],
         groupLabels: [null],
         // saPool(section) is already the curated per-section list — no further filtering needed.
+        isAvailable: () => true,
+        fallbackCandidates: [],
+      };
+    case "tur":
+      // All 4 tabs (Beit Yosef, Bach, Darkhei Moshe, Prisha+Drisha combined) are the default and
+      // the entire pool — every one of the 5 real commentaries is already shown, so there's
+      // nothing left to swap in via the picker (per explicit user request).
+      return {
+        contextKey: `tur:${index}`,
+        defaultSlots: turPool,
+        groups: [turPool],
+        groupLabels: [null],
         isAvailable: () => true,
         fallbackCandidates: [],
       };

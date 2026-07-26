@@ -78,6 +78,17 @@ export function getCategoryGroups(category: ReaderCategory, hebrewMode = false):
           })),
         },
       ];
+    case "tur":
+      return [
+        {
+          name: "",
+          items: TextCatalog.turSections.map((s) => ({
+            id: s.id,
+            name: displayName(s.name, s.hebrewName, hebrewMode),
+            count: s.simanim,
+          })),
+        },
+      ];
   }
 }
 
@@ -120,13 +131,15 @@ export function getChapterUnitLabel(category: ReaderCategory, hebrewMode = false
   if (hebrewMode) {
     switch (category) {
       case "talmud": return "דף";
-      case "shulchanArukh": return "סימן";
+      case "shulchanArukh":
+      case "tur": return "סימן";
       default: return "פרק";
     }
   }
   switch (category) {
     case "talmud": return "daf";
-    case "shulchanArukh": return "siman";
+    case "shulchanArukh":
+    case "tur": return "siman";
     default: return "ch.";
   }
 }
@@ -157,6 +170,7 @@ export function getCategoryDisplayName(category: ReaderCategory, hebrewMode = fa
     case "talmud": return hebrewMode ? "בבלי" : "Bavli";
     case "yerushalmi": return hebrewMode ? "ירושלמי" : "Yerushalmi";
     case "rambam": return hebrewMode ? "רמב״ם" : "Rambam";
+    case "tur": return hebrewMode ? "טור" : "Tur";
     case "shulchanArukh": return hebrewMode ? "שולחן ערוך" : "Shulchan Arukh";
   }
 }
