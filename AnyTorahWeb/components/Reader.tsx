@@ -140,6 +140,35 @@ function storeHebrewMode(on: boolean) {
   }
 }
 
+// Text/Commentary Hebrew-English-both display mode — each panel persists independently (a user
+// may want the main text in "both" but commentary in English-only, or vice versa). Unset (null)
+// is distinct from an explicit "both": on first load with nothing stored yet, the caller falls
+// back to whatever hebrewMode itself would imply (source when RTL, both otherwise) rather than
+// hardcoding "both" — otherwise a returning user whose hebrewMode was on from a *previous*
+// session, from before this per-panel persistence existed, would see one stale reload back to
+// "both" before ever getting a chance to have it stored.
+const TEXT_DISPLAY_MODE_KEY = "anytorah:textDisplayMode";
+const COMMENTARY_DISPLAY_MODE_KEY = "anytorah:commentaryDisplayMode";
+
+function loadStoredDisplayMode(key: string): TextDisplayMode | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw === "source" || raw === "both" || raw === "translation" ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeDisplayMode(key: string, mode: TextDisplayMode) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, mode);
+  } catch {
+    // localStorage unavailable — display mode choice just won't persist.
+  }
+}
+
 // Reverse Navigation Direction — a separate, independent setting (native has this too) that
 // swaps which physical arrow/chevron moves forward vs. backward. Off by default: right/next
 // matches left-to-right reading convention regardless of hebrewMode.
@@ -553,9 +582,20 @@ export default function Reader() {
     storeReverseNavigation(on);
   };
   // Text and commentary each get their own Hebrew/English/both toggle — some users want to
-  // read the main text in "both" but skim commentary in English-only, or vice versa.
-  const [textDisplayMode, setTextDisplayMode] = useState<TextDisplayMode>("both");
-  const [commentaryDisplayMode, setCommentaryDisplayMode] = useState<TextDisplayMode>("both");
+  // read the main text in "both" but skim commentary in English-only, or vice versa. Each
+  // persists under its own key (see loadStoredDisplayMode/storeDisplayMode above) — previously
+  // these weren't persisted at all, so a stored hebrewMode="on" would silently revert the
+  // display mode to "both" on every reload even though the toggle itself "stuck".
+  const [textDisplayMode, setTextDisplayModeState] = useState<TextDisplayMode>("both");
+  const [commentaryDisplayMode, setCommentaryDisplayModeState] = useState<TextDisplayMode>("both");
+  const setTextDisplayMode = (mode: TextDisplayMode) => {
+    setTextDisplayModeState(mode);
+    storeDisplayMode(TEXT_DISPLAY_MODE_KEY, mode);
+  };
+  const setCommentaryDisplayMode = (mode: TextDisplayMode) => {
+    setCommentaryDisplayModeState(mode);
+    storeDisplayMode(COMMENTARY_DISPLAY_MODE_KEY, mode);
+  };
   // Toggling RTL/Hebrew mode also resets reverse navigation and both display modes to that
   // direction's default — ON: reverse nav + Hebrew-only text/commentary; OFF: standard nav +
   // both-language text/commentary. These stay just defaults: each can still be changed
@@ -585,6 +625,15 @@ export default function Reader() {
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Restores each panel's own stored display mode. Falls back to whatever hebrewMode's *stored*
+  // value already implies (source when RTL, both otherwise) rather than hardcoding "both", so a
+  // returning user whose hebrewMode was already on before this per-panel key existed doesn't see
+  // one extra stale reload — see the comment on loadStoredDisplayMode above.
+  useEffect(() => {
+    const hebrewFallback: TextDisplayMode = loadStoredHebrewMode() === true ? "source" : "both";
+    setTextDisplayModeState(loadStoredDisplayMode(TEXT_DISPLAY_MODE_KEY) ?? hebrewFallback);
+    setCommentaryDisplayModeState(loadStoredDisplayMode(COMMENTARY_DISPLAY_MODE_KEY) ?? hebrewFallback);
   }, []);
   const [mainFontSizeLevel, setMainFontSizeLevelState] = useState(0);
   const [commentaryFontSizeLevel, setCommentaryFontSizeLevelState] = useState(0);
