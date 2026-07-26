@@ -11,6 +11,8 @@ import { FONT_SIZE_LEVELS, FONT_SIZE_LABELS } from "@/lib/fontSizeLevels";
  * like it's snapping between the 6 defined sizes rather than moving continuously; that's expected
  * (font sizes, not a magnification %), not a bug. Deliberately compact — a fixed small width
  * rather than spanning the panel, so it reads as a small corner control, not a prominent bar.
+ * Bare (no border/padding of its own) — sits inside each panel's shared bottom-bar footer
+ * alongside DisplayModePill (see Reader.tsx's text panel and CommentaryPanel.tsx).
  */
 export default function FontSizeSlider({
   label,
@@ -27,25 +29,24 @@ export default function FontSizeSlider({
   const currentIndex = FONT_SIZE_LEVELS.indexOf(level as (typeof FONT_SIZE_LEVELS)[number]);
   const clampedIndex = currentIndex === -1 ? 0 : currentIndex;
   return (
-    <div
-      dir={hebrewMode ? "rtl" : "ltr"}
-      className="flex shrink-0 items-center gap-1.5 border-t border-border px-3 py-1"
-    >
+    <div dir={hebrewMode ? "rtl" : "ltr"} className="flex shrink-0 items-center gap-1.5">
       <span className="text-[10px] opacity-50">{letter}</span>
-      <input
-        type="range"
-        min={0}
-        max={FONT_SIZE_LEVELS.length - 1}
-        step={1}
-        value={clampedIndex}
-        onChange={(e) => onChange(FONT_SIZE_LEVELS[Number(e.target.value)])}
-        aria-label={`${label} font size: ${FONT_SIZE_LABELS[level] ?? ""}`}
-        title={FONT_SIZE_LABELS[level] ?? ""}
-        className="h-1 w-20"
-        style={{ accentColor: "var(--accent)" }}
-      />
+      <div className="flex items-center gap-1">
+        <input
+          type="range"
+          min={0}
+          max={FONT_SIZE_LEVELS.length - 1}
+          step={1}
+          value={clampedIndex}
+          onChange={(e) => onChange(FONT_SIZE_LEVELS[Number(e.target.value)])}
+          aria-label={`${label} font size: ${FONT_SIZE_LABELS[level] ?? ""}`}
+          title={FONT_SIZE_LABELS[level] ?? ""}
+          className="h-1 w-20"
+          style={{ accentColor: "var(--accent)" }}
+        />
+        <span className="w-14 shrink-0 text-[10px] opacity-40">{FONT_SIZE_LABELS[level] ?? ""}</span>
+      </div>
       <span className="text-xs opacity-50">{letter}</span>
-      <span className="w-14 shrink-0 text-right text-[10px] opacity-40">{FONT_SIZE_LABELS[level] ?? ""}</span>
     </div>
   );
 }

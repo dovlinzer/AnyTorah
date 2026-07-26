@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TextDisplayMode, TextSegment } from "@/lib/textModels";
 import type { CommentaryType } from "@/lib/commentaryTypes";
 import { getPoolInfo, computeEffectiveSlots, fetchCategoryFor, type ReaderCategory } from "@/lib/commentaryPools";
@@ -19,6 +19,7 @@ import NumberPickerModal from "@/components/NumberPickerModal";
 import DafImagePanel from "@/components/DafImagePanel";
 import DedicationBanner from "@/components/DedicationBanner";
 import FontSizeSlider from "@/components/FontSizeSlider";
+import DisplayModePill from "@/components/DisplayModePill";
 import { formattedMessage, type Dedication } from "@/lib/dedicationService";
 import { FONT_SIZE_MIN, FONT_SIZE_MAX, fontSizePx, fontSizeLineHeight, fontSizeSpacingScale } from "@/lib/fontSizeLevels";
 import BookmarkEditModal from "@/components/BookmarkEditModal";
@@ -390,35 +391,6 @@ function CommitInput({
   );
 }
 
-const DISPLAY_MODES: { mode: TextDisplayMode; label: string }[] = [
-  { mode: "source", label: "א" },
-  { mode: "both", label: "אA" },
-  { mode: "translation", label: "A" },
-];
-
-/** Hebrew/English/both toggle — one instance for the main text, one for commentary. */
-function DisplayModePill({
-  mode,
-  onChange,
-}: {
-  mode: TextDisplayMode;
-  onChange: (m: TextDisplayMode) => void;
-}) {
-  return (
-    <div className="flex overflow-hidden rounded-full border border-border text-sm">
-      {DISPLAY_MODES.map(({ mode: m, label }) => (
-        <button
-          key={m}
-          onClick={() => onChange(m)}
-          className="px-3 py-1.5 transition-colors"
-          style={mode === m ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 /** EN/עב pill toggling saHebrewMode — Hebrew names, Hebrew numerals, and RTL toolbar layout. */
 function HebrewModeToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -506,27 +478,6 @@ function NavChevrons({
         </button>
       )}
     </>
-  );
-}
-
-/**
- * A labeled cluster of controls — "Text" or "Commentary" sits inline before its pills (not
- * above them) so the whole group stays a single line and lines up with the rest of the toolbar.
- */
-function ControlGroup({
-  label,
-  children,
-  hebrewMode = false,
-}: {
-  label: string;
-  children: ReactNode;
-  hebrewMode?: boolean;
-}) {
-  return (
-    <div dir={hebrewMode ? "rtl" : "ltr"} className="flex shrink-0 items-center gap-2">
-      <span className="text-xs opacity-60">{label}</span>
-      {children}
-    </div>
   );
 }
 
@@ -1334,17 +1285,6 @@ export default function Reader() {
         )}
 
         <div className="flex-1" />
-        <VerticalDivider />
-
-        <ControlGroup label={hebrewMode ? "טקסט" : "Text"} hebrewMode={hebrewMode}>
-          <DisplayModePill mode={textDisplayMode} onChange={setTextDisplayMode} />
-        </ControlGroup>
-
-        <VerticalDivider />
-
-        <ControlGroup label={hebrewMode ? "מפרשים" : "Commentary"} hebrewMode={hebrewMode}>
-          <DisplayModePill mode={commentaryDisplayMode} onChange={setCommentaryDisplayMode} />
-        </ControlGroup>
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -1479,7 +1419,13 @@ export default function Reader() {
           )}
           </div>
         </div>
-          <FontSizeSlider label="Text" level={mainFontSizeLevel} onChange={setMainFontSizeLevel} hebrewMode={hebrewMode} />
+          <div
+            dir={hebrewMode ? "rtl" : "ltr"}
+            className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-1"
+          >
+            <FontSizeSlider label="Text" level={mainFontSizeLevel} onChange={setMainFontSizeLevel} hebrewMode={hebrewMode} />
+            <DisplayModePill mode={textDisplayMode} onChange={setTextDisplayMode} />
+          </div>
         </div>
 
         {showDaf && dafPosition === "middle" && (
@@ -1505,6 +1451,7 @@ export default function Reader() {
             index={index}
             chapter={chapter}
             displayMode={commentaryDisplayMode}
+            onDisplayModeChange={setCommentaryDisplayMode}
             poolInfo={poolInfo}
             slots={slots}
             effectiveSlots={effectiveSlots}

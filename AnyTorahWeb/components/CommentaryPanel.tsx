@@ -8,6 +8,7 @@ import { fontSizePx, fontSizeLineHeight, fontSizeSpacingScale } from "@/lib/font
 import { splitParagraphs } from "@/lib/textAnchor";
 import type { Highlight } from "@/lib/highlights";
 import FontSizeSlider from "@/components/FontSizeSlider";
+import DisplayModePill from "@/components/DisplayModePill";
 import HighlightMark from "@/components/HighlightMark";
 
 export default function CommentaryPanel({
@@ -15,6 +16,7 @@ export default function CommentaryPanel({
   index,
   chapter,
   displayMode,
+  onDisplayModeChange,
   poolInfo,
   slots,
   effectiveSlots,
@@ -33,6 +35,7 @@ export default function CommentaryPanel({
   index: number;
   chapter: number;
   displayMode: TextDisplayMode;
+  onDisplayModeChange: (m: TextDisplayMode) => void;
   poolInfo: PoolInfo;
   /** Yerushalmi only — halakha within the chapter. */
   halakha?: number;
@@ -339,7 +342,13 @@ export default function CommentaryPanel({
             );
           })}
       </div>
-      <FontSizeSlider label="Commentary" level={fontSizeLevel} onChange={onFontSizeLevelChange} hebrewMode={hebrewMode} />
+      <div
+        dir={hebrewMode ? "rtl" : "ltr"}
+        className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-1"
+      >
+        <FontSizeSlider label="Commentary" level={fontSizeLevel} onChange={onFontSizeLevelChange} hebrewMode={hebrewMode} />
+        <DisplayModePill mode={displayMode} onChange={onDisplayModeChange} />
+      </div>
     </div>
   );
 }

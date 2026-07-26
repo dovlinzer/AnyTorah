@@ -27,16 +27,18 @@ them before changing anything here.
   cluster order, only mirroring *within* each cluster) was explicitly reversed by the user, who
   found the non-mirrored macro order confusing. The outer toolbar `<div>` now also carries
   `dir={hebrewMode ? "rtl" : "ltr"}`, on top of the same attribute already present on each
-  cluster (book/chapter/amud group, Yomi-buttons group, daf-controls group, each `ControlGroup`
-  for Text/Commentary) — redundant where values match, but it's the outer `dir` that actually
-  reorders the *clusters themselves*, not just each cluster's internal items. Source order is
-  fixed as: book/chapter/amud cluster, Yomi buttons, daf-image controls (show/hide + position,
-  Talmud only), a flex spacer, Text controls, Commentary controls. In English this reads
-  left-to-right in that order; in Hebrew, `dir=rtl` mirrors the whole row, so it reads
+  cluster (book/chapter/amud group, Yomi-buttons group, daf-controls group) — redundant where
+  values match, but it's the outer `dir` that actually reorders the *clusters themselves*, not
+  just each cluster's internal items. Source order is fixed as: book/chapter/amud cluster, Yomi
+  buttons, daf-image controls (show/hide + position, Talmud only), a flex spacer. In English this
+  reads left-to-right in that order; in Hebrew, `dir=rtl` mirrors the whole row, so it reads
   right-to-left in that *same* source order — i.e. a true mirror image, not just flipped labels.
   Do not re-introduce a "fixed macro position" design without the user's explicit sign-off; this
   was tried once already and reversed once already, in opposite directions, both times based on
-  direct user feedback.
+  direct user feedback. (The Text/Commentary display-mode + font-size controls that used to sit
+  at the end of this toolbar have since moved to each panel's own bottom-bar footer — see
+  "Font-size sliders and the display-mode pill" below — so the toolbar itself no longer has a
+  Text/Commentary section to mirror.)
 - **Yomi buttons cluster placement**: sits immediately after the book/chapter/amud cluster in
   source order (see `lib/yomiService.ts`/"Yomi buttons" section below for the buttons themselves).
   For Tanakh, Parsha is pushed before 929 in `Reader.tsx`'s `yomiButtons` array (source order) —
@@ -46,9 +48,10 @@ them before changing anything here.
   A third `VerticalDivider` (Hebrew-mode only) separates the book/chapter/amud cluster from the
   daf-controls cluster, present only when both clusters actually render content
   (`category === "talmud" && dafImageAvailable`).
-- **Labels**: `ControlGroup` label text switches to `טקסט`/`מפרשים`; `FontSizeSlider`'s end
-  labels render `א` instead of `A` (`hebrewMode` prop, also flips the slider's own `dir` — see
-  "Font-size sliders" below).
+- **Labels**: `FontSizeSlider`'s end labels render `א` instead of `A` (`hebrewMode` prop, also
+  flips the slider's own `dir`), and the panel-footer bar itself flips `dir` too so
+  `DisplayModePill` and the slider swap sides — see "Font-size sliders and the display-mode pill"
+  below.
 - **Auto-defaults on toggle**: `setHebrewMode` (`Reader.tsx`) also resets Reverse Navigation
   Direction and both Text/Commentary display modes to that direction's default — ON → reverse
   nav + Hebrew-only (`"source"`) for both; OFF → standard nav + both-language (`"both"`) for
@@ -68,28 +71,39 @@ them before changing anything here.
   `setHebrewMode` persists) the stored value always wins on later loads — this only ever fires
   once, before any preference exists.
 
-## Font-size sliders
+## Font-size sliders and the display-mode pill
 
-`components/FontSizeSlider.tsx` — a shared `<input type="range">` control, one instance pinned
-to the bottom of the main text panel and one to the bottom of the commentary panel
-(`components/CommentaryPanel.tsx`), each driving its own independent `fontSizeLevel` in
-`Reader.tsx` (`mainFontSizeLevel`/`commentaryFontSizeLevel`, same `lib/fontSizeLevels.ts` scheme
-as before). Replaced the old tappable-dots `FontSizeControl` that used to live in the toolbar's
-`ControlGroup` next to each panel's `DisplayModePill` — the toolbar groups now hold only the
-display-mode pill.
+Both the font-size control and the Hebrew/English/both display-mode toggle live in a shared
+bottom-bar footer inside each panel (main text and commentary), not in the top toolbar — moved
+there 2026-07-26 per explicit user request, off of the toolbar's old end-of-row
+`ControlGroup`/`DisplayModePill` pairing.
 
-- The slider's own `value`/`max` are just an index into `FONT_SIZE_LEVELS` (levels are
-  non-contiguous — see that file), converted back to a real level on `onChange`, same conversion
-  `FontSizeControl` used to do for its step buttons.
-- `dir={hebrewMode ? "rtl" : "ltr"}` on the slider's wrapper flips a native range input's visual
-  direction along with everything else in Hebrew mode (see "Toolbar layout" above) — the "א"/"א"
-  end-labels swap sides for free since they're just the first/last child in source order.
-- Sits inside each panel's own scroll container as a `shrink-0` footer below the `flex-1
-  overflow-y-auto` content — in `Reader.tsx` this required splitting what used to be one
-  `relative` wrapper (scroll area + `NavChevrons`) into an outer `flex flex-col` (scroll-wrapper +
-  slider) with the `relative`/chevron positioning moved to an inner `min-h-0 flex-1` div, so the
-  chevrons' `top-1/2` still centers on just the scrollable text, not the panel including the
-  slider footer.
+- `components/FontSizeSlider.tsx` — a shared `<input type="range">` control, one instance in each
+  panel's footer, each driving its own independent `fontSizeLevel` in `Reader.tsx`
+  (`mainFontSizeLevel`/`commentaryFontSizeLevel`, `lib/fontSizeLevels.ts` scheme). Bare (no
+  border/padding of its own) — the footer row it sits in owns that styling, since the row also
+  contains `DisplayModePill`. The slider's own `value`/`max` are just an index into
+  `FONT_SIZE_LEVELS` (levels are non-contiguous — see that file), converted back to a real level
+  on `onChange`.
+- `components/DisplayModePill.tsx` — the `א`/`אA`/`A` toggle, extracted out of `Reader.tsx` (where
+  it used to be a local-only component only the main text panel's toolbar group could reach) so
+  `CommentaryPanel.tsx` can render its own instance too. `CommentaryPanel` takes `displayMode` +
+  a new `onDisplayModeChange` prop (`Reader.tsx` passes `setCommentaryDisplayMode`) rather than
+  owning the state itself — same pattern as `fontSizeLevel`/`onFontSizeLevelChange`.
+- Each footer is `<div dir={hebrewMode ? "rtl" : "ltr"} className="flex ... justify-between ...">`
+  with `DisplayModePill` first in source order and `FontSizeSlider` second — `justify-between`
+  spreads them to opposite ends of the panel width. The shared `dir` flip (not just the slider's
+  own, see below) is what actually swaps which one visually sits on which side in Hebrew mode,
+  matching the toolbar's own mirror-image convention (see "Toolbar layout" above).
+- `dir={hebrewMode ? "rtl" : "ltr"}` on the slider's own wrapper (independent of the footer row's)
+  flips its internal `א`/`א` end-labels for free, since they're just the first/last child in
+  source order.
+- The footer sits inside each panel's own scroll container as a `shrink-0` row below the `flex-1
+  overflow-y-auto` content — in `Reader.tsx`'s text panel this required splitting what used to be
+  one `relative` wrapper (scroll area + `NavChevrons`) into an outer `flex flex-col`
+  (scroll-wrapper + footer) with the `relative`/chevron positioning moved to an inner `min-h-0
+  flex-1` div, so the chevrons' `top-1/2` still centers on just the scrollable text, not the panel
+  including the footer.
 
 ## Navigation: Arrow Keys, Chevrons, and Reverse Navigation Direction
 
