@@ -861,10 +861,12 @@ export default function Reader() {
   const [numberPickerOpen, setNumberPickerOpen] = useState(false);
   const [halakhaPickerOpen, setHalakhaPickerOpen] = useState(false);
 
-  // SA has one picker (the full siman list with descriptions, SASimanPicker) — no separate
-  // bare-number menu. Every other category uses the generic NumberPickerModal.
+  // SA and Tur share the same named-siman picker (SASimanPicker) — Tur's simanim carry the same
+  // topic names/numbering as SA's (SA closely follows Tur's own siman structure), so the same
+  // lib/saSimanNames.ts data is reused as-is rather than transcribing a second copy. Every other
+  // category uses the generic bare-number NumberPickerModal.
   const openChapterPicker = () =>
-    category === "shulchanArukh" ? setSimanPickerOpen(true) : setNumberPickerOpen(true);
+    category === "shulchanArukh" || category === "tur" ? setSimanPickerOpen(true) : setNumberPickerOpen(true);
 
   // Rambam's synthetic chapter 0 is the work's bundled mitzvot-list header, not a real chapter —
   // show a text label instead of "0" (which also renders as an empty string in Hebrew numeral
@@ -1601,12 +1603,14 @@ export default function Reader() {
                             <div className="flex items-start gap-1">
                               <div className="min-w-0 flex-1" style={{ display: "flex", flexDirection: "column", gap: mainLineGap }}>
                                 {(textDisplayMode === "source" || textDisplayMode === "both") && seg.hebrewHTML && (
-                                  category === "shulchanArukh" ? (
+                                  category === "shulchanArukh" || category === "tur" ? (
                                     // SA Hebrew carries <span class="sa-mark sa-mark-N"> spans for
                                     // its inline commentary-marker brackets (see
-                                    // processedHebrewWithMarkers) — everything else in this string
-                                    // is plain-texted server-side, so this is safe despite the raw
-                                    // HTML.
+                                    // processedHebrewWithMarkers); Tur Hebrew carries
+                                    // <sup class="dm-mark"> spans for Darkhei Moshe's reference
+                                    // numbers (see processedHebrewWithTurMarkers) — everything else
+                                    // in either string is plain-texted server-side, so this is safe
+                                    // despite the raw HTML.
                                     <p
                                       dir="rtl"
                                       lang="he"
@@ -1782,7 +1786,7 @@ export default function Reader() {
         )}
       </div>
 
-      {simanPickerOpen && category === "shulchanArukh" && (
+      {simanPickerOpen && (category === "shulchanArukh" || category === "tur") && (
         <SASimanPicker
           section={index}
           currentSiman={chapter}

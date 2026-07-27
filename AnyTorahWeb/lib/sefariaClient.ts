@@ -671,21 +671,12 @@ export async function fetchChapter(
     : category === "mishnah" ? "mishnah"
     : category === "rambam" ? "halakha"
     : category === "shulchanArukh" ? "sif"
-    : category === "tur" ? "sif"
     : "none";
   const isSA = category === "shulchanArukh";
-  // Tur bakes the same leading-<b>siman-title</b> block into seif 1's Hebrew as SA does
-  // (confirmed live, e.g. Tur Orach Chayim 8 -> "<b>הלכות ציצית </b><br>...") — reuse
-  // splitSimanHeader for the title, but Tur's own inline commentator markers (empty
-  // <i data-commentator="Bach" data-order="1.1"></i> position tags, structurally unlike SA's
-  // text-wrapping spans) are deliberately left alone here and just fall out via the generic
-  // stripHTML tag-stripping pass in the API route's plainText() — no bracket-matching feature,
-  // per explicit user decision.
-  const isTur = category === "tur";
 
-  if (isSA || isTur) {
+  if (isSA) {
     // Use a loop so shared counters thread across seifim, ensuring sequential markers
-    // number continuously throughout the siman (SA only — harmless unused object for Tur).
+    // number continuously throughout the siman.
     const sharedCounters: Record<string, number> = {};
     const segments: TextSegment[] = [];
     for (let i = 0; i < count; i++) {
@@ -703,18 +694,398 @@ export async function fetchChapter(
           heText = split.rest;
         }
       }
-      if (isSA) {
-        heText = processCommentaryMarkers(heText, bookOrTractateIndex, selectedCommentaries, sharedCounters);
-      }
+      heText = processCommentaryMarkers(heText, bookOrTractateIndex, selectedCommentaries, sharedCounters);
       segments.push(contentSegment(i, heText, enText, label));
     }
     return segments;
+  }
+
+  if (category === "tur") {
+    return buildTurSegments(he, en, r);
   }
 
   return Array.from({ length: count }, (_, i) => {
     const label = segmentLabel(labelStyle, i + 1);
     return contentSegment(i, he[i] ?? "", en[i] ?? "", label);
   });
+}
+
+// MARK: - Tur main text
+
+const TUR_DM_MARKER_RE = /<i\b[^>]*\bdata-commentator="Darkhei Moshe"[^>]*\bdata-order="(\d+)\.\d+"[^>]*>\s*<\/i>/g;
+
+/**
+ * Converts Tur's Darkhei Moshe position markers into a `<dm>N</dm>` placeholder — printed Tur
+ * editions anchor Darkhei Moshe's marginal notes with a reference number at this exact spot, and
+ * Sefaria's own `data-order="N.M"` already carries that same 1-based sequential number (confirmed
+ * live: it lines up with Darkhei Moshe's own commentary entries in fetch order, so no separate
+ * counter is needed the way SA's per-slot lettering requires). Every other commentator's markers
+ * in the same text (Beit Yosef, Bach, Prisha, Drisha, and Sefaria's own unlinked "Hagahot" tags —
+ * confirmed via Sefaria's links API to not resolve to any real fetchable work) are deliberately
+ * left alone here; they fall out via the generic stripHTML tag-stripping pass in
+ * processedHebrewWithTurMarkers, same as before.
+ */
+function processTurMarkers(html: string): string {
+  return html.replace(TUR_DM_MARKER_RE, (_m, n: string) => `<dm>${n}</dm>`);
+}
+
+/**
+ * Strips HTML tags only — keeps all text content, punctuation, and nikud intact — while
+ * recording, for each kept character, its original index in `html`. Lets Beit-Yosef-quote
+ * matching (findTurBreakpoints) search a tag-free string while still being able to cut the
+ * *original* (tag-and-all) string at the exact right spot afterward, so a Darkhei Moshe
+ * <dm>N</dm> marker embedded mid-paragraph still lands in the paragraph it belongs to.
+ */
+function stripTagsWithIndexMap(html: string): { text: string; rawIndex: number[] } {
+  let text = "";
+  const rawIndex: number[] = [];
+  let inTag = false;
+  for (let i = 0; i < html.length; i++) {
+    const ch = html[i];
+    if (ch === "<") { inTag = true; continue; }
+    if (ch === ">") { inTag = false; continue; }
+    if (inTag) continue;
+    text += ch;
+    rawIndex.push(i);
+  }
+  return { text, rawIndex };
+}
+
+/**
+ * Builds a regex matching `words` (Hebrew letters only, in order) tolerating any amount of
+ * intervening punctuation/nikud/whitespace between them — lets a Beit Yosef quote match Tur's
+ * own text even where independent digitization introduced minor punctuation differences. Also
+ * tolerates a definite-article "ה" mismatch on each word (real bug found live: Tur OC 3 has "בפי
+ * טבעת" where Beit Yosef's quote of the same words is "בפי הטבעת" — an exact-word match on
+ * "הטבעת" silently failed to find it, merging two real paragraphs into one).
+ */
+function buildHebrewWordPattern(words: string[]): RegExp | null {
+  const cleaned = words.map((w) => w.replace(/[^א-ת]/g, "")).filter(Boolean);
+  if (cleaned.length === 0) return null;
+  const escaped = cleaned.map((w) => {
+    const stripped = w.startsWith("ה") && w.length > 1 ? w.slice(1) : w;
+    return `ה?${stripped.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`;
+  });
+  return new RegExp(escaped.join("[^א-ת]*"));
+}
+
+/**
+ * Finds, for each Beit Yosef entry (in siman order), the raw-string offset in `combinedHe`
+ * (Tur's own post-header Hebrew, tags intact, all seifim concatenated — see combineTurSeifim)
+ * where that entry's opening words begin. These offsets become the paragraph break points (see
+ * buildTurSegments/computeTurParagraphChunks): a Tur paragraph is *defined* as "from one Beit
+ * Yosef comment to the next," not by punctuation.
+ *
+ * This replaced an earlier colon-based split, per explicit product decision, after two real
+ * problems surfaced: a colon inside a citation like Tur OC 132's "(צא:)" (amud bet of daf צא, not
+ * a paragraph break) needed excluding as a special case, and Tur OC 133's seven verse-ending
+ * colons over-fragment what both Beit Yosef and any reader would treat as one topical unit (the
+ * daily Psalm list). Deriving breaks from Beit Yosef's own commentary boundaries sidesteps both,
+ * and still works for simanim with no colons at all — Beit Yosef opens each entry with a direct
+ * quote of the Tur words under discussion (confirmed live, e.g. Beit Yosef on Tur OC 25 entry 0
+ * opens with Tur's own paragraph 0's exact opening words).
+ *
+ * Same forward-only heuristic as assignTurParagraphLabels: search only ever moves forward from
+ * the last match (never back to an earlier position, even if the same short phrase recurs
+ * later — the first hit scanning forward is taken as genuine), tried at decreasing word counts
+ * (a long quote is a more confident match), and an entry with no match simply contributes no
+ * break point — it merges into whichever paragraph precedes it — rather than leaving a gap.
+ */
+function findTurBreakpoints(combinedHe: string, beitYosefHe: string[]): number[] {
+  const { text: plain, rawIndex } = stripTagsWithIndexMap(combinedHe);
+  const breakpoints: number[] = [];
+  let cursor = 0;
+  for (const entryHe of beitYosefHe) {
+    const words = stripHTML(entryHe).split(/\s+/).filter(Boolean);
+    let found: number | null = null;
+    for (const wordCount of [8, 6, 4, 3]) {
+      if (words.length < wordCount) continue;
+      const pattern = buildHebrewWordPattern(words.slice(0, wordCount));
+      if (!pattern) continue;
+      const m = plain.slice(cursor).match(pattern);
+      if (m && m.index !== undefined) {
+        found = cursor + m.index;
+        break;
+      }
+    }
+    if (found !== null) {
+      breakpoints.push(rawIndex[found] ?? 0);
+      cursor = found;
+    }
+  }
+  return breakpoints;
+}
+
+/**
+ * Splits `html` at each raw-string offset in `breakpoints` (from findTurBreakpoints) into
+ * paragraphs — offsets always fall on a real-text character, never inside a tag (see
+ * stripTagsWithIndexMap), so every cut is safe. Any resulting chunk with no real text of its own
+ * (e.g. a lone commentator marker sitting right at a break) is merged forward into the next real
+ * paragraph rather than becoming an empty entry.
+ */
+function splitByBreakpoints(html: string, breakpoints: number[]): string[] {
+  const sorted = Array.from(new Set(breakpoints)).sort((a, b) => a - b);
+  const rawParts: string[] = [];
+  let start = 0;
+  for (const bp of sorted) {
+    if (bp <= start) continue;
+    rawParts.push(html.slice(start, bp));
+    start = bp;
+  }
+  rawParts.push(html.slice(start));
+
+  const result: string[] = [];
+  let buffer = "";
+  for (const part of rawParts) {
+    buffer += part;
+    if (stripHTML(buffer).trim() !== "") {
+      result.push(buffer);
+      buffer = "";
+    }
+  }
+  if (buffer !== "") {
+    if (result.length > 0) result[result.length - 1] += buffer;
+    else result.push(buffer);
+  }
+  return result.length > 0 ? result : [html];
+}
+
+/**
+ * Extracts the siman-title header (splitSimanHeader, seif 0 only — Tur bakes the same leading
+ * <b>...</b> block into seif 1's Hebrew as SA does, confirmed live, e.g. Tur Orach Chayim 8 ->
+ * "<b>הלכות ציצית </b><br>...") and concatenates every seif's remaining Hebrew into one
+ * continuous string. Tur's own (rare) seif divisions don't align with anything Beit Yosef's own
+ * commentary respects either (Beit Yosef's ref structure is Siman -> Seif Katan, entirely
+ * independent of Tur's own Siman -> Seif), so paragraph structure is computed flat across the
+ * whole siman. Also returns each seif's start offset in the combined string, so English (fetched
+ * per-seif, unlike Hebrew's flat treatment here) can be attached to whichever output paragraph a
+ * seif actually begins in.
+ */
+function combineTurSeifim(he: string[]): { header: string | null; combinedHe: string; seifStarts: number[] } {
+  let header: string | null = null;
+  const parts = he.map((text, i) => {
+    if (i !== 0) return text;
+    const split = splitSimanHeader(text);
+    if (!split) return text;
+    header = split.header;
+    return split.rest;
+  });
+  let combinedHe = "";
+  const seifStarts: number[] = [];
+  parts.forEach((text) => {
+    seifStarts.push(combinedHe.length);
+    combinedHe += (combinedHe ? " " : "") + text;
+  });
+  return { header, combinedHe, seifStarts };
+}
+
+/**
+ * Fetches Beit Yosef for `mainRef` and uses its entries to split `combinedHe` into paragraphs
+ * (findTurBreakpoints/splitByBreakpoints) — shared by buildTurSegments (the main text) and
+ * fetchTurParagraphPlainList (the matching corpus for Bach/Prisha+Drisha), so both always agree
+ * on where a Tur paragraph begins. A siman with no usable Beit Yosef data (fetch failure, or a
+ * siman Beit Yosef simply doesn't cover) falls back to a single paragraph for the whole siman —
+ * never a crash, never a gap.
+ */
+async function computeTurParagraphChunks(mainRef: string, combinedHe: string): Promise<string[]> {
+  let beitYosefHe: string[] = [];
+  try {
+    const entries = await loadCommentaryEntries("beitYosef", mainRef, "tur");
+    beitYosefHe = entries
+      .filter((e): e is Extract<CommentaryEntry, { kind: "text" }> => e.kind === "text")
+      .map((e) => e.he);
+  } catch {
+    // No Beit Yosef available for this siman — falls back to a single paragraph below.
+  }
+  const breakpoints = findTurBreakpoints(combinedHe, beitYosefHe);
+  return splitByBreakpoints(combinedHe, breakpoints);
+}
+
+/**
+ * Builds Tur's main-text segments: the siman-title header (if any) as its own unnumbered
+ * segment, then one segment per Beit-Yosef-derived paragraph (see computeTurParagraphChunks),
+ * each processed for Darkhei Moshe's inline reference markers (processTurMarkers). Numbering
+ * runs flat across the whole siman rather than resetting per seif — see combineTurSeifim.
+ * English is attached to whichever paragraph the corresponding seif's Hebrew actually starts in;
+ * most simanim are a single seif, so this is exact, and a siman with several seifim whose
+ * paragraph boundaries don't line up with seif boundaries is a known, accepted imprecision.
+ */
+async function buildTurSegments(he: string[], en: string[], mainRef: string): Promise<TextSegment[]> {
+  const { header, combinedHe, seifStarts } = combineTurSeifim(he);
+  const rawParagraphs = await computeTurParagraphChunks(mainRef, combinedHe);
+
+  const segments: TextSegment[] = [];
+  let segIndex = 0;
+  if (header !== null) segments.push(contentSegment(segIndex++, header, "", null));
+
+  let offset = 0;
+  let paraNum = 0;
+  for (const rawPara of rawParagraphs) {
+    const start = offset;
+    const end = start + rawPara.length;
+    offset = end;
+    paraNum++;
+    const heText = processTurMarkers(rawPara);
+    const enParts = seifStarts
+      .map((seifStart, seifIdx) => (seifStart >= start && seifStart < end ? en[seifIdx] ?? "" : ""))
+      .filter(Boolean);
+    segments.push(contentSegment(segIndex++, heText, enParts.join(" "), String(paraNum)));
+  }
+  return segments;
+}
+
+/**
+ * Plain (fully HTML/nikud-stripped), paragraph-split Hebrew text of a Tur siman, used only as
+ * the matching corpus for assignTurParagraphLabels — a fresh, independent fetch/split rather than
+ * reusing buildTurSegments' output, so no <dm> marker digits ever end up inline in the matching
+ * text. Uses the same Beit-Yosef-derived paragraph boundaries as the main text
+ * (computeTurParagraphChunks) so Bach/Prisha+Drisha's paragraph numbers always agree with what's
+ * actually shown.
+ */
+export async function fetchTurParagraphPlainList(mainRef: string): Promise<string[]> {
+  const { hebrew: he } = await fetchBoth(mainRef);
+  const { combinedHe } = combineTurSeifim(he);
+  const rawParagraphs = await computeTurParagraphChunks(mainRef, combinedHe);
+  return rawParagraphs.map((p) => processedHebrew(p));
+}
+
+/** Keeps only Hebrew letters, collapsing everything else (punctuation, quotes/gershayim,
+ *  whitespace runs) to single spaces — normalizes away minor typographic differences between
+ *  Tur's and its commentaries' independently-digitized text before substring matching. */
+function normalizeForMatch(text: string): string {
+  return text.replace(/[^א-ת]+/g, " ").trim().replace(/\s+/g, " ");
+}
+
+function findParagraphMatch(normParagraphs: string[], cursor: number, key: string): number | null {
+  for (let pi = cursor; pi < normParagraphs.length; pi++) {
+    if (normParagraphs[pi].includes(key)) return pi;
+  }
+  return null;
+}
+
+/**
+ * Assigns each Beit Yosef/Bach/Prisha+Drisha entry a `label` matching the Tur paragraph
+ * (0-based, from paragraphs — see fetchTurParagraphPlainList) it comments on, instead of a
+ * generic sequential number. These commentaries each open their comment with a direct quote of
+ * the Tur words being discussed (confirmed live, e.g. Beit Yosef on Tur OC 25's entry 0 opens
+ * with the exact words that start Tur's own paragraph 0) — so a paragraph is found by searching
+ * for the entry's own opening words as a substring, tried at decreasing word counts (a long
+ * quote is a more confident match; a short one is tried only if the longer ones fail, e.g. the
+ * real printed quote is itself short).
+ *
+ * Per explicit product decision, this is a best-effort heuristic, not exact: search only ever
+ * moves forward from the last match (never back to an earlier paragraph, even if the same short
+ * phrase also happens to recur later — the first hit found scanning forward is taken as genuine)
+ * and a miss just carries the previous entry's label forward rather than leaving a gap. `entries`
+ * may contain a `bookDivider` between Prisha's and Drisha's own entries (see the "prishaDrisha"
+ * CommentaryType) — each is a separate work independently commenting on the Tur from its own
+ * start, so the search cursor and carried-forward label both reset there.
+ */
+export function assignTurParagraphLabels(entries: CommentaryEntry[], paragraphs: string[]): CommentaryEntry[] {
+  const normParagraphs = paragraphs.map(normalizeForMatch);
+  let cursor = 0;
+  let lastLabel: number | null = null;
+  return entries.map((entry) => {
+    if (entry.kind !== "text") {
+      cursor = 0;
+      lastLabel = null;
+      return entry;
+    }
+    const words = normalizeForMatch(stripHTML(entry.he)).split(" ").filter(Boolean);
+    let matchIdx: number | null = null;
+    for (const wordCount of [8, 6, 4, 3]) {
+      if (words.length < wordCount) continue;
+      const key = words.slice(0, wordCount).join(" ");
+      const found = findParagraphMatch(normParagraphs, cursor, key);
+      if (found !== null) {
+        matchIdx = found;
+        break;
+      }
+    }
+    if (matchIdx !== null) {
+      lastLabel = matchIdx;
+      cursor = matchIdx;
+    } else if (lastLabel === null) {
+      lastLabel = 0; // no match yet at all — default to the siman's first paragraph
+    }
+    return { ...entry, label: lastLabel };
+  });
+}
+
+// MARK: - Darkhei Moshe anchored in Beit Yosef, not Tur
+
+/** Matches (and, via `.replace`, removes the *first* occurrence of) a Beit Yosef position tag
+ *  for Darkhei Moshe — spelled "Darchei Moshe" (with a c) in Beit Yosef's data, vs Tur's own
+ *  "Darkhei Moshe" (with a kh). No `g` flag: `.test()` checks presence, `.replace()` touches only
+ *  the first match in a given entry, matching the "one marker per entry" assumption below. */
+const BY_DM_MARKER_RE = /<i\b[^>]*\bdata-commentator="Darchei Moshe"[^>]*>\s*<\/i>/;
+
+/**
+ * Determines which Beit Yosef entries should carry a Darkhei Moshe reference letter, and which
+ * number to show, for comments Darkhei Moshe anchors in Beit Yosef's own words rather than
+ * Tur's. Confirmed live by direct comparison against a printed edition (user cross-checked 5
+ * positions across 2 simanim, all correct): Beit Yosef's raw text carries the same kind of
+ * position tag Tur does, but its `data-order` attribute is **not** a reliable entry number the
+ * way Tur's is (Sefaria labels every single one `data-order="1"` regardless of which comment it
+ * anchors) — and Sefaria's other `"Hagahot"` tag (present in both documents) is confirmed noise,
+ * never resolving to a real work and never matching a real comment's position or content.
+ *
+ * Method: Tur's own `data-order` values ARE trusted as the true entry number for whichever
+ * comments they cover (processTurMarkers already renders those). The remaining ("missing")
+ * entry numbers are filled, in ascending order, by Beit Yosef's own Darchei-Moshe-tagged entries,
+ * taken in the order they appear in Beit Yosef's text — this lined up exactly on all 5 confirmed
+ * positions. Any entry number left over once Beit Yosef's own tags run out gets no marker
+ * anywhere — an honest, accepted gap in Sefaria's source data, not a guess.
+ *
+ * Returns a map from Beit Yosef entry index (0-based, matching `beitYosefEntries`'s own order) to
+ * the Darkhei Moshe entry number that belongs there.
+ */
+export async function computeBeitYosefDarkheiMosheMarks(
+  mainRef: string,
+  turRawHe: string[],
+  beitYosefEntries: CommentaryEntry[],
+): Promise<Map<number, number>> {
+  let total = 0;
+  try {
+    const dmEntries = await loadCommentaryEntries("darkheiMoshe", mainRef, "tur");
+    total = dmEntries.filter((e) => e.kind === "text").length;
+  } catch {
+    return new Map();
+  }
+  if (total === 0) return new Map();
+
+  const turAnchored = new Set<number>();
+  for (const seifText of turRawHe) {
+    for (const m of seifText.matchAll(TUR_DM_MARKER_RE)) {
+      const n = Number(m[1]);
+      if (Number.isFinite(n)) turAnchored.add(n);
+    }
+  }
+
+  const missing: number[] = [];
+  for (let n = 1; n <= total; n++) {
+    if (!turAnchored.has(n)) missing.push(n);
+  }
+  if (missing.length === 0) return new Map();
+
+  const byTaggedIndices: number[] = [];
+  beitYosefEntries.forEach((entry, i) => {
+    if (entry.kind === "text" && BY_DM_MARKER_RE.test(entry.he)) byTaggedIndices.push(i);
+  });
+
+  const assignment = new Map<number, number>();
+  for (let i = 0; i < Math.min(missing.length, byTaggedIndices.length); i++) {
+    assignment.set(byTaggedIndices[i], missing[i]);
+  }
+  return assignment;
+}
+
+/** Replaces the first Darchei-Moshe position tag in a Beit Yosef entry's raw Hebrew with a
+ *  `<dm>N</dm>` placeholder — same tag `processedHebrewWithTurMarkers` already knows how to turn
+ *  into a styled `(letter)` span, reused as-is so Beit Yosef's markers render identically to
+ *  Tur's own. */
+export function insertBeitYosefDarkheiMosheMark(he: string, n: number): string {
+  return he.replace(BY_DM_MARKER_RE, `<dm>${n}</dm>`);
 }
 
 // MARK: - Ra'avad Hasagot fetch
@@ -1081,6 +1452,29 @@ export function processedHebrewWithMarkers(html: string, showTrop: boolean = fal
   });
   const stripped = processedHebrew(withPlaceholders, showTrop);
   return stripped.replace(/\uE000MK(\d+)\uE000/g, (_m, i: string) => markers[Number(i)] ?? "");
+}
+
+const TUR_MARKER_TAG_RE = /<dm>(\d+)<\/dm>/g;
+
+/**
+ * Like processedHebrew, but preserves buildTurSegments'/processTurMarkers' `<dm>N</dm>` tags \u2014
+ * converting them into `<span class="dm-mark">(letter)</span>`, a parenthesized Hebrew numeral
+ * (saHebrewLetter, standard gematria \u2014 \u05D9=10, \u05DB=20, etc.) matching how printed Tur volumes mark
+ * Darkhei Moshe's reference points, rather than a plain digit \u2014 instead of stripping them along
+ * with the rest of Sefaria's HTML. Used only for Tur's Hebrew main text, mirroring
+ * processedHebrewWithMarkers' placeholder-splice approach exactly (same reasoning: the marker
+ * text has to survive both the tag-stripping regex and the cantillation-mark filter). Callers
+ * must render the result with dangerouslySetInnerHTML.
+ */
+export function processedHebrewWithTurMarkers(html: string, showTrop: boolean = false): string {
+  const markers: string[] = [];
+  const withPlaceholders = html.replace(TUR_MARKER_TAG_RE, (_m, n: string) => {
+    const i = markers.length;
+    markers.push(`<span class="dm-mark">(${saHebrewLetter(Number(n))})</span>`);
+    return `\uE000DM${i}\uE000`;
+  });
+  const stripped = processedHebrew(withPlaceholders, showTrop);
+  return stripped.replace(/\uE000DM(\d+)\uE000/g, (_m, i: string) => markers[Number(i)] ?? "");
 }
 
 const BOLD_TAG_RE = /<(?:b|strong)>([\s\S]*?)<\/(?:b|strong)>/g;

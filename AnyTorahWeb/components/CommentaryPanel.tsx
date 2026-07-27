@@ -171,6 +171,12 @@ export default function CommentaryPanel({
     }
   }, [category, talmudAmud, entries]);
 
+  // Tur shows all 4 of its real commentaries as fixed tabs (no swap pool — see getPoolInfo's
+  // "tur" case) — the swap-picker interaction and its "▾" affordance don't apply, and dropping
+  // the arrow + truncate frees up room for full commentator names in what's otherwise the same
+  // tab strip every other category uses.
+  const allowSwap = category !== "tur";
+
   return (
     <div className="flex h-full flex-col">
       <div dir={hebrewMode ? "rtl" : "ltr"} className="flex border-b border-border">
@@ -178,6 +184,10 @@ export default function CommentaryPanel({
           <button
             key={i}
             onClick={() => {
+              if (!allowSwap) {
+                setActiveIndex(i);
+                return;
+              }
               if (i === activeIndex) {
                 setOpenSlotIndex(openSlotIndex === i ? null : i);
               } else {
@@ -185,7 +195,7 @@ export default function CommentaryPanel({
                 setOpenSlotIndex(null);
               }
             }}
-            className="-mb-px flex-1 truncate border-b-2 px-2 py-2 text-sm transition-colors"
+            className={`-mb-px flex-1 border-b-2 px-2 py-2 text-sm transition-colors ${allowSwap ? "truncate" : ""}`}
             style={
               i === activeIndex
                 ? { borderColor: "var(--accent)", color: "var(--accent)" }
@@ -193,12 +203,12 @@ export default function CommentaryPanel({
             }
           >
             {(hebrewMode ? hebrewDisplayName : displayName)[effectiveSlots[i] ?? slots[i]]}
-            {i === activeIndex ? " ▾" : ""}
+            {allowSwap && i === activeIndex ? " ▾" : ""}
           </button>
         ))}
       </div>
 
-      {openSlotIndex !== null && (
+      {allowSwap && openSlotIndex !== null && (
         <div dir={hebrewMode ? "rtl" : "ltr"} className="max-h-56 overflow-y-auto border-b border-border bg-card p-2 text-sm">
           {poolInfo.groups.map((group, gi) => {
             const options = group.filter(
@@ -363,7 +373,16 @@ export default function CommentaryPanel({
                                 lang="he"
                                 style={{ fontFamily: "var(--font-hebrew)", fontSize: hebrewFontPx, lineHeight }}
                               >
-                                <span className={markClass}>{he}</span>
+                                {category === "tur" && activeType === "beitYosef" ? (
+                                  // Beit Yosef entries can carry a <span class="dm-mark"> for a
+                                  // Darkhei Moshe reference letter (see
+                                  // processedHebrewWithTurMarkers) — everything else in this
+                                  // string is plain-texted server-side, so this is safe despite
+                                  // the raw HTML.
+                                  <span className={markClass} dangerouslySetInnerHTML={{ __html: he }} />
+                                ) : (
+                                  <span className={markClass}>{he}</span>
+                                )}
                               </p>
                             )}
                             {(displayMode === "translation" || displayMode === "both") && en && (

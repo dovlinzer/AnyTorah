@@ -4,7 +4,13 @@ import {
   ref as buildRef,
   talmudAmudRef,
   processedHebrew,
+  processedHebrewWithTurMarkers,
   stripHTML,
+  fetchTurParagraphPlainList,
+  assignTurParagraphLabels,
+  fetchBoth,
+  computeBeitYosefDarkheiMosheMarks,
+  insertBeitYosefDarkheiMosheMark,
 } from "@/lib/sefariaClient";
 import { displayName, type CommentaryType } from "@/lib/commentaryTypes";
 import { TextCatalog } from "@/lib/textCatalog";
@@ -16,10 +22,11 @@ function isCommentaryType(value: string | null): value is CommentaryType {
   return value !== null && Object.prototype.hasOwnProperty.call(displayName, value);
 }
 
-function plainText(entries: CommentaryEntry[]): CommentaryEntry[] {
+function plainText(entries: CommentaryEntry[], preserveMarkers = false): CommentaryEntry[] {
+  const hebrewFn = preserveMarkers ? processedHebrewWithTurMarkers : processedHebrew;
   return entries.map((entry) =>
     entry.kind === "text"
-      ? { ...entry, he: processedHebrew(entry.he), en: stripHTML(entry.en) }
+      ? { ...entry, he: hebrewFn(entry.he), en: stripHTML(entry.en) }
       : entry,
   );
 }
@@ -76,6 +83,50 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Failed to fetch commentary from Sefaria" }, { status: 502 });
     }
   }
+  // Beit Yosef, Bach, and the combined Prisha+Drisha tab each open their comment with a direct
+  // quote of the Tur words they're discussing — assignTurParagraphLabels matches those opening
+  // words against Tur's own Beit-Yosef-derived paragraphs (see buildTurSegments/fetchChapter) to
+  // number each entry by the Tur paragraph it actually comments on, instead of a generic
+  // sequential count. Darkhei Moshe itself is excluded from this branch — most of its comments
+  // anchor via Sefaria's data-order markers in Tur's own main text (see processTurMarkers), not
+  // by quote-matching, so it keeps the generic sequential numbering below.
+  if (category === "tur" && (typeParam === "beitYosef" || typeParam === "bach" || typeParam === "prishaDrisha")) {
+    const mainRef = buildRef(category, index, chapter);
+    try {
+      const [entries, paragraphs] = await Promise.all([
+        loadCommentaryEntries(typeParam, mainRef, category),
+        fetchTurParagraphPlainList(mainRef),
+      ]);
+      // Label using the *original* entries — inserting a <dm> marker below must happen after
+      // labeling, not before, so the marker's digit can never end up among the opening words
+      // assignTurParagraphLabels searches with (it would otherwise risk corrupting the match).
+      let finalEntries = assignTurParagraphLabels(entries, paragraphs);
+      let preserveMarkers = false;
+      // Darkhei Moshe sometimes comments on Beit Yosef's own words rather than Tur's — confirmed
+      // live against a printed edition. Beit Yosef's raw text carries the same kind of Darkhei
+      // Moshe position tag Tur does; computeBeitYosefDarkheiMosheMarks figures out which entries
+      // need one and what number, using whichever entry numbers Tur's own tags don't already
+      // cover (see that function's doc for the full method).
+      if (typeParam === "beitYosef") {
+        const { hebrew: turRawHe } = await fetchBoth(mainRef);
+        const marks = await computeBeitYosefDarkheiMosheMarks(mainRef, turRawHe, entries);
+        if (marks.size > 0) {
+          preserveMarkers = true;
+          finalEntries = finalEntries.map((entry, i) => {
+            const n = marks.get(i);
+            return entry.kind === "text" && n !== undefined
+              ? { ...entry, he: insertBeitYosefDarkheiMosheMark(entry.he, n) }
+              : entry;
+          });
+        }
+      }
+      return NextResponse.json({ entries: plainText(finalEntries, preserveMarkers) });
+    } catch (error) {
+      console.error("commentary fetch failed", error);
+      return NextResponse.json({ error: "Failed to fetch commentary from Sefaria" }, { status: 502 });
+    }
+  }
+
   // Rambam's depth-3 fix needs the real halakha count of the current chapter (see
   // loadCommentaryEntries / depthFixedRef) — passed from the main chapter fetch the client
   // already did, not re-derived here.

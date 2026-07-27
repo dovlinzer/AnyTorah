@@ -86,6 +86,23 @@ body {
 }
 
 /*
+ * Darkhei Moshe's reference-letter anchors in Tur's main text — printed Tur editions mark each
+ * Darkhei Moshe note's location with a parenthesized Hebrew numeral (standard gematira, e.g.
+ * (א) (ב) ... (י)); Sefaria's Tur data bakes the position (and its 1-based sequence number) in as
+ * data-commentator="Darkhei Moshe" markers (see processTurMarkers/processedHebrewWithTurMarkers
+ * in lib/sefariaClient.ts, which convert the number to a letter via saHebrewLetter). Rendered
+ * inline at normal baseline — not superscript — matching the printed convention; only one
+ * commentator's anchors show here, so no per-slot bracket-shape scheme like SA's is needed.
+ */
+.dm-mark {
+  font-family: var(--font-hebrew);
+  color: var(--accent);
+  font-weight: 600;
+  unicode-bidi: isolate;
+  margin: 0 1px;
+}
+
+/*
  * Talmud/Mishnah English: Sefaria bolds "glue" words a translator added that aren't direct
  * translations of the source (Steinsaltz-style). Native renders these in an editorial color
  * instead of bold weight — bold reads as emphasis, not as "this word isn't really there in the
