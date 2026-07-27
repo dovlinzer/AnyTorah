@@ -425,8 +425,25 @@ export async function fetchBothAligned(
         const added = heSegs.length - before;
         outerIndices.push(...Array(added).fill(i));
       }
+    } else if (heArr.length > enArr.length) {
+      // Hebrew has more (real, granular) outer paragraphs than English — e.g. Beit Yosef, Orach
+      // Chayim 1 has 17 Hebrew comments but Sefaria's English translation only covers the first
+      // one (confirmed live: the lone English entry is verbatim just paragraph 1's translation).
+      // Hebrew's own paragraph count is the ground truth here and must not be collapsed just
+      // because the translation is sparse — pair by outer index, leaving English empty wherever
+      // there's no corresponding entry, instead of joining every Hebrew paragraph into one blob.
+      for (let i = 0; i < heArr.length; i++) {
+        const hInner = flattenTextValue(heArr[i]).filter(nonEmpty);
+        const eInner = flattenTextValue(enArr[i]).filter(nonEmpty); // [] once i exceeds enArr
+        const before = heSegs.length;
+        alignedAppend(hInner, eInner, heSegs, enSegs);
+        const added = heSegs.length - before;
+        outerIndices.push(...Array(added).fill(i));
+      }
     } else {
-      // Outer counts differ and both non-zero (e.g. intro: 1 he vs 7 en at top level).
+      // Opposite direction (e.g. intro: 1 he vs 7 en at top level) — Hebrew's single outer entry
+      // is the real paragraph unit and English's extra granularity is just translation-side
+      // formatting, so merge everything into one combined entry, as before.
       const hInner = flattenTextValue(heArr).filter(nonEmpty);
       const eInner = flattenTextValue(enArr).filter(nonEmpty);
       const before = heSegs.length;
@@ -751,6 +768,11 @@ function stripTagsWithIndexMap(html: string): { text: string; rawIndex: number[]
   return { text, rawIndex };
 }
 
+/** Matches a multi-letter Hebrew abbreviation: a gershayim (either the ASCII `"` or the proper
+ *  Hebrew ״ character digitizations use interchangeably) between two Hebrew letters, e.g. "בה"כ"
+ *  (= "בית הכסא"), "ת"ח" (= "תלמידי חכמים"). */
+const HEBREW_ABBREVIATION_RE = /[א-ת]["״][א-ת]/;
+
 /**
  * Builds a regex matching `words` (Hebrew letters only, in order) tolerating any amount of
  * intervening punctuation/nikud/whitespace between them — lets a Beit Yosef quote match Tur's
@@ -758,15 +780,42 @@ function stripTagsWithIndexMap(html: string): { text: string; rawIndex: number[]
  * tolerates a definite-article "ה" mismatch on each word (real bug found live: Tur OC 3 has "בפי
  * טבעת" where Beit Yosef's quote of the same words is "בפי הטבעת" — an exact-word match on
  * "הטבעת" silently failed to find it, merging two real paragraphs into one).
+ *
+ * A word that's itself a multi-letter abbreviation (HEBREW_ABBREVIATION_RE) is treated as a short
+ * unconstrained gap instead of requiring its own letters to match literally — its expansion in
+ * the *other* independently-digitized source routinely spells out completely different letters
+ * (real bug found live: Tur OC 43 spells out "לבית הכסא"; Beit Yosef's quote of the same words
+ * abbreviates it "לבה"כ" — a literal match on "לבהכ" never finds "לבית הכסא", so the match silently
+ * slid forward to the next word that did line up, "קבוע," breaking the paragraph one word later
+ * than the real start). The words immediately before/after the abbreviation still have to match
+ * literally, which keeps this from matching too loosely.
+ *
+ * Refuses to build a pattern (returns null) when more than half its words are these gap
+ * placeholders — real bug found live: Tur OC 3 entry 12 tried a 3-word window that was itself two
+ * citation abbreviations plus one generic word ("ג"ז בס"פ המוציא"), so with 2 of 3 tokens
+ * wildcarded the pattern matched wherever "המוציא" next recurred, many paragraphs later, skipping
+ * several real breaks in between. Citation-heavy commentary text clusters abbreviations like this
+ * constantly, so a single stray one (the OC 43 case) is fine to bridge, but a window that's mostly
+ * gaps has too little real anchor text left to trust — better to let the caller fall through to a
+ * different word count/skip, or fail outright, than risk a wild, far-away match.
  */
 function buildHebrewWordPattern(words: string[]): RegExp | null {
-  const cleaned = words.map((w) => w.replace(/[^א-ת]/g, "")).filter(Boolean);
-  if (cleaned.length === 0) return null;
-  const escaped = cleaned.map((w) => {
-    const stripped = w.startsWith("ה") && w.length > 1 ? w.slice(1) : w;
-    return `ה?${stripped.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`;
-  });
-  return new RegExp(escaped.join("[^א-ת]*"));
+  const parts: string[] = [];
+  let literalCount = 0;
+  for (const raw of words) {
+    if (HEBREW_ABBREVIATION_RE.test(raw)) {
+      parts.push("[\\s\\S]{0,20}");
+      continue;
+    }
+    const cleaned = raw.replace(/[^א-ת]/g, "");
+    if (!cleaned) continue;
+    const stripped = cleaned.startsWith("ה") && cleaned.length > 1 ? cleaned.slice(1) : cleaned;
+    parts.push(`ה?${stripped.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
+    literalCount++;
+  }
+  if (parts.length === 0) return null;
+  if (literalCount < Math.ceil(parts.length / 2)) return null;
+  return new RegExp(parts.join("[^א-ת]*"));
 }
 
 /**
@@ -790,6 +839,15 @@ function buildHebrewWordPattern(words: string[]): RegExp | null {
  * later — the first hit scanning forward is taken as genuine), tried at decreasing word counts
  * (a long quote is a more confident match), and an entry with no match simply contributes no
  * break point — it merges into whichever paragraph precedes it — rather than leaving a gap.
+ *
+ * Also tries skipping the entry's first 1-3 words before matching (real cases confirmed live on
+ * Tur OC 3): Beit Yosef often opens a comment with a standard rhetorical connector — "ומ"ש" (=
+ * "ומה שכתב", "and what [Tur] wrote...") or "ודע ד..." ("know that...") — that isn't part of
+ * Tur's own text at all; the literal quote only starts a word or two later ("ומ"ש אם לא מעטרה
+ * ולמטה..." doesn't match anywhere, but "מעטרה ולמטה..." does). Skipping is tried only after the
+ * unskipped attempt fails, and only recovers a match if one of these short preambles was the sole
+ * obstacle — an entry with no literal quote anywhere (a free-standing aside not tied to a specific
+ * new Tur phrase) still correctly contributes no break.
  */
 function findTurBreakpoints(combinedHe: string, beitYosefHe: string[]): number[] {
   const { text: plain, rawIndex } = stripTagsWithIndexMap(combinedHe);
@@ -798,14 +856,17 @@ function findTurBreakpoints(combinedHe: string, beitYosefHe: string[]): number[]
   for (const entryHe of beitYosefHe) {
     const words = stripHTML(entryHe).split(/\s+/).filter(Boolean);
     let found: number | null = null;
-    for (const wordCount of [8, 6, 4, 3]) {
-      if (words.length < wordCount) continue;
-      const pattern = buildHebrewWordPattern(words.slice(0, wordCount));
-      if (!pattern) continue;
-      const m = plain.slice(cursor).match(pattern);
-      if (m && m.index !== undefined) {
-        found = cursor + m.index;
-        break;
+    outer: for (const skip of [0, 1, 2, 3]) {
+      const rest = words.slice(skip);
+      for (const wordCount of [8, 6, 4, 3]) {
+        if (rest.length < wordCount) continue;
+        const pattern = buildHebrewWordPattern(rest.slice(0, wordCount));
+        if (!pattern) continue;
+        const m = plain.slice(cursor).match(pattern);
+        if (m && m.index !== undefined) {
+          found = cursor + m.index;
+          break outer;
+        }
       }
     }
     if (found !== null) {
@@ -949,16 +1010,9 @@ export async function fetchTurParagraphPlainList(mainRef: string): Promise<strin
   return rawParagraphs.map((p) => processedHebrew(p));
 }
 
-/** Keeps only Hebrew letters, collapsing everything else (punctuation, quotes/gershayim,
- *  whitespace runs) to single spaces — normalizes away minor typographic differences between
- *  Tur's and its commentaries' independently-digitized text before substring matching. */
-function normalizeForMatch(text: string): string {
-  return text.replace(/[^א-ת]+/g, " ").trim().replace(/\s+/g, " ");
-}
-
-function findParagraphMatch(normParagraphs: string[], cursor: number, key: string): number | null {
-  for (let pi = cursor; pi < normParagraphs.length; pi++) {
-    if (normParagraphs[pi].includes(key)) return pi;
+function findParagraphMatch(paragraphs: string[], cursor: number, pattern: RegExp): number | null {
+  for (let pi = cursor; pi < paragraphs.length; pi++) {
+    if (pattern.test(paragraphs[pi])) return pi;
   }
   return null;
 }
@@ -969,9 +1023,9 @@ function findParagraphMatch(normParagraphs: string[], cursor: number, key: strin
  * generic sequential number. These commentaries each open their comment with a direct quote of
  * the Tur words being discussed (confirmed live, e.g. Beit Yosef on Tur OC 25's entry 0 opens
  * with the exact words that start Tur's own paragraph 0) — so a paragraph is found by searching
- * for the entry's own opening words as a substring, tried at decreasing word counts (a long
- * quote is a more confident match; a short one is tried only if the longer ones fail, e.g. the
- * real printed quote is itself short).
+ * for the entry's own opening words, tried at decreasing word counts (a long quote is a more
+ * confident match; a short one is tried only if the longer ones fail, e.g. the real printed quote
+ * is itself short).
  *
  * Per explicit product decision, this is a best-effort heuristic, not exact: search only ever
  * moves forward from the last match (never back to an earlier paragraph, even if the same short
@@ -980,9 +1034,16 @@ function findParagraphMatch(normParagraphs: string[], cursor: number, key: strin
  * may contain a `bookDivider` between Prisha's and Drisha's own entries (see the "prishaDrisha"
  * CommentaryType) — each is a separate work independently commenting on the Tur from its own
  * start, so the search cursor and carried-forward label both reset there.
+ *
+ * Also tries skipping the entry's first 1-3 words before matching, and shares buildHebrewWordPattern
+ * (the "ה" article tolerance and the Hebrew-abbreviation gap, e.g. "בה"כ" vs. "לבית הכסא") with
+ * findTurBreakpoints — this function used to have its own separate, cruder matcher (a plain
+ * normalize-and-`.includes()` substring check) that duplicated the same heuristic without any of
+ * findTurBreakpoints' later fixes, which the two functions' own docs already flagged as a
+ * consistency risk; consolidated onto one shared implementation so both corpora (Tur's raw text
+ * here, the already-split `paragraphs` there) always benefit from the same match improvements.
  */
 export function assignTurParagraphLabels(entries: CommentaryEntry[], paragraphs: string[]): CommentaryEntry[] {
-  const normParagraphs = paragraphs.map(normalizeForMatch);
   let cursor = 0;
   let lastLabel: number | null = null;
   return entries.map((entry) => {
@@ -991,15 +1052,19 @@ export function assignTurParagraphLabels(entries: CommentaryEntry[], paragraphs:
       lastLabel = null;
       return entry;
     }
-    const words = normalizeForMatch(stripHTML(entry.he)).split(" ").filter(Boolean);
+    const words = stripHTML(entry.he).split(/\s+/).filter(Boolean);
     let matchIdx: number | null = null;
-    for (const wordCount of [8, 6, 4, 3]) {
-      if (words.length < wordCount) continue;
-      const key = words.slice(0, wordCount).join(" ");
-      const found = findParagraphMatch(normParagraphs, cursor, key);
-      if (found !== null) {
-        matchIdx = found;
-        break;
+    outer: for (const skip of [0, 1, 2, 3]) {
+      const rest = words.slice(skip);
+      for (const wordCount of [8, 6, 4, 3]) {
+        if (rest.length < wordCount) continue;
+        const pattern = buildHebrewWordPattern(rest.slice(0, wordCount));
+        if (!pattern) continue;
+        const found = findParagraphMatch(paragraphs, cursor, pattern);
+        if (found !== null) {
+          matchIdx = found;
+          break outer;
+        }
       }
     }
     if (matchIdx !== null) {

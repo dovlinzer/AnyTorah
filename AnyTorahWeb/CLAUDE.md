@@ -177,6 +177,137 @@ visible text instead of styling them.
   optional param now that category alone (not a subcategory flag) distinguishes Tosefta/Mishnah
   and Yerushalmi/Bavli.
 
+## Tur (web-only, not yet ported to native)
+
+A top-level category between Rambam and Shulchan Arukh, siman-based like SA (`lib/textCatalog.ts`
+`TurSection`: OC/YD/EH/CM, 697/403/178/426 simanim — near-identical to SA's own 697/403/178/427,
+since SA closely follows Tur's own structure historically). Reuses SA's siman navigation wholesale:
+the numeric `NumberPickerModal` and, since the siman/topic structure is close enough not to need a
+second transcription, SA's own named siman picker (`SASimanPicker`/`lib/saSimanNames.ts`) with no
+changes beyond widening `Reader.tsx`'s render-gate to include `category === "tur"`.
+
+**Four commentary tabs, all shown by default, no swap picker:** Beit Yosef, Bach, Darkhei Moshe,
+and Prisha+Drisha combined into one tab (Prisha first, `bookDivider`-separated — same pattern as
+SA's Yachin+Boaz). `CommentaryPanel.tsx`'s `allowSwap = category !== "tur"` flag disables the
+swap-picker affordance and the "▾" suffix entirely, and drops the `truncate` class so all 4 full
+commentator names fit (only 4 tabs, more room than SA's 3-slot case). New `CommentaryType`s:
+`beitYosef`, `bach`, `darkheiMoshe`, `prishaDrisha` (the combo, via `sefariaRefVersions`,
+`usesBookDivider: true`). Ref pattern is `turCommentaryRef()` in `commentaryTypes.ts`: each is its
+own top-level Sefaria title, not "CommentatorName on Tur, ..." — e.g. `"Beit Yosef, Orach Chayim
+1"`, built by swapping the `"Tur, "` prefix off `mainRef` for the commentary's own title.
+
+**Depth-3 range fix:** all 5 Tur commentaries (Beit Yosef, Bach, Darkhei Moshe, Prisha, Drisha) are
+`Siman -> Seif Katan -> Paragraph` (Choshen Mishpat: `Siman -> Seif -> Seif Katan`) — a bare
+`"Beit Yosef, Orach Chayim 1"` returns only 1 entry vs. 17 for `"...1:1-500"` (confirmed live).
+`depthFixedRef` (`lib/sefariaClient.ts`) applies a blanket `:1-500` for `category === "tur"`,
+same pattern as Tanakh's `:1-200`.
+
+**Tur's own inline commentary markers are structurally different from SA's** and are *not* given
+SA's bracket-matching treatment: SA wraps actual text in `<span data-commentator="Shakh">`, but Tur
+uses empty position tags (`<i data-commentator="Bach" data-order="1.1"></i>`, no wrapped content)
+sprinkled between words. These just fall out through the existing generic tag-stripping pass,
+except for Darkhei Moshe's, which are used for real (see below). Tur *does* bake the same leading
+`<b>siman-title</b>` block into seif 1's Hebrew as SA does — `splitSimanHeader` is reused as-is.
+
+### Paragraph splitting: derived from Beit Yosef, not punctuation
+
+A Tur paragraph is *defined* as "from one Beit Yosef comment to the next" — Beit Yosef opens each
+entry with a quote of the Tur words it's discussing, so that quote's location in Tur's raw text
+becomes the paragraph break. This replaced an earlier colon-based split after two real bugs: a
+colon inside a citation like OC 132's "(צא:)" (amud bet of daf צא, not a paragraph break) wrongly
+split there, and OC 133's seven verse-ending colons over-fragmented one topical unit (a Psalm
+list) that Beit Yosef treats as a single comment.
+
+Machinery in `lib/sefariaClient.ts`:
+- `combineTurSeifim(he)` — flattens Tur's (rare) multi-seif structure into one continuous string
+  first, since Tur's own seif divisions don't align with Beit Yosef's ref structure at all; also
+  extracts the siman-title header via `splitSimanHeader`.
+- `stripTagsWithIndexMap()` — strips tags only (keeps punctuation/nikud), recording each kept
+  character's original index so a match found in the tag-free text maps back to a safe cut point
+  in the real (tag-and-all) string.
+- `buildHebrewWordPattern(words)` — builds a regex matching a word sequence tolerant of
+  punctuation/nikud differences between independently-digitized sources, **and** of several known
+  mismatch classes (each a real bug found live against actual Tur/Beit-Yosef text, not
+  anticipated):
+  - **Definite article**: Tur OC 3 has "בפי טבעת" where Beit Yosef quotes it "בפי הטבעת" — each
+    word tries with an optional leading "ה" (`ה?word`).
+  - **Hebrew abbreviations**: a word with an internal gershayim between two letters
+    (`HEBREW_ABBREVIATION_RE`, e.g. "בה"כ" = "בית הכסא", "ת"ח" = "תלמידי חכמים") genuinely drops
+    letters relative to its spelled-out form — no amount of punctuation normalization bridges
+    that. Tur OC 43 spells out "לבית הכסא"; Beit Yosef abbreviates the same words "לבה"כ", and a
+    literal-letter match on "לבהכ" could never find it, silently sliding the match to the next
+    word that did line up ("קבוע"), breaking the paragraph one word too late. Such a word is
+    treated as a short unconstrained gap (`[\s\S]{0,20}`) instead of requiring its own letters —
+    the words immediately before/after it still must match literally.
+  - **Guard against over-permissive gaps**: refuses to build a pattern at all when more than half
+    its words are these gap placeholders. Citation-heavy commentary clusters abbreviations
+    constantly (e.g. "ג"ז בס"פ המוציא" — two citation abbreviations plus one generic word); with 2
+    of 3 tokens wildcarded, an early version of this fix matched wherever the one remaining generic
+    word ("המוציא") next recurred, many paragraphs later, skipping several real breaks in between.
+    `literalCount < Math.ceil(parts.length / 2)` rejects such a window, falling through to a
+    different word-count/skip or failing outright rather than risking a wild match.
+- `findTurBreakpoints(combinedHe, beitYosefHe)` — for each Beit Yosef entry (forward-only cursor,
+  never matching back to an earlier position even if the same short phrase recurs later), tries
+  matching its opening words at decreasing word counts (`[8,6,4,3]`, longer = more confident) and,
+  if that fails, retries after skipping the first 1-3 words (real cases: Beit Yosef opens with a
+  rhetorical connector like "ודע ד..." = "know that..." or "ומ"ש" = "ומה שכתב" = "and what [Tur]
+  wrote..." that isn't part of Tur's own text at all, so the literal quote only starts 1-3 words
+  later). An entry with no match at any skip/word-count contributes no break — it merges into the
+  preceding paragraph — rather than leaving a gap; this is an accepted, correct outcome for a
+  free-standing Beit Yosef remark with no literal anchor anywhere in Tur's text (confirmed by
+  exhaustive search), not just an unhandled failure.
+- `splitByBreakpoints()` — cuts at the found offsets; a resulting chunk with no real text (e.g. a
+  lone marker sitting right at a break) merges forward into the next real paragraph.
+- `computeTurParagraphChunks(mainRef, combinedHe)` — the shared orchestrator (fetches Beit Yosef,
+  computes breakpoints, splits) used by **both** `buildTurSegments` (the main text) and
+  `fetchTurParagraphPlainList` (Bach/Prisha+Drisha's matching corpus), so both always agree on
+  where a paragraph begins.
+- `assignTurParagraphLabels(entries, paragraphs)` — labels each Beit Yosef/Bach/Prisha-Drisha panel
+  entry with the Tur paragraph (0-based) it discusses, via the same `buildHebrewWordPattern`
+  search (same forward-only, skip-retry heuristic) run against the already-split `paragraphs`
+  list instead of Tur's raw text. Shares the matcher with `findTurBreakpoints` rather than having
+  its own separate implementation — an earlier version had its own cruder
+  `normalizeForMatch`-then-substring matcher, which was a real consistency risk (a fix to one
+  wouldn't reach the other) until consolidated. `entries` may contain a `bookDivider` between
+  Prisha's and Drisha's own entries — each is a separate work commenting on Tur from its own
+  start, so the search cursor and carried-forward label both reset there. Beit Yosef's own numbering
+  is exact by construction (entry N's quote *is* where paragraph N begins); other commentaries are
+  a best-effort heuristic match against the same paragraph list.
+- Real, accepted trade-off: Tur's main-text load fetches Beit Yosef even when its tab isn't open
+  (needed to compute paragraph breaks), and `fetchTurParagraphPlainList` independently re-fetches
+  it again for the commentary route — simplicity over micro-perf, not an oversight.
+
+### Darkhei Moshe markers — two sources, one placeholder format
+
+Darkhei Moshe's real printed reference-number anchors are recovered from two places, not computed:
+
+- **In Tur's own text**: Sefaria's HTML bakes in `<i data-commentator="Darkhei Moshe"
+  data-order="N.M">` position markers, and the `data-order` integer already *is* the correct
+  1-based sequential number matching Darkhei Moshe's own entries in fetch order — no separate
+  counter needed. `processTurMarkers()`/`TUR_DM_MARKER_RE` convert these into a `<dm>N</dm>`
+  placeholder; `processedHebrewWithTurMarkers()` renders survivors as `(א)`, `(ב)`, ... (parenthesized
+  Hebrew numeral via `saHebrewLetter`, matching real printed Tur volumes) inline at normal
+  baseline. Every other commentator's own markers in the same text, plus Sefaria's unlinked
+  "Hagahot" tags (confirmed via the links API to not resolve to any real fetchable work), are left
+  alone and fall out via generic tag-stripping.
+- **In Beit Yosef's own text, for markers Tur's own tags miss**: Darkhei Moshe sometimes comments
+  on Beit Yosef's own words rather than Tur's (user insight, verified against a printed edition at
+  5 separate positions across 2 simanim, all correct). Beit Yosef's raw text carries the same kind
+  of tag, spelled `"Darchei Moshe"` (with a c) vs Tur's `"Darkhei Moshe"` (with a kh) — critically,
+  its `data-order` is **not** reliable (every Beit-Yosef-side tag on a given siman can say
+  `data-order="1"` regardless of which comment it anchors). Method: Tur's own `data-order` values
+  are trusted as-is for whichever entries they cover; the remaining ("missing") entry numbers are
+  filled, in ascending order, by Beit Yosef's own `"Darchei Moshe"`-tagged entries taken in
+  document order — completely ignoring Beit Yosef's own unreliable `data-order`. Any entry number
+  left over once Beit Yosef's tags are exhausted gets no marker anywhere (an honest, accepted gap,
+  not a guess). `computeBeitYosefDarkheiMosheMarks(mainRef, turRawHe, beitYosefEntries)` returns a
+  `Map<beitYosefEntryIndex, dmNumber>`; `insertBeitYosefDarkheiMosheMark` splices the same
+  `<dm>N</dm>` placeholder into that entry's raw HTML, reusing `processedHebrewWithTurMarkers` so
+  Beit Yosef's markers render identically to Tur's own. Wired into `app/api/commentary/route.ts`'s
+  `beitYosef` branch: `assignTurParagraphLabels` runs first (on the *original* entries), marks are
+  inserted after — the inserted `<dm>` digit must never end up among the "opening words" the
+  paragraph-matching heuristic searches with.
+
 ## Shulchan Arukh siman header split
 
 Sefaria bakes each siman's printed title (e.g. "הלכות ציצית ועטיפתו. ובו יז סעיפים:") into the
