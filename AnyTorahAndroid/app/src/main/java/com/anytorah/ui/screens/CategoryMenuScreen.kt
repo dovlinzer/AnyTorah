@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.HistoryEdu
 import androidx.compose.material.icons.filled.LibraryBooks
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
@@ -196,6 +197,7 @@ private fun categoryIcon(category: TextCategory): ImageVector = when (category) 
     TextCategory.MISHNAH -> Icons.Default.LibraryBooks
     TextCategory.TALMUD -> Icons.Default.AutoStories
     TextCategory.RAMBAM -> Icons.Default.Star
+    TextCategory.TUR -> Icons.Default.MenuBook
     TextCategory.SHULCHAN_ARUKH -> Icons.Default.FormatListBulleted
     TextCategory.MIDRASH -> Icons.Default.HistoryEdu
 }

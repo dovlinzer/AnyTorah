@@ -400,6 +400,11 @@ final class SefariaTextClient {
                     ?? allRambamWorks[0]
             return "\(work.sefariaName) \(chapterOrDaf)"
 
+        case .tur:
+            let section = TextCatalog.turSections.first(where: { $0.id == bookOrTractateIndex })
+                       ?? TextCatalog.turSections[0]
+            return "\(section.sefariaName) \(chapterOrDaf)"
+
         case .shulchanArukh:
             let section = TextCatalog.shulchanArukhSections.first(where: { $0.id == bookOrTractateIndex })
                        ?? TextCatalog.shulchanArukhSections[0]
@@ -587,28 +592,77 @@ final class SefariaTextClient {
         let isSA = category == .shulchanArukh
 
         if isSA {
-            // For SA: use a for-loop so we can pass shared counters as inout across seifim,
-            // ensuring sequential markers number continuously throughout the siman.
+            // Sefaria bakes each siman's printed title (e.g. "הלכות ציצית ועטיפתו. ובו יז
+            // סעיפים:") into the start of seif 1's Hebrew as a <b>...</b> block, with no
+            // parallel sentence in the English translation — confirmed directly against the
+            // API. Split it into its own unlabeled header segment (no seif number — it isn't
+            // one) rather than running it together with seif 1's actual text and commentary
+            // markers.
             var sharedCounters: [String: Int] = [:]
             var segments: [TextSegment] = []
             for i in 0..<count {
                 let label = segmentLabel(style: labelStyle, number: i + 1)
                 var heText = i < he.count ? he[i] : ""
                 let enText = i < en.count ? en[i] : ""
+                if i == 0, let split = TurParagraphEngine.splitSimanHeader(heText) {
+                    segments.append(.content(index: segments.count, he: split.header, en: "", label: nil))
+                    heText = split.rest
+                }
                 heText = SefariaTextClient.processCommentaryMarkers(
                     heText, section: bookOrTractateIndex,
                     selectedCommentaries: selectedCommentaries,
                     counters: &sharedCounters)
-                segments.append(.content(index: i, he: heText, en: enText, label: label))
+                segments.append(.content(index: segments.count, he: heText, en: enText, label: label))
             }
             return segments
         }
+
+        if category == .tur {
+            let engineSegments = await TurParagraphEngine.buildTurSegments(he, en) {
+                await SefariaTextClient.shared.fetchTurCommentaryEntries(type: .beitYosef, mainRef: r)
+            }
+            return engineSegments.map {
+                .content(index: $0.index, he: $0.he, en: $0.en, label: $0.label)
+            }
+        }
+
         return (0..<count).map { i in
             let label = segmentLabel(style: labelStyle, number: i + 1)
             let heText = i < he.count ? he[i] : ""
             let enText = i < en.count ? en[i] : ""
             return .content(index: i, he: heText, en: enText, label: label)
         }
+    }
+
+    /// Fetches a Tur commentary's entries for `mainRef`, applying the blanket `:1-500` depth-3
+    /// range fix (all 4 Tur commentary tabs need it, unlike SA's single-commentator Shakh
+    /// exception — see `TextReaderViewModel.loadCommentary`) and walking
+    /// `CommentaryType.sefariaRefVersions` the same way the general commentary-loading path
+    /// does, so Prisha+Drisha's book-divider entry comes through correctly here too. Used both
+    /// by `fetchChapter`'s Tur branch (always needs Beit Yosef, regardless of which tab is open)
+    /// and by `TurParagraphEngine`'s own internal fetches (Beit Yosef for paragraph-splitting,
+    /// Darkhei Moshe for the Beit-Yosef-anchored marker fallback).
+    func fetchTurCommentaryEntries(type: CommentaryType, mainRef: String) async -> [CommentaryEntry] {
+        let rangedRef = "\(mainRef):1-500"
+        let versions = type.sefariaRefVersions(forMainRef: rangedRef)
+        var entries: [CommentaryEntry] = []
+        var seqIdx = 0
+        for (versionRef, label) in versions {
+            if let label {
+                entries.append(type.usesBookDivider ? .bookDivider(label) : .recensionHeader(label))
+            }
+            let (hSegs, eSegs, _) = (try? await fetchBothAligned(ref: versionRef)) ?? ([], [], [])
+            let count = max(hSegs.count, eSegs.count)
+            for i in 0..<count {
+                let h = i < hSegs.count ? hSegs[i] : ""
+                let e = i < eSegs.count ? eSegs[i] : ""
+                guard !h.trimmingCharacters(in: .whitespaces).isEmpty ||
+                      !e.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+                entries.append(.text(index: seqIdx, he: h, en: e))
+                seqIdx += 1
+            }
+        }
+        return entries
     }
 
     // MARK: - Ra'avad Hasagot fetch

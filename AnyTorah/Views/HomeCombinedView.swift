@@ -51,7 +51,7 @@ struct HomeCombinedView: View {
             .padding(.top, 40)
             .padding(.bottom, 14)
 
-            // 2-row (3 + 3) category grid
+            // Category grid, wrapped 3-per-row (grows to fit however many categories exist)
             CategoryGrid(selectedCategory: activeCategory, fg: appFg, onSelect: selectCategory)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 20)
@@ -140,7 +140,7 @@ struct HomeCombinedView: View {
     }
 }
 
-// MARK: - Portrait: 2-row (3 + 2) category grid
+// MARK: - Portrait: category grid, wrapped 3-per-row
 
 private struct CategoryGrid: View {
     let selectedCategory: TextCategory?
@@ -149,38 +149,38 @@ private struct CategoryGrid: View {
 
     private static let cardHeight: CGFloat = 90
     private static let spacing: CGFloat = 8
+    private static let perRow = 3
+
+    // Chunks *all* cases into rows of `perRow`, so adding/removing a category (e.g. Tur) can
+    // never silently drop one — a hardcoded prefix(3)/suffix(3) split here previously assumed
+    // exactly 6 categories and dropped whichever one landed in the middle once a 7th was added.
+    private var rows: [[TextCategory]] {
+        let all = TextCategory.allCases
+        return stride(from: 0, to: all.count, by: Self.perRow).map {
+            Array(all[$0..<min($0 + Self.perRow, all.count)])
+        }
+    }
 
     var body: some View {
         GeometryReader { geo in
-            let cardWidth = (geo.size.width - Self.spacing * 2) / 3
-            let row1 = Array(TextCategory.allCases.prefix(3))
-            let row2 = Array(TextCategory.allCases.suffix(3))
+            let cardWidth = (geo.size.width - Self.spacing * 2) / CGFloat(Self.perRow)
+            let rows = rows
 
             VStack(spacing: Self.spacing) {
-                // Row 1: 3 cards
-                HStack(spacing: Self.spacing) {
-                    ForEach(row1) { cat in
-                        CompactCategoryCard(category: cat, isSelected: cat == selectedCategory, fg: fg) {
-                            onSelect(cat)
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    HStack(spacing: Self.spacing) {
+                        ForEach(row) { cat in
+                            CompactCategoryCard(category: cat, isSelected: cat == selectedCategory, fg: fg) {
+                                onSelect(cat)
+                            }
+                            .frame(width: cardWidth, height: Self.cardHeight)
                         }
-                        .frame(width: cardWidth, height: Self.cardHeight)
                     }
+                    .frame(maxWidth: .infinity, alignment: row.count == Self.perRow ? .leading : .center)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                // Row 2: 2 cards, same width, centered
-                HStack(spacing: Self.spacing) {
-                    ForEach(row2) { cat in
-                        CompactCategoryCard(category: cat, isSelected: cat == selectedCategory, fg: fg) {
-                            onSelect(cat)
-                        }
-                        .frame(width: cardWidth, height: Self.cardHeight)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
-        .frame(height: Self.cardHeight * 2 + Self.spacing)
+        .frame(height: Self.cardHeight * CGFloat(rows.count) + Self.spacing * CGFloat(max(0, rows.count - 1)))
     }
 }
 

@@ -82,6 +82,16 @@ struct ShulchanArukh_Section: Identifiable {
     let simanim: Int
 }
 
+// MARK: - Tur
+
+struct TurSection: Identifiable {
+    let id: Int
+    let name: String
+    let hebrewName: String
+    let sefariaName: String
+    let simanim: Int
+}
+
 // MARK: - TextCatalog
 
 enum TextCatalog {
@@ -438,5 +448,17 @@ enum TextCatalog {
         ShulchanArukh_Section(id: 1, name: "Yoreh Deah",     hebrewName: "יוֹרֶה דֵּעָה",     sefariaName: "Shulchan Arukh, Yoreh De'ah",    simanim: 403),
         ShulchanArukh_Section(id: 2, name: "Even HaEzer",    hebrewName: "אֶבֶן הָעֵזֶר",    sefariaName: "Shulchan Arukh, Even HaEzer",    simanim: 178),
         ShulchanArukh_Section(id: 3, name: "Choshen Mishpat",hebrewName: "חֹשֶׁן מִשְׁפָּט",  sefariaName: "Shulchan Arukh, Choshen Mishpat",simanim: 427),
+    ]
+
+    // MARK: Tur
+    // Note: Choshen Mishpat here is 426 simanim — one LESS than SA's own Choshen Mishpat (427).
+    // This is a real discrepancy confirmed against Sefaria, not a typo. Any code reusing SA
+    // siman-picker data for Tur's Choshen Mishpat must clamp explicitly to 426.
+
+    static let turSections: [TurSection] = [
+        TurSection(id: 0, name: "Orach Chayim",   hebrewName: "אוֹרַח חַיִּים",    sefariaName: "Tur, Orach Chayim",   simanim: 697),
+        TurSection(id: 1, name: "Yoreh Deah",     hebrewName: "יוֹרֶה דֵּעָה",     sefariaName: "Tur, Yoreh De'ah",    simanim: 403),
+        TurSection(id: 2, name: "Even HaEzer",    hebrewName: "אֶבֶן הָעֵזֶר",    sefariaName: "Tur, Even HaEzer",    simanim: 178),
+        TurSection(id: 3, name: "Choshen Mishpat",hebrewName: "חֹשֶׁן מִשְׁפָּט",  sefariaName: "Tur, Choshen Mishpat",simanim: 426),
     ]
 }

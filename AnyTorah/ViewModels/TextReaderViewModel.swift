@@ -95,6 +95,10 @@ final class TextReaderViewModel {
     var saSection: Int = 0
     var saSiman: Int = 1
 
+    // Tur — section → siman (same shape as SA; no cross-cascade needed)
+    var turSection: Int = 0
+    var turSiman: Int = 1
+
     // Midrash — subcategory → work → book → chapter → verse (verse-based navigation)
     var midrashSubcategory: MidrashSubcategory = .halakha {
         didSet {
@@ -228,6 +232,9 @@ final class TextReaderViewModel {
             rambamSeferIndex       = d.object(forKey: "sel_rambam_sefer") as? Int ?? 0
             rambamWorkIndexInSefer = d.object(forKey: "sel_rambam_work")  as? Int ?? 0
             rambamChapter          = d.object(forKey: "sel_rambam_ch")    as? Int ?? 1
+        case .tur:
+            turSection = d.object(forKey: "sel_tur_section") as? Int ?? 0
+            turSiman   = d.object(forKey: "sel_tur_siman")   as? Int ?? 1
         case .shulchanArukh:
             saSection = d.object(forKey: "sel_sa_section") as? Int ?? 0
             saSiman   = d.object(forKey: "sel_sa_siman")   as? Int ?? 1
@@ -278,6 +285,9 @@ final class TextReaderViewModel {
             d.set(rambamSeferIndex,       forKey: "sel_rambam_sefer")
             d.set(rambamWorkIndexInSefer, forKey: "sel_rambam_work")
             d.set(rambamChapter,          forKey: "sel_rambam_ch")
+        case .tur:
+            d.set(turSection, forKey: "sel_tur_section")
+            d.set(turSiman,   forKey: "sel_tur_siman")
         case .shulchanArukh:
             d.set(saSection, forKey: "sel_sa_section")
             d.set(saSiman,   forKey: "sel_sa_siman")
@@ -309,6 +319,10 @@ final class TextReaderViewModel {
         "sa_1":    [.taz, .shakh, .nekudatHaKesef],
         "sa_2":    [.chelkatMechokek, .beitShmuel, .taz],
         "sa_3":    [.meiratEinayim, .shakh, .ktzotHaChoshen],
+        "tur_0":   [.beitYosef, .bach, .darkheiMoshe, .prishaDrisha],
+        "tur_1":   [.beitYosef, .bach, .darkheiMoshe, .prishaDrisha],
+        "tur_2":   [.beitYosef, .bach, .darkheiMoshe, .prishaDrisha],
+        "tur_3":   [.beitYosef, .bach, .darkheiMoshe, .prishaDrisha],
     ]
 
     /// String key identifying the current reading context (used as a UserDefaults sub-key).
@@ -321,6 +335,7 @@ final class TextReaderViewModel {
         case .mishnah:       return mishnahSubcategory == .tosefta ? "tosefta" : "mishnah"
         case .talmud:        return talmudSubcategory == .yerushalmi ? "yerushalmi" : "talmud"
         case .rambam:        return "rambam"
+        case .tur:           return "tur_\(turSection)"
         case .shulchanArukh: return "sa_\(saSection)"
         case .midrash:       return "midrash"
         }
@@ -358,6 +373,8 @@ final class TextReaderViewModel {
             return type.isAvailableForTalmud(tractateId: globalTalmudTractateIndex)
         case .rambam:
             return type.isAvailableForRambam(workId: currentRambamWork?.id ?? 0)
+        case .tur:
+            return true
         case .shulchanArukh:
             return true
         case .midrash:
@@ -386,6 +403,7 @@ final class TextReaderViewModel {
             return [.rashiTalmud, .tosafot, .chiddusheiRamban, .rashba, .ritva, .meiri]
         case .rambam:        return [.maggidMishnah, .kesefMishnah, .lochemMishnah,
                                     .mishnahLaMelech, .kiryatSefer, .maasehRokeach, .orSameach]
+        case .tur:           return availableCommentaries  // Tur slots are always valid (fixed, no swap picker)
         case .shulchanArukh: return availableCommentaries  // SA slots are always valid
         case .midrash:       return []
         }
@@ -477,6 +495,12 @@ final class TextReaderViewModel {
             return CommentaryType.rambamGrouped.map { group in
                 group.filter { $0.isAvailableForRambam(workId: workId) }
             }.filter { !$0.isEmpty }
+        case .tur:
+            // Tur has NO swap picker: this pool must stay the same fixed 4-element array as
+            // `availableCommentaries` (see defaultSlots "tur_0".."tur_3"). Returning an equal-size
+            // pool here is load-bearing for `hasExpandedCommentaryPool` evaluating false for Tur —
+            // don't let a future change give Tur a bigger pool without reconsidering that.
+            return [CommentaryType.turPool]
         case .shulchanArukh:
             return [CommentaryType.saPool(forSection: saSection)]
         case .midrash:
@@ -658,6 +682,10 @@ final class TextReaderViewModel {
             let w = currentRambamWork?.name ?? ""
             if rambamChapter == 0 { return "\(w), Intro" }
             return "\(w), ch. \(rambamChapter)"
+        case .tur:
+            guard turSection < TextCatalog.turSections.count else { return "" }
+            let s = TextCatalog.turSections[turSection].name
+            return "\(s), §\(turSiman)"
         case .shulchanArukh:
             guard saSection < TextCatalog.shulchanArukhSections.count else { return "" }
             let s = TextCatalog.shulchanArukhSections[saSection].name
@@ -697,6 +725,10 @@ final class TextReaderViewModel {
         case .rambam:
             guard let w = currentRambamWork else { return "–" }
             return useHe ? w.hebrewName.strippingNikud : w.name
+        case .tur:
+            guard turSection < TextCatalog.turSections.count else { return "–" }
+            let s = TextCatalog.turSections[turSection]
+            return useHe ? s.hebrewName.strippingNikud : s.name
         case .shulchanArukh:
             guard saSection < TextCatalog.shulchanArukhSections.count else { return "–" }
             let s = TextCatalog.shulchanArukhSections[saSection]
@@ -726,6 +758,7 @@ final class TextReaderViewModel {
         case .rambam:
             if rambamChapter == 0 { return useHe ? "הקדמה" : "Intro" }
             return useHe ? "פרק \(SASimanNames.toHebrewNumeral(rambamChapter))" : "ch. \(rambamChapter)"
+        case .tur:            return useHe ? "סי׳ \(SASimanNames.toHebrewNumeral(turSiman))"         : "§\(turSiman)"
         case .shulchanArukh: return useHe ? "סי׳ \(SASimanNames.toHebrewNumeral(saSiman))"         : "§\(saSiman)"
         case .midrash:
             if midrashNavigationMode == .native {
@@ -852,6 +885,19 @@ final class TextReaderViewModel {
                     segments = segs
                     midrashScrollToIndex = scrollIdx + 1  // 1-based for scrollToVerse compat
                 }
+            case .tur:
+                let r = SefariaTextClient.shared.ref(
+                    category: .tur,
+                    bookOrTractateIndex: turSection,
+                    chapterOrDaf: turSiman)
+                currentRef = r
+                // Phase 1 stub: naive per-seif segments, no special header-splitting or
+                // paragraph-merging (that's a separate later phase). Tur has no swap picker,
+                // so unlike SA there's no bothPanels commentary concatenation to do here.
+                segments = try await SefariaTextClient.shared.fetchChapter(
+                    category: .tur,
+                    bookOrTractateIndex: turSection,
+                    chapter: turSiman)
             case .shulchanArukh:
                 let r = SefariaTextClient.shared.ref(
                     category: .shulchanArukh,
@@ -940,6 +986,12 @@ final class TextReaderViewModel {
             commentaryRef = "\(currentRef):1-\(segments.count)"
         } else if category == .shulchanArukh && panel.selectedCommentary == .shakh {
             commentaryRef = "\(currentRef):1-100"
+        } else if category == .tur {
+            // All 4 Tur commentaries (Beit Yosef, Bach, Darkhei Moshe, Prisha+Drisha) are
+            // depth-3 (Siman → Seif → Comment) — a bare siman ref returns only seif 1.
+            // Unlike SA (where only Shakh needs this), this applies uniformly to every
+            // Tur commentary type, so no further discrimination by commentary is needed.
+            commentaryRef = "\(currentRef):1-500"
         } else if category == .mishnah && mishnahSubcategory == .tosefta {
             // Tosefta Kifshutah and Brief Commentary are depth-3 (Chapter → Mishnah → Comment).
             commentaryRef = "\(currentRef):1-200"
@@ -992,10 +1044,13 @@ final class TextReaderViewModel {
         // and prepending it as a duplicate of the real siman-1 data.
         // Mishnah commentaries don't have genuine intro sections on Sefaria — their
         // "Introduction" ref returns ch.1 content, duplicating the main fetch.
+        // Tur commentaries have no genuine Sefaria "Introduction" pseudo-ref concept either
+        // (same reasoning as SA/Mishnah/Rambam) — skip the intro fetch for Tur too.
         let introR: String? = (isAtFirstSection && versions.count == 1
                                && category != .shulchanArukh
                                && category != .mishnah
-                               && category != .rambam)
+                               && category != .rambam
+                               && category != .tur)
             ? Self.introRef(for: versions[0].ref) : nil
 
         // Use outer-level indices (= mishnah/verse/halakha number) as display labels for
@@ -1056,6 +1111,46 @@ final class TextReaderViewModel {
             panel.commentaryEntries = entries
         }
 
+        // Beit Yosef/Bach/Prisha+Drisha each open their comment with a direct quote of the Tur
+        // words they're discussing — assignTurParagraphLabels matches those opening words
+        // against Tur's own Beit-Yosef-derived paragraphs to number each entry by the Tur
+        // paragraph it actually comments on, instead of a generic sequential count. Darkhei
+        // Moshe is excluded: it anchors via its own real data-order markers, not by
+        // quote-matching, so it keeps plain sequential numbering. Re-fetches Tur's own raw text
+        // and (when the open tab isn't already Beit Yosef) Beit Yosef's entries independently,
+        // rather than threading them through from load() — an intentional
+        // simplicity-over-micro-perf tradeoff, matching the reference web implementation.
+        if category == .tur && panel.selectedCommentary != .darkheiMoshe {
+            let turHe = ((try? await SefariaTextClient.shared.fetchBoth(ref: currentRef))?.hebrew) ?? []
+            if !turHe.isEmpty {
+                let beitYosefEntries: [CommentaryEntry]
+                if panel.selectedCommentary == .beitYosef {
+                    beitYosefEntries = panel.commentaryEntries
+                } else {
+                    beitYosefEntries = await SefariaTextClient.shared.fetchTurCommentaryEntries(type: .beitYosef, mainRef: currentRef)
+                }
+                let paragraphs = await TurParagraphEngine.fetchTurParagraphPlainList(turHe) { beitYosefEntries }
+                var labeled = TurParagraphEngine.assignTurParagraphLabels(panel.commentaryEntries, paragraphs)
+
+                // Darkhei Moshe sometimes anchors on Beit Yosef's own words rather than Tur's —
+                // labels must be assigned first (above), using the *original* entries, so an
+                // inserted <dm> digit never ends up among the "opening words" the paragraph
+                // matcher searches with.
+                if panel.selectedCommentary == .beitYosef {
+                    let marks = await TurParagraphEngine.computeBeitYosefDarkheiMosheMarks(turHe, labeled) {
+                        await SefariaTextClient.shared.fetchTurCommentaryEntries(type: .darkheiMoshe, mainRef: currentRef)
+                    }
+                    if !marks.isEmpty {
+                        labeled = labeled.enumerated().map { i, entry in
+                            guard case let .text(index, label, he, en) = entry, let n = marks[i] else { return entry }
+                            return .text(index: index, label: label, he: TurParagraphEngine.insertBeitYosefDarkheiMosheMark(he, n), en: en)
+                        }
+                    }
+                }
+                panel.commentaryEntries = labeled
+            }
+        }
+
         // For Talmud single-version commentary: the bare daf ref (e.g. "Rashi on Berakhot 2")
         // only returns 1 amud-b entry regardless of actual count. Fetch amud-a and amud-b
         // separately with range queries and rebuild the entry list with an "עמוד ב׳" divider.
@@ -1110,6 +1205,7 @@ final class TextReaderViewModel {
         case .mishnah:       return mishnahChapter == 1
         case .talmud:        return talmudDaf == currentTalmudTractate?.startDaf
         case .rambam:        return rambamChapter == 1   // chapter 0 is intro, not "first chapter"
+        case .tur:           return turSiman == 1
         case .shulchanArukh: return saSiman == 1
         case .midrash:
             if midrashNavigationMode == .native {
@@ -1189,6 +1285,8 @@ final class TextReaderViewModel {
             // Only go to chapter 0 if an intro exists; otherwise stop at chapter 1
             let minChapter = rambamHasIntro ? 0 : 1
             if rambamChapter > minChapter { rambamChapter -= 1 } else { break }
+        case .tur:
+            if turSiman > 1 { turSiman -= 1 }
         case .shulchanArukh:
             if saSiman > 1 { saSiman -= 1 }
         case .midrash:
@@ -1227,6 +1325,9 @@ final class TextReaderViewModel {
             }
         case .rambam:
             if let w = currentRambamWork, rambamChapter < w.chapters { rambamChapter += 1 }
+        case .tur:
+            let maxSiman = TextCatalog.turSections[turSection].simanim
+            if turSiman < maxSiman { turSiman += 1 }
         case .shulchanArukh:
             let maxSiman = TextCatalog.shulchanArukhSections[saSection].simanim
             if saSiman < maxSiman { saSiman += 1 }

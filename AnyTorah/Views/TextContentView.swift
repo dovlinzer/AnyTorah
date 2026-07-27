@@ -258,6 +258,12 @@ private struct SegmentRow: View {
         let smFont   = Font.system(size: max(10, fontSize - 5))
         let rfPattern = #"<rf>(.*?)</rf>"#
         let htmlWithRlm = "\u{200F}" + html
+        // Tur's Darkhei Moshe reference markers — a plain parenthesized Hebrew numeral inline,
+        // not a per-slot bracket shape like SA's scheme. `<dm>` never appears outside Tur
+        // content, so this check is safe and self-contained — no category plumbing needed here.
+        if htmlWithRlm.contains("<dm>") {
+            return Text(TurParagraphEngine.processedHebrewWithTurMarkers(htmlWithRlm)).font(heFont).foregroundColor(fg)
+        }
         guard let regex = try? NSRegularExpression(pattern: rfPattern) else {
             return Text(SefariaTextClient.processedHebrew(htmlWithRlm)).font(heFont).foregroundColor(fg)
         }

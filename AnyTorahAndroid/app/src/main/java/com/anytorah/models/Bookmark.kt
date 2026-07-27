@@ -18,6 +18,8 @@ data class Bookmark(
     val rambamChapter: Int = 1,
     val saSection: Int = 0,
     val saSiman: Int = 1,
+    val turSection: Int = 0,
+    val turSiman: Int = 1,
     val midrashSubcategoryId: String = MidrashSubcategory.HALAKHA.id,
     val midrashWorkId: String = MidrashWork.MEKHILTA_YISHMAEL.id,
     val midrashBookIndex: Int = 1,

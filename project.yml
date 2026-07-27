@@ -34,4 +34,19 @@ targets:
         Release:
           SWIFT_OPTIMIZATION_LEVEL: "-O"
     scheme:
-      testTargets: []
+      testTargets:
+        - AnyTorahTests
+
+  AnyTorahTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: AnyTorahTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.anytorah.tests
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: AnyTorah

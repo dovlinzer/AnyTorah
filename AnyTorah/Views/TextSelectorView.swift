@@ -99,7 +99,7 @@ struct TextSelectorView: View {
                 .padding(.bottom, 20)
             }
 
-            if !hasHeader && vm.category == .shulchanArukh {
+            if !hasHeader && [TextCategory.shulchanArukh, .tur].contains(vm.category) {
                 Spacer().frame(height: 16)
             }
 
@@ -154,11 +154,12 @@ struct TextSelectorView: View {
                         TalmudWheels(vm: vm, fg: appFg, appBg: appBg)
                     }
                 case .rambam:        RambamWheels(vm: vm, fg: appFg)
+                case .tur:           TurWheels(vm: vm, fg: appFg)
                 case .shulchanArukh: SAWheels(vm: vm, fg: appFg)
                 case .midrash:       MidrashWheels(vm: vm, fg: appFg)
                 }
             }
-            .frame(height: vm.category == .shulchanArukh ? 210 :
+            .frame(height: [TextCategory.shulchanArukh, .tur].contains(vm.category) ? 210 :
                           (vm.category == .midrash ? 200 : 160))
 
             Divider().background(appFg.opacity(0.7))
@@ -1141,6 +1142,155 @@ private struct SAWheels: View {
         .onAppear {
             topicSectionIdx = topicSections.firstIndex(where: {
                 vm.saSiman >= $0.start && vm.saSiman <= $0.end
+            }) ?? 0
+        }
+    }
+}
+
+// MARK: - Tur
+
+/// Near-verbatim copy of `SAWheels`, swapped to Tur's own catalog/VM state. `SASimanNames`'s
+/// functions aren't SA-specific by signature (they just take a raw 0-3 bookIndex), so they're
+/// reused directly. The one real difference: Tur's Choshen Mishpat (section 3) tops out at 426
+/// simanim, one LESS than SA's own Choshen Mishpat (427) — a confirmed discrepancy, not a typo.
+/// `topicSections` clamps the last topic section's `end` (and drops any section that would start
+/// beyond 426, though none currently do) so the siman wheel never offers 427 for Tur.
+private struct TurWheels: View {
+    @Bindable var vm: TextReaderViewModel
+    let fg: Color
+
+    @State private var topicSectionIdx: Int = 0
+    @AppStorage("saHebrewMode") private var saHebrewMode: Bool = false
+
+    private var turBooks: [TurSection] { TextCatalog.turSections }
+
+    private var topicSections: [SATopicSection] {
+        let sections: [SATopicSection]
+        switch vm.turSection {
+        case 0: sections = SASimanNames.sectionsOH
+        case 1: sections = SASimanNames.sectionsYD
+        case 2: sections = SASimanNames.sectionsEH
+        case 3: sections = SASimanNames.sectionsHM
+        default: sections = SASimanNames.sectionsOH
+        }
+        guard vm.turSection == 3 else { return sections }
+        let maxSiman = TextCatalog.turSections[3].simanim  // 426 — clamp below SA's 427
+        return sections.compactMap { sec in
+            guard sec.start <= maxSiman else { return nil }
+            return sec.end > maxSiman
+                ? SATopicSection(name: sec.name, start: sec.start, end: maxSiman)
+                : sec
+        }
+    }
+
+    private var simanStart: Int { topicSections.indices.contains(topicSectionIdx) ? topicSections[topicSectionIdx].start : 1 }
+    private var simanEnd:   Int { topicSections.indices.contains(topicSectionIdx) ? topicSections[topicSectionIdx].end   : (turBooks.indices.contains(vm.turSection) ? turBooks[vm.turSection].simanim : 1) }
+
+    @ViewBuilder
+    private func sectionPicker(label: String) -> some View {
+        let sections = topicSections   // ← snapshot; avoids out-of-bounds crash on book change
+        WheelColumn(fg: fg, label: label) {
+            Picker("", selection: $topicSectionIdx) {
+                ForEach(sections.indices, id: \.self) { i in
+                    if saHebrewMode {
+                        Text((SASimanNames.sectionHebName(bookIndex: vm.turSection, sectionIdx: i)
+                             ?? sections[i].name).strippingNikud)
+                            .foregroundStyle(i == topicSectionIdx ? fg : fg.opacity(0.35))
+                            .tag(i)
+                    } else {
+                        let raw = sections[i].name
+                        let display = raw.hasPrefix("Laws of ") ? String(raw.dropFirst(8)) : raw
+                        Text(display)
+                            .foregroundStyle(i == topicSectionIdx ? fg : fg.opacity(0.35))
+                            .tag(i)
+                    }
+                }
+            }
+            .pickerStyle(.wheel)
+            .frame(height: 110)
+            .id(vm.turSection)
+            .onChange(of: topicSectionIdx) { _, newVal in
+                guard sections.indices.contains(newVal) else { return }
+                vm.turSiman = sections[newVal].start
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func simanPicker(label: String) -> some View {
+        let start = simanStart
+        let end   = max(simanStart, simanEnd)
+        WheelColumn(fg: fg, label: label) {
+            Picker("", selection: $vm.turSiman) {
+                ForEach(start...end, id: \.self) { s in
+                    if saHebrewMode {
+                        let h = SASimanNames.toHebrewNumeral(s)
+                        let name = SASimanNames.simanName(bookIndex: vm.turSection, siman: s)
+                        Text(name.map { "\(h) – \($0)" } ?? h)
+                            .foregroundStyle(s == vm.turSiman ? fg : fg.opacity(0.35))
+                            .tag(s)
+                            .font(.system(size: 14))
+                            .lineLimit(1)
+                    } else {
+                        let enName = SASimanNames.simanNameEn(bookIndex: vm.turSection, siman: s)
+                        Text(enName.map { "\(s) – \($0)" } ?? "\(s)")
+                            .foregroundStyle(s == vm.turSiman ? fg : fg.opacity(0.35))
+                            .tag(s)
+                            .font(.system(size: 13))
+                            .lineLimit(1)
+                    }
+                }
+            }
+            .pickerStyle(.wheel)
+            .frame(height: 110)
+            .id("\(vm.turSection)-\(topicSectionIdx)-\(saHebrewMode)")
+        }
+    }
+
+    // Hebrew names for the four Tur books (same as SA's)
+    private let turBookHebNames = ["אורח חיים", "יורה דעה", "אבן העזר", "חושן משפט"]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // ── Book picker ──
+            // In Hebrew mode, iterate reversed so OH appears on the far right
+            Picker("Book", selection: $vm.turSection) {
+                ForEach(saHebrewMode ? Array(turBooks.indices.reversed()) : Array(turBooks.indices), id: \.self) { i in
+                    Text(saHebrewMode
+                         ? (turBookHebNames[safe: i] ?? turBooks[i].name)
+                         : turBooks[i].name)
+                        .tag(i)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
+            .onChange(of: vm.turSection) { _, _ in
+                topicSectionIdx = 0
+                vm.turSiman = 1
+            }
+
+            Spacer().frame(height: 12)   // breathing room before column labels
+
+            // ── Section + Siman wheels ──
+            // Hebrew RTL: Siman on LEFT, Section on RIGHT (RTL reading order)
+            // English LTR: Section on LEFT, Siman on RIGHT
+            if saHebrewMode {
+                HStack(spacing: 0) {
+                    simanPicker(label: "סימן")
+                    sectionPicker(label: "נושא")
+                }
+            } else {
+                HStack(spacing: 0) {
+                    sectionPicker(label: "Section")
+                    simanPicker(label: "Siman")
+                }
+            }
+        }
+        .onAppear {
+            topicSectionIdx = topicSections.firstIndex(where: {
+                vm.turSiman >= $0.start && vm.turSiman <= $0.end
             }) ?? 0
         }
     }

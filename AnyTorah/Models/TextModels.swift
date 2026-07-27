@@ -4,7 +4,7 @@ import SwiftUI
 // MARK: - Category
 
 enum TextCategory: String, CaseIterable, Identifiable, Codable {
-    case tanakh, mishnah, talmud, rambam, shulchanArukh, midrash
+    case tanakh, mishnah, talmud, rambam, tur, shulchanArukh, midrash
 
     var id: String { rawValue }
 
@@ -14,6 +14,7 @@ enum TextCategory: String, CaseIterable, Identifiable, Codable {
         case .mishnah:       return "Mishnah"
         case .talmud:        return "Talmud"
         case .rambam:        return "Rambam"
+        case .tur:           return "Tur"
         case .shulchanArukh: return "Shulkhan Arukh"
         case .midrash:       return "Midrash"
         }
@@ -25,6 +26,7 @@ enum TextCategory: String, CaseIterable, Identifiable, Codable {
         case .mishnah:       return "משנה"
         case .talmud:        return "תלמוד"
         case .rambam:        return "רמב״ם"
+        case .tur:           return "טור"
         case .shulchanArukh: return "שולחן ערוך"
         case .midrash:       return "מדרש"
         }
@@ -36,6 +38,7 @@ enum TextCategory: String, CaseIterable, Identifiable, Codable {
         case .mishnah:       return "books.vertical"
         case .talmud:        return "scroll"
         case .rambam:        return "star.circle"
+        case .tur:           return "list.bullet.rectangle"
         case .shulchanArukh: return "list.bullet.rectangle"
         case .midrash:       return "text.book.closed"
         }
@@ -49,6 +52,7 @@ enum TextCategory: String, CaseIterable, Identifiable, Codable {
         case .mishnah:       return [.rambamMishnah, .bartenura, .tosafotYomTov]
         case .talmud:        return [.rashiTalmud, .tosafot]
         case .rambam:        return [.maggidMishnah, .kesefMishnah]
+        case .tur:           return [.beitYosef, .bach, .darkheiMoshe, .prishaDrisha]
         case .shulchanArukh: return [.mishnahBerurah, .biurHalakha]
         case .midrash:       return []
         }
@@ -61,6 +65,7 @@ enum TextCategory: String, CaseIterable, Identifiable, Codable {
         case .mishnah:       return .mishnah
         case .talmud:        return .none
         case .rambam:        return .halakha
+        case .tur:           return .sif
         case .shulchanArukh: return .sif
         case .midrash:       return .none
         }
@@ -514,6 +519,11 @@ enum CommentaryType: String, CaseIterable, Identifiable {
     case netivotHaMishpat = "netivotHaMishpat"
     case urimVTumim       = "urimVTumim"
     case hagahotRAE       = "hagahotRAE"
+    // Tur
+    case beitYosef        = "beitYosef"
+    case bach             = "bach"
+    case darkheiMoshe     = "darkheiMoshe"
+    case prishaDrisha     = "prishaDrisha"
 
     var id: String { rawValue }
 
@@ -610,6 +620,9 @@ enum CommentaryType: String, CaseIterable, Identifiable {
             return []
         }
     }
+
+    /// Full pool of Tur commentators — flat, no per-section variation (unlike SA).
+    static let turPool: [CommentaryType] = [.beitYosef, .bach, .darkheiMoshe, .prishaDrisha]
 
     /// Returns the Sefaria `data-commentator` attribute value used in SA text for this
     /// commentary's sequential inline markers in the given section (0=OC, 1=YD, 2=EH, 3=CM).
@@ -782,6 +795,10 @@ enum CommentaryType: String, CaseIterable, Identifiable {
         case .netivotHaMishpat:         return "Netivot HaMishpat"
         case .urimVTumim:               return "Urim v'Tumim"
         case .hagahotRAE:               return "Hagahot R. Akiva Eiger"
+        case .beitYosef:                return "Beit Yosef"
+        case .bach:                     return "Bach"
+        case .darkheiMoshe:             return "Darkhei Moshe"
+        case .prishaDrisha:             return "Prisha + Drisha"
         }
     }
 
@@ -911,6 +928,10 @@ enum CommentaryType: String, CaseIterable, Identifiable {
         case .netivotHaMishpat:       return "נתיבות המשפט"
         case .urimVTumim:             return "אורים ותומים"
         case .hagahotRAE:             return "הגהות ר׳ עקיבא איגר"
+        case .beitYosef:              return "בית יוסף"
+        case .bach:                   return "ב״ח"
+        case .darkheiMoshe:           return "דרכי משה"
+        case .prishaDrisha:           return "פרישה + דרישה"
         }
     }
 
@@ -1054,7 +1075,21 @@ enum CommentaryType: String, CaseIterable, Identifiable {
             return "Netivot HaMishpat, Hidushim on Shulchan Arukh, Choshen Mishpat \(extractChapter(mainRef))"
         case .urimVTumim:       return "Urim VeTumim, Urim \(extractChapter(mainRef))"
         case .hagahotRAE:       return "Rabbi Akiva Eiger on \(mainRef)"
+        case .beitYosef:        return turCommentaryRef(title: "Beit Yosef", mainRef: mainRef)
+        case .bach:             return turCommentaryRef(title: "Bach", mainRef: mainRef)
+        case .darkheiMoshe:     return turCommentaryRef(title: "Darkhei Moshe", mainRef: mainRef)
+        // Single-ref fallback; sefariaRefVersions returns the real Prisha+Drisha combo.
+        case .prishaDrisha:     return turCommentaryRef(title: "Prisha", mainRef: mainRef)
         }
+    }
+
+    /// Tur's commentaries are each their own top-level Sefaria title (not "on Tur, ...") — e.g.
+    /// "Beit Yosef, Orach Chayim 1", not "Beit Yosef on Tur, Orach Chayim 1". mainRef is built as
+    /// "Tur, Orach Chayim 1" (see `ref()` in SefariaTextClient.swift); this swaps the "Tur, "
+    /// prefix for the commentary's own title.
+    private func turCommentaryRef(title: String, mainRef: String) -> String {
+        let rest = mainRef.hasPrefix("Tur, ") ? String(mainRef.dropFirst("Tur, ".count)) : mainRef
+        return "\(title), \(rest)"
     }
 
     private func mishnahBerurahRef(from mainRef: String) -> String {
@@ -1480,7 +1515,8 @@ enum CommentaryType: String, CaseIterable, Identifiable {
     var usesBookDivider: Bool {
         switch self {
         case .haamekDavar, .yachin, .maharsha, .rAbbiAkivaEiger,
-             .priMegadimOC, .priMegadimYD, .keretiUPeleti, .netivotHaMishpat, .urimVTumim:
+             .priMegadimOC, .priMegadimYD, .keretiUPeleti, .netivotHaMishpat, .urimVTumim,
+             .prishaDrisha:
             return true
         default:
             return false
@@ -1504,8 +1540,18 @@ enum CommentaryType: String, CaseIterable, Identifiable {
         case .keretiUPeleti:    return keretiUPeletiRefs(forMainRef: mainRef)
         case .netivotHaMishpat: return netivotHaMishpatRefs(forMainRef: mainRef)
         case .urimVTumim:       return urimVTumimRefs(forMainRef: mainRef)
+        case .prishaDrisha:     return prishaDrishaRefs(forMainRef: mainRef)
         default:                return [(sefariaRef(forMainRef: mainRef), nil)]
         }
+    }
+
+    /// Prisha and Drisha are a matched pair (both by R. Yehoshua Falk) traditionally printed
+    /// together — combined into one tab like Yachin+Boaz, Prisha first.
+    private func prishaDrishaRefs(forMainRef mainRef: String) -> [(ref: String, label: String?)] {
+        [
+            (turCommentaryRef(title: "Prisha", mainRef: mainRef), "פרישה"),
+            (turCommentaryRef(title: "Drisha", mainRef: mainRef), "דרישה"),
+        ]
     }
 
     private func haamekDavarRefs(forMainRef mainRef: String) -> [(ref: String, label: String?)] {

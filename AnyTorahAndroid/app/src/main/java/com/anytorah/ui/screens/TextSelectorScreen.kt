@@ -141,6 +141,7 @@ fun TextSelectorScreen(
                 TextCategory.MISHNAH -> MishnahWheels(vm = vm, yomiResults = yomiResults, isLoadingYomi = isLoadingYomi)
                 TextCategory.TALMUD -> TalmudWheels(vm = vm, yomiResults = yomiResults, isLoadingYomi = isLoadingYomi)
                 TextCategory.RAMBAM -> RambamWheels(vm = vm, yomiResults = yomiResults, isLoadingYomi = isLoadingYomi)
+                TextCategory.TUR -> TurWheels(vm = vm)
                 TextCategory.SHULCHAN_ARUKH -> SAWheels(vm = vm)
                 TextCategory.MIDRASH -> MidrashWheels(vm = vm)
             }
@@ -730,6 +731,148 @@ private fun SAWheels(vm: TextReaderViewModel) {
                 selectedIndex = (vm.saSiman - simanStart).coerceIn(0, simanLabels.size - 1),
                 visibleItems = 3,
                 onIndexSelected = { idx -> vm.saSiman = simanStart + idx }
+            )
+        }
+    }
+
+    Row(modifier = Modifier.fillMaxWidth()) {
+        if (vm.saHebrewMode) {
+            // RTL: Siman LEFT, Section RIGHT
+            simanColumn(Modifier.weight(1f))
+            sectionColumn(Modifier.weight(1f))
+        } else {
+            // LTR: Section LEFT, Siman RIGHT
+            sectionColumn(Modifier.weight(1f))
+            simanColumn(Modifier.weight(1f))
+        }
+    }
+}
+
+/**
+ * Tur's picker — a near-verbatim copy of [SAWheels] reading [TextCatalog.turSections] /
+ * [TextReaderViewModel.turSection] / [TextReaderViewModel.turSiman] instead of the SA fields.
+ * Reuses [SASimanNames]'s topic-section/name tables (same 4 sections, same siman topic names),
+ * but clamps Choshen Mishpat (Tur section index 3) to Tur's real max of 426 simanim — one less
+ * than SA's own Choshen Mishpat (427) that SASimanNames' tables assume.
+ */
+@Composable
+private fun TurWheels(vm: TextReaderViewModel) {
+    val colors = LocalAnyTorahColors.current
+    val turBooks = TextCatalog.turSections
+
+    // Topic sections for the current book (same SA topic tables — Tur shares the same 4 sedarim)
+    val topicSections = when (vm.turSection) {
+        0 -> SASimanNames.sectionsOH
+        1 -> SASimanNames.sectionsYD
+        2 -> SASimanNames.sectionsEH
+        3 -> SASimanNames.sectionsHM
+        else -> SASimanNames.sectionsOH
+    }
+
+    // Tur's real max simanim for the current section — clamps Choshen Mishpat to 426
+    // (Tur's Choshen Mishpat has one fewer siman than SA's own Choshen Mishpat, which has 427).
+    val maxSiman = turBooks.getOrNull(vm.turSection)?.simanim ?: 1
+
+    // Topic section index — resets when book changes; initialises from current siman
+    var topicSectionIdx by remember(vm.turSection) {
+        mutableStateOf(
+            topicSections.indexOfFirst { vm.turSiman >= it.start && vm.turSiman <= it.end }
+                .coerceAtLeast(0)
+        )
+    }
+
+    val currentTopicSection = topicSections.getOrNull(topicSectionIdx) ?: topicSections.firstOrNull()
+    val simanStart = currentTopicSection?.start ?: 1
+    val simanEnd   = minOf(currentTopicSection?.end ?: maxSiman, maxSiman)
+
+    val turBookHebNames = listOf("אורח חיים", "יורה דעה", "אבן העזר", "חושן משפט")
+
+    // ── Book picker — segmented row of buttons ──
+    // In Hebrew mode, iterate reversed so אורח חיים (OH) is on the far right
+    val bookIndices = if (vm.saHebrewMode) turBooks.indices.reversed().toList() else turBooks.indices.toList()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .background(colors.cardBackground, RoundedCornerShape(8.dp)),
+        horizontalArrangement = Arrangement.SpaceEvenly
+    ) {
+        bookIndices.forEach { index ->
+            val book = turBooks[index]
+            val isSelected = vm.turSection == index
+            val displayName = if (vm.saHebrewMode)
+                turBookHebNames.getOrElse(index) { book.name }
+            else
+                book.name
+            androidx.compose.material3.TextButton(
+                onClick = {
+                    if (vm.turSection != index) {
+                        vm.turSection = index
+                        vm.turSiman = 1
+                    }
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = displayName,
+                    color = if (isSelected) colors.editorialColor else colors.appForeground.copy(alpha = 0.5f),
+                    fontSize = 11.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(10.dp))   // breathing room before column labels
+
+    // ── Section + Siman wheels ──
+    // Hebrew RTL: Siman on LEFT, Section on RIGHT (RTL reading order)
+    // English LTR: Section on LEFT, Siman on RIGHT
+    val sectionItems = topicSections.indices.map { i ->
+        if (vm.saHebrewMode)
+            (SASimanNames.sectionHebName(vm.turSection, i) ?: topicSections[i].name).strippingNikud()
+        else {
+            val raw = topicSections[i].name
+            if (raw.startsWith("Laws of ")) raw.removePrefix("Laws of ") else raw
+        }
+    }
+    val simanLabels = (simanStart..simanEnd).map { s ->
+        if (vm.saHebrewMode) {
+            val h = SASimanNames.toHebrewNumeral(s)
+            val name = SASimanNames.simanName(vm.turSection, s)
+            if (name != null) "$h – $name" else h
+        } else {
+            val enName = SASimanNames.simanNameEn(vm.turSection, s)
+            if (enName != null) "$s – $enName" else "$s"
+        }
+    }
+
+    val sectionColumn: @Composable (Modifier) -> Unit = { mod ->
+        Column(modifier = mod) {
+            SelectorLabel(if (vm.saHebrewMode) "נושא" else "Section")
+            WheelPicker(
+                items = sectionItems,
+                selectedIndex = topicSectionIdx,
+                visibleItems = 3,
+                onIndexSelected = { idx ->
+                    topicSectionIdx = idx
+                    val sec = topicSections.getOrNull(idx)
+                    if (sec != null) vm.turSiman = minOf(sec.start, maxSiman)
+                }
+            )
+        }
+    }
+
+    val simanColumn: @Composable (Modifier) -> Unit = { mod ->
+        Column(modifier = mod) {
+            SelectorLabel(if (vm.saHebrewMode) "סימן" else "Siman")
+            WheelPicker(
+                items = simanLabels,
+                selectedIndex = (vm.turSiman - simanStart).coerceIn(0, simanLabels.size - 1),
+                visibleItems = 3,
+                onIndexSelected = { idx -> vm.turSiman = simanStart + idx }
             )
         }
     }

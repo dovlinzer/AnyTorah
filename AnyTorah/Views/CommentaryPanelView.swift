@@ -546,6 +546,13 @@ private struct CommentarySegmentView: View {
         let rfPattern = #"<rf>(.*?)</rf>"#
 
         func bodyText() -> Text {
+            // Tur's Darkhei Moshe reference markers (Beit Yosef's own text, when a mark has been
+            // spliced in) — a plain parenthesized Hebrew numeral inline, not a per-slot bracket
+            // shape like SA's scheme. `<dm>` never appears outside Tur/Beit-Yosef content, so
+            // this check is safe and self-contained — no category plumbing needed here.
+            if htmlWithRlm.contains("<dm>") {
+                return Text(TurParagraphEngine.processedHebrewWithTurMarkers(htmlWithRlm)).font(heFont).foregroundColor(color)
+            }
             guard let regex = try? NSRegularExpression(pattern: rfPattern) else {
                 return Text(SefariaTextClient.processedHebrew(htmlWithRlm)).font(heFont).foregroundColor(color)
             }

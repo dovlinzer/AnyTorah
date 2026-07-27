@@ -89,4 +89,12 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    // Unit tests (pure-logic, no Android framework/instrumentation needed)
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    // Local JVM unit tests run against the Android SDK's org.json *stub* jar, which throws
+    // "not mocked" for every real method — pull in the actual reference implementation so
+    // production code's org.json usage can be exercised from plain JUnit tests too.
+    testImplementation("org.json:json:20240303")
 }

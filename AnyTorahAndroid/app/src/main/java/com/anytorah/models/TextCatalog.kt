@@ -11,6 +11,7 @@ data class TalmudTractate(val id: Int, val name: String, val hebrewName: String,
 data class RambamSefer(val id: Int, val name: String, val hebrewName: String, val works: List<RambamWork>)
 data class RambamWork(val id: Int, val name: String, val hebrewName: String, val sefariaName: String, val chapters: Int)
 data class ShulchanArukhSection(val id: Int, val name: String, val hebrewName: String, val sefariaName: String, val simanim: Int)
+data class TurSection(val id: Int, val name: String, val hebrewName: String, val sefariaName: String, val simanim: Int)
 
 // MARK: - TextCatalog
 
@@ -353,5 +354,14 @@ object TextCatalog {
         ShulchanArukhSection(id = 1, name = "Yoreh Deah",      hebrewName = "יוֹרֶה דֵּעָה",    sefariaName = "Shulchan Arukh, Yoreh De'ah",    simanim = 403),
         ShulchanArukhSection(id = 2, name = "Even HaEzer",     hebrewName = "אֶבֶן הָעֵזֶר",   sefariaName = "Shulchan Arukh, Even HaEzer",    simanim = 178),
         ShulchanArukhSection(id = 3, name = "Choshen Mishpat", hebrewName = "חֹשֶׁן מִשְׁפָּט", sefariaName = "Shulchan Arukh, Choshen Mishpat", simanim = 427),
+    )
+
+    // MARK: Tur
+
+    val turSections = listOf(
+        TurSection(id = 0, name = "Orach Chayim", hebrewName = "אוֹרַח חַיִּים", sefariaName = "Tur, Orach Chayim", simanim = 697),
+        TurSection(id = 1, name = "Yoreh Deah", hebrewName = "יוֹרֶה דֵּעָה", sefariaName = "Tur, Yoreh De'ah", simanim = 403),
+        TurSection(id = 2, name = "Even HaEzer", hebrewName = "אֶבֶן הָעֵזֶר", sefariaName = "Tur, Even HaEzer", simanim = 178),
+        TurSection(id = 3, name = "Choshen Mishpat", hebrewName = "חֹשֶׁן מִשְׁפָּט", sefariaName = "Tur, Choshen Mishpat", simanim = 426),
     )
 }

@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.HistoryEdu
 import androidx.compose.material.icons.filled.LibraryBooks
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -192,10 +193,12 @@ fun HomeScreen(
                 }
             }
 
-            // 2-row (3 + 2) category grid — cards in row 2 match row 1 width (1/3 each)
+            // Category grid, wrapped 3-per-row (grows to fit however many categories exist).
+            // A hardcoded take(3)/drop(3) split here previously assumed exactly 5 categories
+            // fit in row 2 (<=3) — once Tur became the 7th category, row 2 held 4 items at a
+            // fixed 1/3-width each, overflowing the row. Chunking avoids baking in a count.
             val allCategories = TextCategory.values().toList()
-            val row1 = allCategories.take(3)
-            val row2 = allCategories.drop(3)
+            val categoryRows = allCategories.chunked(3)
             val gridSpacing = 8.dp
 
             BoxWithConstraints(
@@ -206,29 +209,21 @@ fun HomeScreen(
                 val cardWidth = (maxWidth - gridSpacing * 2) / 3
 
                 Column(verticalArrangement = Arrangement.spacedBy(gridSpacing)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(gridSpacing)) {
-                        row1.forEach { cat ->
-                            PortraitCategoryCard(
-                                category = cat,
-                                isSelected = cat == activeCategory,
-                                modifier = Modifier.width(cardWidth),
-                                onClick = { selectCategory(cat) }
-                            )
-                        }
-                    }
-                    // Row 2: 2 cards, same card width as row 1, centered
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(gridSpacing)) {
-                            row2.forEach { cat ->
-                                PortraitCategoryCard(
-                                    category = cat,
-                                    isSelected = cat == activeCategory,
-                                    modifier = Modifier.width(cardWidth),
-                                    onClick = { selectCategory(cat) }
-                                )
+                    categoryRows.forEach { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = if (row.size == 3) Arrangement.spacedBy(gridSpacing)
+                                                     else Arrangement.Center
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(gridSpacing)) {
+                                row.forEach { cat ->
+                                    PortraitCategoryCard(
+                                        category = cat,
+                                        isSelected = cat == activeCategory,
+                                        modifier = Modifier.width(cardWidth),
+                                        onClick = { selectCategory(cat) }
+                                    )
+                                }
                             }
                         }
                     }
@@ -360,6 +355,7 @@ private fun categoryIcon(category: TextCategory): ImageVector = when (category) 
     TextCategory.MISHNAH -> Icons.Default.LibraryBooks
     TextCategory.TALMUD -> Icons.Default.AutoStories
     TextCategory.RAMBAM -> Icons.Default.Star
+    TextCategory.TUR -> Icons.Default.MenuBook
     TextCategory.SHULCHAN_ARUKH -> Icons.Default.FormatListBulleted
     TextCategory.MIDRASH -> Icons.Default.HistoryEdu
 }

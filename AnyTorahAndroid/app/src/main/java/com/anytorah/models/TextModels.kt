@@ -9,6 +9,7 @@ enum class TextCategory(val displayName: String, val hebrewName: String) {
     MISHNAH("Mishnah", "משנה"),
     TALMUD("Talmud", "תלמוד"),
     RAMBAM("Rambam", "רמב״ם"),
+    TUR("Tur", "טור"),
     SHULCHAN_ARUKH("Shulkhan Arukh", "שולחן ערוך"),
     MIDRASH("Midrash", "מדרש");
 
@@ -17,6 +18,7 @@ enum class TextCategory(val displayName: String, val hebrewName: String) {
         MISHNAH -> SegmentLabelStyle.MISHNAH
         TALMUD -> SegmentLabelStyle.NONE
         RAMBAM -> SegmentLabelStyle.HALAKHA
+        TUR -> SegmentLabelStyle.SIF
         SHULCHAN_ARUKH -> SegmentLabelStyle.SIF
         MIDRASH -> SegmentLabelStyle.NONE
     }
@@ -403,7 +405,12 @@ enum class CommentaryType(val id: String, val displayName: String) {
     KTZOT_HA_CHOSHEN("ktzotHaChoshen", "Ktzot HaChoshen"),
     NETIVOT_HA_MISHPAT("netivotHaMishpat", "Netivot HaMishpat"),
     URIM_V_TUMIM("urimVTumim", "Urim v'Tumim"),
-    HAGAHOT_RAE("hagahotRAE", "Hagahot R. Akiva Eiger");
+    HAGAHOT_RAE("hagahotRAE", "Hagahot R. Akiva Eiger"),
+    // Tur
+    BEIT_YOSEF("beitYosef", "Beit Yosef"),
+    BACH("bach", "Bach"),
+    DARKHEI_MOSHE("darkheiMoshe", "Darkhei Moshe"),
+    PRISHA_DRISHA("prishaDrisha", "Prisha + Drisha");
 
     val hebrewDisplayName: String get() = when (this) {
         // Tanakh — Torah core
@@ -540,6 +547,11 @@ enum class CommentaryType(val id: String, val displayName: String) {
         NETIVOT_HA_MISHPAT   -> "נתיבות המשפט"
         URIM_V_TUMIM         -> "אורים ותומים"
         HAGAHOT_RAE          -> "הגהות ר׳ עקיבא איגר"
+        // Tur
+        BEIT_YOSEF           -> "בית יוסף"
+        BACH                 -> "ב״ח"
+        DARKHEI_MOSHE        -> "דרכי משה"
+        PRISHA_DRISHA        -> "פרישה + דרישה"
     }
 
     companion object {
@@ -624,6 +636,9 @@ enum class CommentaryType(val id: String, val displayName: String) {
             )
             else -> emptyList()
         }
+
+        /** Fixed commentary pool for Tur — no swap picker, always these 4 tabs. */
+        val turPool: List<CommentaryType> = listOf(BEIT_YOSEF, BACH, DARKHEI_MOSHE, PRISHA_DRISHA)
     }
 
     /**
@@ -809,7 +824,23 @@ enum class CommentaryType(val id: String, val displayName: String) {
             NETIVOT_HA_MISHPAT -> "Netivot HaMishpat, Hidushim on Shulchan Arukh, Choshen Mishpat $chapter"
             URIM_V_TUMIM -> "Urim VeTumim, Urim $chapter"
             HAGAHOT_RAE -> "Rabbi Akiva Eiger on $mainRef"
+            // Tur — each commentary is its own top-level Sefaria title, built by stripping
+            // the "Tur, " prefix off the main ref and prepending the commentary's own title.
+            BEIT_YOSEF -> turCommentaryRef("Beit Yosef", mainRef)
+            BACH -> turCommentaryRef("Bach", mainRef)
+            DARKHEI_MOSHE -> turCommentaryRef("Darkhei Moshe", mainRef)
+            // Fallback single-ref form (not actually used — sefariaRefVersions dispatches
+            // Prisha+Drisha to prishaDrishaRefs instead), kept for when-exhaustiveness.
+            PRISHA_DRISHA -> turCommentaryRef("Prisha", mainRef)
         }
+    }
+
+    /** Builds a Tur commentary's Sefaria ref by stripping the "Tur, " prefix off the main
+     *  ref and prepending the commentary's own top-level title, e.g. mainRef
+     *  "Tur, Orach Chayim 1" + title "Beit Yosef" -> "Beit Yosef, Orach Chayim 1". */
+    private fun turCommentaryRef(title: String, mainRef: String): String {
+        val rest = mainRef.removePrefix("Tur, ")
+        return "$title, $rest"
     }
 
     private fun meshechChokhmahRef(mainRef: String): String {
@@ -1068,7 +1099,8 @@ enum class CommentaryType(val id: String, val displayName: String) {
      */
     val usesBookDivider: Boolean get() = when (this) {
         HAAMEK_DAVAR, YACHIN, MAHARSHA, R_AKIVA_EIGER,
-        PRI_MEGADIM_OC, PRI_MEGADIM_YD, KERETI_U_PELETI, NETIVOT_HA_MISHPAT, URIM_V_TUMIM -> true
+        PRI_MEGADIM_OC, PRI_MEGADIM_YD, KERETI_U_PELETI, NETIVOT_HA_MISHPAT, URIM_V_TUMIM,
+        PRISHA_DRISHA -> true
         else -> false
     }
 
@@ -1089,6 +1121,7 @@ enum class CommentaryType(val id: String, val displayName: String) {
         KERETI_U_PELETI   -> keretiUPeletiRefs(mainRef)
         NETIVOT_HA_MISHPAT -> netivotHaMishpatRefs(mainRef)
         URIM_V_TUMIM      -> urimVTumimRefs(mainRef)
+        PRISHA_DRISHA     -> prishaDrishaRefs(mainRef)
         else              -> listOf(Pair(sefariaRef(mainRef), null))
     }
 
@@ -1145,6 +1178,11 @@ enum class CommentaryType(val id: String, val displayName: String) {
     private fun yachinBoazRefs(mainRef: String): List<Pair<String, String?>> = listOf(
         Pair("Yachin on $mainRef", "Yachin"),
         Pair("Boaz on $mainRef",   "Boaz"),
+    )
+
+    private fun prishaDrishaRefs(mainRef: String): List<Pair<String, String?>> = listOf(
+        Pair(turCommentaryRef("Prisha", mainRef), "פרישה"),
+        Pair(turCommentaryRef("Drisha", mainRef), "דרישה"),
     )
 
     private fun maharshaRefs(mainRef: String): List<Pair<String, String?>> {

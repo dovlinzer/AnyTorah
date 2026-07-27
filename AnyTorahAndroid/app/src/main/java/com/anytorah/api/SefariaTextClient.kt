@@ -1,5 +1,6 @@
 package com.anytorah.api
 
+import com.anytorah.models.CommentaryEntry
 import com.anytorah.models.CommentaryType
 import com.anytorah.models.MidrashWork
 import com.anytorah.models.MishnahTractate
@@ -394,6 +395,11 @@ object SefariaTextClient {
                     ?: TextCatalog.allRambamWorks[0]
                 "${work.sefariaName} $chapterOrDaf"
             }
+            TextCategory.TUR -> {
+                val section = TextCatalog.turSections.find { it.id == bookOrTractateIndex }
+                    ?: TextCatalog.turSections[0]
+                "${section.sefariaName} $chapterOrDaf"
+            }
             TextCategory.SHULCHAN_ARUKH -> {
                 val section = TextCatalog.shulchanArukhSections.find { it.id == bookOrTractateIndex }
                     ?: TextCatalog.shulchanArukhSections[0]
@@ -467,19 +473,41 @@ object SefariaTextClient {
         val isSA = category == TextCategory.SHULCHAN_ARUKH
 
         if (isSA) {
+            // Sefaria bakes each siman's printed title (e.g. "הלכות ציצית ועטיפתו. ובו יז
+            // סעיפים:") into the start of seif 1's Hebrew as a <b>...</b> block, with no
+            // parallel sentence in the English translation — confirmed directly against the
+            // API. Split it into its own unlabeled header segment (no seif number — it isn't
+            // one) rather than running it together with seif 1's actual text and commentary
+            // markers.
             val sharedCounters = mutableMapOf<String, Int>()
             val segments = mutableListOf<TextSegment>()
             for (i in 0 until count) {
                 val label = segmentLabel(labelStyle, i + 1)
                 var heText = if (i < he.size) he[i] else ""
                 val enText = if (i < en.size) en[i] else ""
+                if (i == 0) {
+                    val split = TurParagraphEngine.splitSimanHeader(heText)
+                    if (split != null) {
+                        segments.add(TextSegment.content(index = segments.size, he = split.header, en = "", label = null))
+                        heText = split.rest
+                    }
+                }
                 heText = processCommentaryMarkers(
                     heText, section = bookOrTractateIndex,
                     selectedCommentaries = selectedCommentaries,
                     counters = sharedCounters)
-                segments.add(TextSegment.content(index = i, he = heText, en = enText, label = label))
+                segments.add(TextSegment.content(index = segments.size, he = heText, en = enText, label = label))
             }
             return segments
+        }
+
+        if (category == TextCategory.TUR) {
+            val engineSegments = TurParagraphEngine.buildTurSegments(he, en) {
+                fetchTurCommentaryEntries(CommentaryType.BEIT_YOSEF, r)
+            }
+            return engineSegments.map {
+                TextSegment.content(index = it.index, he = it.he, en = it.en, label = it.label)
+            }
         }
 
         return (0 until count).map { i ->
@@ -488,6 +516,38 @@ object SefariaTextClient {
             val enText = if (i < en.size) en[i] else ""
             TextSegment.content(index = i, he = heText, en = enText, label = label)
         }
+    }
+
+    /**
+     * Fetches a Tur commentary's entries for `mainRef`, applying the blanket `:1-500` depth-3
+     * range fix (all 4 Tur commentary tabs need it, unlike SA's single-commentator Shakh
+     * exception — see [com.anytorah.viewmodels.TextReaderViewModel.loadCommentary]) and walking
+     * [CommentaryType.sefariaRefVersions] the same way the general commentary-loading path does,
+     * so Prisha+Drisha's book-divider entry comes through correctly here too. Used both by
+     * [fetchChapter]'s Tur branch (always needs Beit Yosef, regardless of which tab is open) and
+     * by [TurParagraphEngine]'s own internal fetches (Beit Yosef for paragraph-splitting,
+     * Darkhei Moshe for the Beit-Yosef-anchored marker fallback).
+     */
+    suspend fun fetchTurCommentaryEntries(type: CommentaryType, mainRef: String): List<CommentaryEntry> {
+        val rangedRef = "$mainRef:1-500"
+        val versions = type.sefariaRefVersions(rangedRef)
+        val entries = mutableListOf<CommentaryEntry>()
+        var seqIdx = 0
+        for ((versionRef, label) in versions) {
+            if (label != null) {
+                entries.add(if (type.usesBookDivider) CommentaryEntry.BookDivider(label) else CommentaryEntry.RecensionHeader(label))
+            }
+            val (hSegs, eSegs, _) = runCatching { fetchBothAligned(versionRef) }
+                .getOrElse { Triple(emptyList(), emptyList(), emptyList()) }
+            val count = maxOf(hSegs.size, eSegs.size)
+            for (i in 0 until count) {
+                val h = hSegs.getOrElse(i) { "" }
+                val e = eSegs.getOrElse(i) { "" }
+                if (h.isBlank() && e.isBlank()) continue
+                entries.add(CommentaryEntry.Text(index = seqIdx++, he = h, en = e))
+            }
+        }
+        return entries
     }
 
     // MARK: - Ra'avad Hasagot fetch

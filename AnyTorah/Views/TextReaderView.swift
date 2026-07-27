@@ -1008,6 +1008,8 @@ struct TextReaderView: View {
     private var chapterPickerSheet: some View {
         if vm.category == .shulchanArukh {
             saSimanPickerSheet
+        } else if vm.category == .tur {
+            turSimanPickerSheet
         } else {
             regularChapterPickerSheet
         }
@@ -1082,6 +1084,15 @@ struct TextReaderView: View {
                 }
                 ForEach(1...max(1, count), id: \.self) { ch in
                     Text(saHebrewMode ? SASimanNames.toHebrewNumeral(ch) : "\(ch)").tag(ch)
+                }
+            }
+            .pickerStyle(.wheel)
+        case .tur:
+            let total = vm.turSection < TextCatalog.turSections.count
+                ? TextCatalog.turSections[vm.turSection].simanim : 1
+            Picker("", selection: $vm.turSiman) {
+                ForEach(1...max(1, total), id: \.self) { s in
+                    Text(saHebrewMode ? SASimanNames.toHebrewNumeral(s) : "\(s)").tag(s)
                 }
             }
             .pickerStyle(.wheel)
@@ -1197,6 +1208,107 @@ struct TextReaderView: View {
         case 3: return SASimanNames.sectionsHM
         default: return []
         }
+    }
+
+    // MARK: - Tur siman picker (full list with names + topic-section grouping)
+
+    /// Same topic-section data as SA (`SASimanNames` isn't SA-specific by signature — it just
+    /// takes a raw bookIndex), but Tur's Choshen Mishpat tops out at 426, one LESS than SA's own
+    /// 427 — a real, confirmed discrepancy. Clamps the last topic section's `end` (and drops any
+    /// section that would start beyond 426 entirely, though none currently do) so the Tur CM
+    /// picker never offers siman 427.
+    private func turTopicSections(for bookIndex: Int) -> [SATopicSection] {
+        let sections = saTopicSections(for: bookIndex)
+        guard bookIndex == 3 else { return sections }
+        let maxSiman = TextCatalog.turSections[3].simanim  // 426
+        return sections.compactMap { sec in
+            guard sec.start <= maxSiman else { return nil }
+            return sec.end > maxSiman
+                ? SATopicSection(name: sec.name, start: sec.start, end: maxSiman)
+                : sec
+        }
+    }
+
+    @ViewBuilder
+    private var turSimanPickerSheet: some View {
+        ScrollViewReader { proxy in
+            List {
+                ForEach(TextCatalog.turSections.indices, id: \.self) { bookIdx in
+                    let book = TextCatalog.turSections[bookIdx]
+                    let sections = turTopicSections(for: bookIdx)
+                    Section {
+                        ForEach(sections.indices, id: \.self) { sIdx in
+                            let sec = sections[sIdx]
+                            // Topic sub-section header row
+                            let topicName = saHebrewMode
+                                ? (SASimanNames.sectionHebName(bookIndex: bookIdx, sectionIdx: sIdx) ?? sec.name)
+                                : sec.name
+                            Text(topicName)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(appFg.opacity(0.4))
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 2, trailing: 16))
+                                .listRowSeparator(.hidden)
+                            // Siman rows for this topic section
+                            ForEach(sec.start...max(sec.start, sec.end), id: \.self) { siman in
+                                let isSelected = vm.turSection == bookIdx && vm.turSiman == siman
+                                let numStr = saHebrewMode
+                                    ? SASimanNames.toHebrewNumeral(siman)
+                                    : "§\(siman)"
+                                let name = saHebrewMode
+                                    ? SASimanNames.simanName(bookIndex: bookIdx, siman: siman)
+                                    : SASimanNames.simanNameEn(bookIndex: bookIdx, siman: siman)
+                                Button {
+                                    vm.turSection = bookIdx
+                                    vm.turSiman = siman
+                                    activeSheet = nil
+                                    Task { await vm.load() }
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Text(numStr)
+                                            .foregroundStyle(appFg.opacity(0.5))
+                                            .font(.caption.monospacedDigit())
+                                            .frame(minWidth: 34, alignment: .trailing)
+                                        Text(name ?? (saHebrewMode ? "סימן \(siman)" : "Siman \(siman)"))
+                                            .foregroundStyle(appFg)
+                                            .font(.subheadline)
+                                        Spacer()
+                                        if isSelected {
+                                            Image(systemName: "checkmark")
+                                                .foregroundStyle(appFg)
+                                                .font(.caption.weight(.semibold))
+                                        }
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .listRowBackground(Color.clear)
+                                .listRowSeparatorTint(appFg.opacity(0.08))
+                                .id("tursiman_\(bookIdx)_\(siman)")
+                            }
+                        }
+                    } header: {
+                        Text(saHebrewMode ? book.hebrewName.strippingNikud : book.name)
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(appFg)
+                            .textCase(nil)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(appBg)
+            .environment(\.layoutDirection, saHebrewMode ? .rightToLeft : .leftToRight)
+            .onAppear {
+                let scrollId = "tursiman_\(vm.turSection)_\(vm.turSiman)"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    proxy.scrollTo(scrollId, anchor: .center)
+                }
+            }
+        }
+        .background(appBg)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
     }
 
     // MARK: - Book picker sheet
@@ -1322,6 +1434,28 @@ struct TextReaderView: View {
                         }
                     }
 
+                case .tur:
+                    ForEach(TextCatalog.turSections.indices, id: \.self) { idx in
+                        let section = TextCatalog.turSections[idx]
+                        let isSelected = vm.turSection == idx
+                        Button {
+                            vm.turSection = idx
+                            vm.turSiman = 1
+                            activeSheet = nil
+                            Task { await vm.load() }
+                        } label: {
+                            HStack {
+                                Text(saHebrewMode ? section.hebrewName.strippingNikud : section.name).foregroundStyle(appFg)
+                                Spacer()
+                                if isSelected { Image(systemName: "checkmark").foregroundStyle(appFg).font(.caption.weight(.semibold)) }
+                            }.contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparatorTint(appFg.opacity(0.12))
+                        .id("book_\(idx)")
+                    }
+
                 case .shulchanArukh:
                     ForEach(TextCatalog.shulchanArukhSections.indices, id: \.self) { idx in
                         let section = TextCatalog.shulchanArukhSections[idx]
@@ -1378,6 +1512,7 @@ struct TextReaderView: View {
                     case .mishnah:       return "book_\(vm.mishnahSederIndex)_\(vm.mishnahTractateIndexInSeder)"
                     case .talmud:        return "book_\(vm.talmudSederIndex)_\(vm.talmudTractateIndexInSeder)"
                     case .rambam:        return "book_\(vm.rambamSeferIndex)_\(vm.rambamWorkIndexInSefer)"
+                    case .tur:           return "book_\(vm.turSection)"
                     case .shulchanArukh: return "book_\(vm.saSection)"
                     case .midrash:
                         let works = MidrashWork.works(for: vm.midrashSubcategory)

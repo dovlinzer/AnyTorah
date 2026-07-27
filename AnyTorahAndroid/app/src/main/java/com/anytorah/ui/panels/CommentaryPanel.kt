@@ -107,7 +107,11 @@ fun CommentaryPanel(
                     Tab(
                         selected = idx == selectedIdx,
                         onClick = {
-                            if (idx == selectedIdx && vm.hasExpandedCommentaryPool) {
+                            // Tur has a fixed 4-tab pool with no swap picker — tapping the
+                            // already-active tab must be a no-op. (Unlike every other category,
+                            // this doesn't fall out automatically from pool-size coincidence
+                            // alone, so it's gated explicitly here.)
+                            if (idx == selectedIdx && vm.category != TextCategory.TUR && vm.hasExpandedCommentaryPool) {
                                 // Tap active tab → open swap picker for this slot
                                 replacingSlotIndex = idx
                             } else if (vm.selectedCommentary != commentary) {

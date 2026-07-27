@@ -38,6 +38,7 @@ import com.anytorah.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.anytorah.api.SefariaTextClient
+import com.anytorah.api.TurParagraphEngine
 import com.anytorah.models.TextDisplayMode
 import com.anytorah.models.TextSegment
 import androidx.compose.ui.platform.LocalConfiguration
@@ -326,6 +327,22 @@ fun HebrewText(html: String, fontSize: Float = 18f, showTrop: Boolean = false,
             text = annotated,
             color = colors.appForeground,
             lineHeight = (fontSize * 1.7f).sp,
+            style = TextStyle(textDirection = TextDirection.Rtl),
+            modifier = Modifier.fillMaxWidth()
+        )
+    } else if (html.contains("<dm>")) {
+        // Tur's Darkhei Moshe reference markers (main text and, when spliced in, Beit Yosef's
+        // own text) — a plain parenthesized Hebrew numeral inline, not a per-slot bracket shape
+        // like SA's scheme, since only one commentator ever carries this kind of marker. `<dm>`
+        // never appears outside Tur/Beit-Yosef content, so this check is safe and self-contained
+        // — no category plumbing needed at any HebrewText call site.
+        val clean = TurParagraphEngine.processedHebrewWithTurMarkers(html)
+        Text(
+            text = clean,
+            color = colors.appForeground,
+            fontSize = fontSize.sp,
+            lineHeight = (fontSize * 1.7f).sp,
+            fontFamily = fontFamily,
             style = TextStyle(textDirection = TextDirection.Rtl),
             modifier = Modifier.fillMaxWidth()
         )

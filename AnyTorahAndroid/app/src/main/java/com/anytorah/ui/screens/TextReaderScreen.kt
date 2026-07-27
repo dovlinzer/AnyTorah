@@ -467,9 +467,12 @@ fun TextReaderScreen(
 
 @Composable
 private fun ChapterPickerSheet(vm: TextReaderViewModel, onDone: () -> Unit) {
-    // SA gets its own full-list picker
+    // SA and Tur get their own full-list pickers
     if (vm.category == TextCategory.SHULCHAN_ARUKH) {
         SASimanPickerContent(vm = vm, onSelect = onDone)
+        return
+    } else if (vm.category == TextCategory.TUR) {
+        TurSimanPickerContent(vm = vm, onSelect = onDone)
         return
     }
 
@@ -647,6 +650,98 @@ private fun saBookSections(bookIdx: Int): List<SATopicSection> = when (bookIdx) 
     else -> emptyList()
 }
 
+/**
+ * Tur's own siman picker — a close copy of [SASimanPickerContent] reading [TextCatalog.turSections]
+ * / [TextReaderViewModel.turSection] / [TextReaderViewModel.turSiman] instead of the SA fields.
+ * Reuses [SASimanNames]'s topic-section/name lookups (they take a raw bookIndex, not SA-specific),
+ * but clamps Choshen Mishpat (Tur section index 3) to Tur's real max of 426 simanim — one less
+ * than SA's own Choshen Mishpat (427) that SASimanNames' section/name tables assume. Siman 427
+ * must never appear or be selectable for Tur's Choshen Mishpat.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TurSimanPickerContent(vm: TextReaderViewModel, onSelect: () -> Unit) {
+    val colors = LocalAnyTorahColors.current
+    val useHe = vm.saHebrewMode
+    CompositionLocalProvider(
+        LocalLayoutDirection provides if (useHe) LayoutDirection.Rtl else LayoutDirection.Ltr
+    ) {
+    LazyColumn(modifier = Modifier.fillMaxWidth()) {
+        for (bookIdx in 0..3) {
+            val book = TextCatalog.turSections.getOrNull(bookIdx) ?: continue
+            val maxSiman = book.simanim // Tur's real max — clamps Choshen Mishpat to 426
+            val sections = saBookSections(bookIdx)
+            stickyHeader {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(colors.cardBackground)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        text = if (useHe) book.hebrewName.strippingNikud() else book.name,
+                        color = colors.appForeground,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            for ((sIdx, sec) in sections.withIndex()) {
+                if (sec.start > maxSiman) continue // section entirely beyond Tur's range (CM only)
+                val sectionEnd = minOf(sec.end, maxSiman)
+                item {
+                    Text(
+                        text = if (useHe) SASimanNames.sectionHebName(bookIdx, sIdx) ?: sec.name else sec.name,
+                        color = colors.appForeground.copy(alpha = 0.4f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(start = 20.dp, top = 6.dp, bottom = 2.dp, end = 16.dp)
+                    )
+                }
+                for (siman in sec.start..sectionEnd) {
+                    item {
+                        val isSelected = vm.turSection == bookIdx && vm.turSiman == siman
+                        val numStr = if (useHe) SASimanNames.toHebrewNumeral(siman) else "§$siman"
+                        val name = if (useHe) SASimanNames.simanName(bookIdx, siman) else SASimanNames.simanNameEn(bookIdx, siman)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { vm.turSection = bookIdx; vm.turSiman = siman; onSelect() }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = numStr,
+                                color = colors.appForeground.copy(alpha = 0.5f),
+                                fontSize = 12.sp,
+                                modifier = Modifier.width(36.dp),
+                                textAlign = TextAlign.End
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = name ?: if (useHe) "סימן $siman" else "Siman $siman",
+                                color = colors.appForeground,
+                                fontSize = 14.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (isSelected) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = colors.appForeground,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                        HorizontalDivider(color = colors.dividerColor)
+                    }
+                }
+            }
+        }
+    }
+    } // end CompositionLocalProvider
+}
+
 private fun String.strippingNikud(): String = filter { c -> c.code < 0x0591 || c.code > 0x05C7 }
 
 @Composable
@@ -705,6 +800,16 @@ private fun BookPickerSheet(vm: TextReaderViewModel, onSelect: () -> Unit) {
                         )
                         HorizontalDivider(color = colors.dividerColor)
                     }
+                }
+            }
+            TextCategory.TUR -> {
+                itemsIndexed(TextCatalog.turSections) { idx, section ->
+                    BookPickerRow(
+                        name = if (useHe) section.hebrewName.strippingNikud() else section.name,
+                        isSelected = vm.turSection == idx,
+                        onClick = { vm.turSection = idx; vm.turSiman = 1; onSelect() }
+                    )
+                    HorizontalDivider(color = colors.dividerColor)
                 }
             }
             TextCategory.SHULCHAN_ARUKH -> {

@@ -11,6 +11,7 @@ import com.anytorah.api.Dedication
 import com.anytorah.api.DedicationService
 import com.anytorah.api.EinAyahLoader
 import com.anytorah.api.SefariaTextClient
+import com.anytorah.api.TurParagraphEngine
 import com.anytorah.models.Bookmark
 import com.anytorah.models.BookmarkManager
 import com.anytorah.models.CommentaryEntry
@@ -188,6 +189,10 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
     var saSection by mutableIntStateOf(0)
     var saSiman by mutableIntStateOf(1)
 
+    // Tur
+    var turSection by mutableIntStateOf(0)
+    var turSiman by mutableIntStateOf(1)
+
     // Midrash
     var midrashSubcategory by mutableStateOf(MidrashSubcategory.HALAKHA)
     var midrashWork by mutableStateOf(MidrashWork.MEKHILTA_YISHMAEL)
@@ -244,6 +249,10 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
             "sa_1"    to listOf(CommentaryType.TAZ, CommentaryType.SHAKH, CommentaryType.NEKUDAT_HA_KESEF),
             "sa_2"    to listOf(CommentaryType.CHELKAT_MECHOKEK, CommentaryType.BEIT_SHMUEL, CommentaryType.TAZ),
             "sa_3"    to listOf(CommentaryType.MEIRAT_EINAYIM, CommentaryType.SHAKH, CommentaryType.KTZOT_HA_CHOSHEN),
+            "tur_0"   to listOf(CommentaryType.BEIT_YOSEF, CommentaryType.BACH, CommentaryType.DARKHEI_MOSHE, CommentaryType.PRISHA_DRISHA),
+            "tur_1"   to listOf(CommentaryType.BEIT_YOSEF, CommentaryType.BACH, CommentaryType.DARKHEI_MOSHE, CommentaryType.PRISHA_DRISHA),
+            "tur_2"   to listOf(CommentaryType.BEIT_YOSEF, CommentaryType.BACH, CommentaryType.DARKHEI_MOSHE, CommentaryType.PRISHA_DRISHA),
+            "tur_3"   to listOf(CommentaryType.BEIT_YOSEF, CommentaryType.BACH, CommentaryType.DARKHEI_MOSHE, CommentaryType.PRISHA_DRISHA),
         )
     }
 
@@ -271,6 +280,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         TextCategory.MISHNAH -> if (mishnahSubcategory == MishnahSubcategory.TOSEFTA) "tosefta" else "mishnah"
         TextCategory.TALMUD -> if (talmudSubcategory == TalmudSubcategory.YERUSHALMI) "yerushalmi" else "talmud"
         TextCategory.RAMBAM -> "rambam"
+        TextCategory.TUR -> "tur_$turSection"
         TextCategory.SHULCHAN_ARUKH -> "sa_$saSection"
         TextCategory.MIDRASH -> "midrash"
     }
@@ -310,6 +320,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                 group.filter { it.isAvailableForRambam(workId) }
             }.filter { it.isNotEmpty() }
         }
+        TextCategory.TUR -> listOf(CommentaryType.turPool)
         TextCategory.SHULCHAN_ARUKH -> listOf(CommentaryType.saPool(saSection))
         TextCategory.MIDRASH -> listOf(emptyList())
     }
@@ -350,6 +361,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                                         type.isAvailableForYerushalmi(currentYerushalmiTractate?.id ?: 0)
                                     else type.isAvailableForTalmud(globalTalmudTractateIndex)
         TextCategory.RAMBAM      -> type.isAvailableForRambam(currentRambamWork?.id ?: 0)
+        TextCategory.TUR -> true
         TextCategory.SHULCHAN_ARUKH -> true
         TextCategory.MIDRASH -> false
     }
@@ -370,6 +382,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                                else listOf(CommentaryType.RASHI_TALMUD, CommentaryType.TOSAFOT, CommentaryType.CHIDDUSHEI_RAMBAN, CommentaryType.RASHBA, CommentaryType.RITVA, CommentaryType.MEIRI)
         TextCategory.RAMBAM         -> listOf(CommentaryType.MAGGID_MISHNAH, CommentaryType.KESEF_MISHNAH, CommentaryType.LECHEM_MISHNEH,
                                               CommentaryType.MISHNEH_LA_MELECH, CommentaryType.KIRYAT_SEFER, CommentaryType.MAASEH_ROKEACH, CommentaryType.OR_SAMEACH)
+        TextCategory.TUR -> availableCommentaries
         TextCategory.SHULCHAN_ARUKH -> availableCommentaries
         TextCategory.MIDRASH -> emptyList()
     }
@@ -446,6 +459,10 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                 rambamWorkIndexInSefer = prefs.getInt("sel_rambam_work", 0)
                 rambamChapter          = prefs.getInt("sel_rambam_ch", 1)
             }
+            TextCategory.TUR -> {
+                turSection = prefs.getInt("sel_tur_section", 0)
+                turSiman   = prefs.getInt("sel_tur_siman", 1)
+            }
             TextCategory.SHULCHAN_ARUKH -> {
                 saSection = prefs.getInt("sel_sa_section", 0)
                 saSiman   = prefs.getInt("sel_sa_siman", 1)
@@ -492,6 +509,10 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                 e.putInt("sel_rambam_sefer", rambamSeferIndex)
                 e.putInt("sel_rambam_work", rambamWorkIndexInSefer)
                 e.putInt("sel_rambam_ch", rambamChapter)
+            }
+            TextCategory.TUR -> {
+                e.putInt("sel_tur_section", turSection)
+                e.putInt("sel_tur_siman", turSiman)
             }
             TextCategory.SHULCHAN_ARUKH -> {
                 e.putInt("sel_sa_section", saSection)
@@ -595,6 +616,10 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
             val w = currentRambamWork?.name ?: ""
             if (rambamChapter == 0) "$w, Intro" else "$w, ch. $rambamChapter"
         }
+        TextCategory.TUR -> {
+            val s = TextCatalog.turSections.getOrNull(turSection)?.name ?: ""
+            "$s, §$turSiman"
+        }
         TextCategory.SHULCHAN_ARUKH -> {
             val s = TextCatalog.shulchanArukhSections.getOrNull(saSection)?.name ?: ""
             "$s, §$saSiman"
@@ -635,6 +660,10 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
             val w = currentRambamWork
             if (w == null) "–" else if (saHebrewMode) w.hebrewName.strippingNikud() else w.name
         }
+        TextCategory.TUR -> {
+            val s = TextCatalog.turSections.getOrNull(turSection)
+            if (s == null) "–" else if (saHebrewMode) s.hebrewName.strippingNikud() else s.name
+        }
         TextCategory.SHULCHAN_ARUKH -> {
             val s = TextCatalog.shulchanArukhSections.getOrNull(saSection)
             if (s == null) "–" else if (saHebrewMode) s.hebrewName.strippingNikud() else s.name
@@ -661,6 +690,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
             rambamChapter == 0 -> if (saHebrewMode) "הקדמה" else "Intro"
             else -> if (saHebrewMode) "פרק ${SASimanNames.toHebrewNumeral(rambamChapter)}" else "ch. $rambamChapter"
         }
+        TextCategory.TUR -> if (saHebrewMode) "סי׳ ${SASimanNames.toHebrewNumeral(turSiman)}" else "§$turSiman"
         TextCategory.SHULCHAN_ARUKH -> if (saHebrewMode) "סי׳ ${SASimanNames.toHebrewNumeral(saSiman)}" else "§$saSiman"
         TextCategory.MIDRASH -> {
             if (midrashNavigationMode == MidrashNavigationMode.NATIVE) {
@@ -752,6 +782,13 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                             segments = SefariaTextClient.applyRaavad(heRaavad, enRaavad, rambamSegs)
                         }
                     }
+                    TextCategory.TUR -> {
+                        // Phase 1 stub: naive per-seif segmentation, no header-splitting or
+                        // paragraph-merging (a separate later phase handles that).
+                        val r = SefariaTextClient.ref(TextCategory.TUR, turSection, turSiman)
+                        currentRef = r
+                        segments = SefariaTextClient.fetchChapter(TextCategory.TUR, turSection, turSiman)
+                    }
                     TextCategory.SHULCHAN_ARUKH -> {
                         val r = SefariaTextClient.ref(TextCategory.SHULCHAN_ARUKH, saSection, saSiman)
                         currentRef = r
@@ -828,6 +865,11 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
             category == TextCategory.SHULCHAN_ARUKH &&
             selectedCommentary == CommentaryType.SHAKH -> "$currentRef:1-100"
 
+            // All 4 Tur commentaries are depth-3 (Siman → Seif → Comment); a bare siman ref
+            // otherwise truncates to a single entry. Applies uniformly — unlike SA, where only
+            // Shakh needs a special range.
+            category == TextCategory.TUR -> "$currentRef:1-500"
+
             category == TextCategory.MISHNAH &&
             mishnahSubcategory == MishnahSubcategory.TOSEFTA ->
                 "$currentRef:1-200"
@@ -871,7 +913,8 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         val introR: String? = if (isAtFirstSection && versions.size == 1
             && category != TextCategory.SHULCHAN_ARUKH
             && category != TextCategory.MISHNAH
-            && category != TextCategory.RAMBAM) introRef(commentaryRef) else null
+            && category != TextCategory.RAMBAM
+            && category != TextCategory.TUR) introRef(commentaryRef) else null
 
         val useMishnahLabels = category == TextCategory.MISHNAH || category == TextCategory.RAMBAM || category == TextCategory.TANAKH
 
@@ -922,6 +965,52 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
             }
             commentaryEntries = entries
         }
+
+        // Beit Yosef/Bach/Prisha+Drisha each open their comment with a direct quote of the Tur
+        // words they're discussing — assignTurParagraphLabels matches those opening words
+        // against Tur's own Beit-Yosef-derived paragraphs to number each entry by the Tur
+        // paragraph it actually comments on, instead of a generic sequential count. Darkhei
+        // Moshe is excluded: it anchors via its own real data-order markers (processed inline
+        // into the main text/Beit Yosef's own text), not by quote-matching, so it keeps plain
+        // sequential numbering. Re-fetches Tur's own raw text and (when the open tab isn't
+        // already Beit Yosef) Beit Yosef's entries independently, rather than threading them
+        // through from load() — an intentional simplicity-over-micro-perf tradeoff, matching
+        // the reference web implementation.
+        if (category == TextCategory.TUR && selectedCommentary != CommentaryType.DARKHEI_MOSHE) {
+            val (turHe, _) = runCatching { SefariaTextClient.fetchBoth(currentRef) }
+                .getOrElse { Pair(emptyList(), emptyList()) }
+            if (turHe.isNotEmpty()) {
+                val beitYosefEntries = if (selectedCommentary == CommentaryType.BEIT_YOSEF) {
+                    commentaryEntries
+                } else {
+                    runCatching { SefariaTextClient.fetchTurCommentaryEntries(CommentaryType.BEIT_YOSEF, currentRef) }
+                        .getOrElse { emptyList() }
+                }
+                val paragraphs = TurParagraphEngine.fetchTurParagraphPlainList(turHe) { beitYosefEntries }
+                var labeled = TurParagraphEngine.assignTurParagraphLabels(commentaryEntries, paragraphs)
+
+                // Darkhei Moshe sometimes anchors on Beit Yosef's own words rather than Tur's —
+                // labels must be assigned first (above), using the *original* entries, so an
+                // inserted <dm> digit never ends up among the "opening words" the paragraph
+                // matcher searches with.
+                if (selectedCommentary == CommentaryType.BEIT_YOSEF) {
+                    val marks = TurParagraphEngine.computeBeitYosefDarkheiMosheMarks(turHe, labeled) {
+                        runCatching { SefariaTextClient.fetchTurCommentaryEntries(CommentaryType.DARKHEI_MOSHE, currentRef) }
+                            .getOrElse { emptyList() }
+                    }
+                    if (marks.isNotEmpty()) {
+                        labeled = labeled.mapIndexed { i, entry ->
+                            val n = marks[i]
+                            if (entry is CommentaryEntry.Text && n != null) {
+                                entry.copy(he = TurParagraphEngine.insertBeitYosefDarkheiMosheMark(entry.he, n))
+                            } else entry
+                        }
+                    }
+                }
+                commentaryEntries = labeled
+            }
+        }
+
         // For Talmud single-version commentary: the bare daf ref only returns 1 amud-b entry
         // regardless of actual count. Fetch amud-a and amud-b separately with range queries
         // and rebuild the entry list with an "עמוד ב׳" divider.
@@ -970,6 +1059,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         TextCategory.MISHNAH     -> mishnahChapter == 1
         TextCategory.TALMUD      -> talmudDaf == (currentTalmudTractate?.startDaf ?: 2)
         TextCategory.RAMBAM      -> rambamChapter == 1
+        TextCategory.TUR -> turSiman == 1
         TextCategory.SHULCHAN_ARUKH -> saSiman == 1
         TextCategory.MIDRASH -> if (midrashNavigationMode == MidrashNavigationMode.NATIVE)
             midrashNativeChapter == 1 && midrashNativeSection == 1
@@ -1046,6 +1136,9 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                     val minChapter = if (rambamHasIntro) 0 else 1
                     if (rambamChapter > minChapter) rambamChapter -= 1 else return@launch
                 }
+                TextCategory.TUR -> {
+                    if (turSiman > 1) turSiman -= 1
+                }
                 TextCategory.SHULCHAN_ARUKH -> {
                     if (saSiman > 1) saSiman -= 1
                 }
@@ -1095,6 +1188,10 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                     val w = currentRambamWork
                     if (w != null && rambamChapter < w.chapters) rambamChapter += 1
                 }
+                TextCategory.TUR -> {
+                    val maxSiman = TextCatalog.turSections.getOrNull(turSection)?.simanim ?: 1
+                    if (turSiman < maxSiman) turSiman += 1
+                }
                 TextCategory.SHULCHAN_ARUKH -> {
                     val maxSiman = TextCatalog.shulchanArukhSections.getOrNull(saSection)?.simanim ?: 1
                     if (saSiman < maxSiman) saSiman += 1
@@ -1141,6 +1238,8 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         rambamChapter = rambamChapter,
         saSection = saSection,
         saSiman = saSiman,
+        turSection = turSection,
+        turSiman = turSiman,
         midrashSubcategoryId = midrashSubcategory.id,
         midrashWorkId = midrashWork.id,
         midrashBookIndex = midrashBookIndex,
@@ -1165,6 +1264,8 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         rambamChapter = bookmark.rambamChapter
         saSection = bookmark.saSection
         saSiman = bookmark.saSiman
+        turSection = bookmark.turSection
+        turSiman = bookmark.turSiman
         midrashSubcategory = MidrashSubcategory.fromId(bookmark.midrashSubcategoryId)
         midrashWork = MidrashWork.fromId(bookmark.midrashWorkId)
         midrashBookIndex = bookmark.midrashBookIndex
