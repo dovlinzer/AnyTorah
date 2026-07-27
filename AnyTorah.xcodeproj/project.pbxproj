@@ -68,7 +68,7 @@
 		11D0250468495D9ACB4FCA34 /* TextSelectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextSelectorView.swift; sourceTree = "<group>"; };
 		1407717DD3E83F4E86199C40 /* RambamIntroductions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RambamIntroductions.swift; sourceTree = "<group>"; };
 		298C6693258F77878D0AFED1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		2FBDE4F605AEDC8D2A3F2F0A /* yct_splash_landscape.mp4 */ = {isa = PBXFileReference; path = yct_splash_landscape.mp4; sourceTree = "<group>"; };
+		2FBDE4F605AEDC8D2A3F2F0A /* yct_splash_landscape.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = yct_splash_landscape.mp4; sourceTree = "<group>"; };
 		3B36F6B827D293F0E9ACAFBF /* TextCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextCatalog.swift; sourceTree = "<group>"; };
 		3DE575F1FA5EEE563E0EABBC /* TextContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextContentView.swift; sourceTree = "<group>"; };
 		3EDD2177BE2C97B68E1056DF /* SefariaTextClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SefariaTextClient.swift; sourceTree = "<group>"; };
@@ -88,7 +88,7 @@
 		985DF0DB3464786C42B4558A /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		9AB4EE1C8500B44CEA98EA04 /* TalmudAudioService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalmudAudioService.swift; sourceTree = "<group>"; };
 		A0FF8DC97327A81E10C297D0 /* TextReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextReaderView.swift; sourceTree = "<group>"; };
-		A21FE02B4AAAD50249556A48 /* AnyTorah.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AnyTorah.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A21FE02B4AAAD50249556A48 /* AnyTorah.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AnyTorah.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A5400738FE43CDDCA1148BD8 /* AnyTorahApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnyTorahApp.swift; sourceTree = "<group>"; };
 		B1720454524DF8C31EBC9631 /* TextModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextModels.swift; sourceTree = "<group>"; };
 		B2174BC073154809126EC534 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -102,7 +102,7 @@
 		E339DE91CA373FC06E790ED7 /* NotoSerifHebrew-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "NotoSerifHebrew-Regular.ttf"; sourceTree = "<group>"; };
 		EAFA95217EEA034B2D27FBFD /* TurParagraphEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurParagraphEngineTests.swift; sourceTree = "<group>"; };
 		F04E84E17B5834D221B5387F /* ein_ayah.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = ein_ayah.json; sourceTree = "<group>"; };
-		F77E3B0CA152ADB575234DA8 /* yct_splash.mp4 */ = {isa = PBXFileReference; path = yct_splash.mp4; sourceTree = "<group>"; };
+		F77E3B0CA152ADB575234DA8 /* yct_splash.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = yct_splash.mp4; sourceTree = "<group>"; };
 		FCAB1E421BC1DA808AD4F5F9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		FD1883E5DFF90AEAD8F4E32E /* FrankRuhlLibre-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "FrankRuhlLibre-Regular.ttf"; sourceTree = "<group>"; };
 		FDD864AA5726C51F90A02A1F /* CommentaryPanelViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentaryPanelViewModel.swift; sourceTree = "<group>"; };
@@ -385,6 +385,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = DU44C93RZ5;
 				INFOPLIST_FILE = AnyTorah/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -501,6 +502,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = DU44C93RZ5;
 				INFOPLIST_FILE = AnyTorah/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (

@@ -197,9 +197,33 @@ final class SefariaTextClient {
                     let added = heSegs.count - before
                     outerIndices.append(contentsOf: repeatElement(i, count: added))
                 }
+            } else if heArr.count > enArr.count {
+                // Hebrew has more (real, granular) outer paragraphs than English — e.g. Beit
+                // Yosef, Orach Chayim 1 has 17 Hebrew comments but Sefaria's English translation
+                // only covers the first one (confirmed live: the lone English entry is verbatim
+                // just paragraph 1's translation). Hebrew's own paragraph count is the ground
+                // truth here and must not be collapsed just because the translation is sparse —
+                // pair by outer index, leaving English empty wherever there's no corresponding
+                // entry, instead of joining every Hebrew paragraph into one blob (the old
+                // behavior here silently collapsed Tur OC 1's Beit Yosef down to a single entry,
+                // which cascades into a single unbroken Tur paragraph and missing Darkhei Moshe
+                // marks — real regression found live, not a hypothetical).
+                for i in 0..<heArr.count {
+                    let hInner = flattenTextValue(heArr[i])
+                        .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                    let eInner = i < enArr.count
+                        ? flattenTextValue(enArr[i]).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                        : []
+                    let before = heSegs.count
+                    alignedAppend(hInner: hInner, eInner: eInner, into: &heSegs, en: &enSegs)
+                    let added = heSegs.count - before
+                    outerIndices.append(contentsOf: repeatElement(i, count: added))
+                }
             } else {
-                // Outer counts differ and both non-zero (e.g. intro: 1 he vs 7 en at top level).
-                // Flatten each side fully, then apply the same minority-join logic once.
+                // Opposite direction (e.g. intro: 1 he vs 7 en at top level) — Hebrew's single
+                // outer entry is the real paragraph unit and English's extra granularity is just
+                // translation-side formatting, so merge everything into one combined entry, as
+                // before.
                 let hInner = flattenTextValue(heArr)
                     .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
                 let eInner = flattenTextValue(enArr)

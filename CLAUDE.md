@@ -13,6 +13,35 @@ iOS app (Swift/SwiftUI, iOS 17+) for browsing Torah texts via the Sefaria public
 
 **Android:** Open `AnyTorahAndroid/` in Android Studio. Standard Gradle build.
 
+### Verification workflow — user runs full builds/tests/simulator checks
+
+Compiling and testing both platforms from the agentic CLI is slow and token-heavy: `xcodebuild`/
+`./gradlew` produce large logs, native builds are much slower than `tsc`/`next build`, and the
+iOS Simulator control tool needs a one-time `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`
+(can't be run non-interactively) — without it, simulator verification falls back to raw
+`xcrun simctl`, which can install/screenshot but can't simulate taps, so interactive walkthroughs
+aren't possible that way either. Confirmed with the user (2026-07-27) after a large iOS+Android
+port ran ~700K tokens partly for this reason: **going forward, the user runs final builds, test
+suites, and any simulator/emulator visual/interactive verification themselves and reports back
+results**, rather than Claude running the full toolchain end-to-end. Claude should still do
+lightweight, targeted compiles while actively iterating on a specific file's changes (fast
+feedback on syntax/type errors is still worth it in the moment) — the hand-off point is *final*
+verification, not every compile.
+
+Commands to hand off (or run once for a quick incremental check):
+- iOS build: `xcodebuild -project AnyTorah.xcodeproj -scheme AnyTorah -sdk iphonesimulator build`
+- iOS tests: `xcodebuild test -project AnyTorah.xcodeproj -scheme AnyTorah -destination 'platform=iOS Simulator,name=<device>'` (add `-only-testing:AnyTorahTests/<ClassName>` to scope it)
+- Android build: `./gradlew assembleDebug` from `AnyTorahAndroid/`
+- Android tests: `./gradlew testDebugUnitTest` from `AnyTorahAndroid/`
+
+Known local gotchas if Claude does run these directly: Android's `gradlew` wrapper jar has been
+missing from the repo before — fall back to the cached distribution directly (e.g.
+`~/.gradle/wrapper/dists/gradle-8.9-bin/*/gradle-8.9/bin/gradle`) with `JAVA_HOME` pointed at
+Android Studio's bundled JRE (`/Applications/Android Studio.app/Contents/jbr/Contents/Home`).
+Android local unit tests (`testDebugUnitTest`) run against the Android SDK's `org.json` *stub*
+jar, which throws "not mocked" for every real method — add `testImplementation("org.json:json:...")`
+to pull in the real implementation for any test that parses JSON.
+
 ---
 
 ## Architecture

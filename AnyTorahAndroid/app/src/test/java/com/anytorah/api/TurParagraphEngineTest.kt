@@ -1,15 +1,11 @@
 package com.anytorah.api
 
 import com.anytorah.models.CommentaryEntry
+import com.anytorah.models.CommentaryType
 import kotlinx.coroutines.runBlocking
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.json.JSONArray
-import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.net.URLEncoder
 
 /**
  * Exercises [TurParagraphEngine] against real, live Sefaria data for the exact "golden simanim"
@@ -18,43 +14,21 @@ import java.net.URLEncoder
  * hit the public Sefaria API directly (read-only GETs, no auth) rather than baked fixtures, so a
  * failure here could in principle mean Sefaria's underlying text changed — but that's exactly
  * the kind of drift worth catching, not a reason to mock it away.
+ *
+ * Deliberately routes every fetch through the *real* [SefariaTextClient] functions (`fetchBoth`,
+ * `fetchTurCommentaryEntries`) rather than a parallel test-only fetch/flatten implementation — an
+ * earlier version of this file reimplemented its own fetching, which meant it never exercised
+ * `fetchBothAligned`'s outer-count-mismatch handling and missed a real production bug (Tur OC 1's
+ * Beit Yosef collapsing to 1 entry) that only surfaced live in the app. Exercising the same code
+ * path production uses is the whole point.
  */
 class TurParagraphEngineTest {
 
-    private val client = OkHttpClient()
+    private suspend fun fetchTurMainHe(section: String, siman: Int): List<String> =
+        SefariaTextClient.fetchBoth("Tur, $section $siman").first
 
-    /** Fetches the raw `he` field for a Sefaria ref (bare, no range) as a JSONArray. */
-    private fun fetchRawHeArray(ref: String): JSONArray {
-        val encoded = URLEncoder.encode(ref, "UTF-8").replace("+", "%20")
-        val url = "https://www.sefaria.org/api/texts/$encoded?context=0&lang=he"
-        val response = client.newCall(Request.Builder().url(url).build()).execute()
-        val body = response.body?.string() ?: error("empty response for $ref")
-        val json = JSONObject(body)
-        if (json.has("error")) error("Sefaria error for $ref: ${json.getString("error")}")
-        return json.getJSONArray("he")
-    }
-
-    /** Recursively flattens a Sefaria `he`/`text` JSON value (arbitrarily nested JSONArrays of
-     *  strings) into a flat list of non-blank strings, mirroring the reference web
-     *  implementation's `flattenTextValue`. */
-    private fun flatten(value: Any?): List<String> = when (value) {
-        is JSONArray -> (0 until value.length()).flatMap { flatten(value.opt(it)) }
-        is String -> if (value.isNotBlank()) listOf(value) else emptyList()
-        else -> emptyList()
-    }
-
-    private fun fetchTurMainHe(section: String, siman: Int): List<String> =
-        flatten(fetchRawHeArray("Tur, $section $siman"))
-
-    /** Fetches a Tur commentary's entries for `siman`, applying the same blanket `:1-500`
-     *  depth-3 range fix production code uses (see [TurParagraphEngine]'s doc and
-     *  `depthFixedRef` in the reference web implementation), and wraps each flattened entry as
-     *  a plain sequential [CommentaryEntry.Text] (English left blank — not needed for these
-     *  paragraph-engine assertions). */
-    private fun fetchTurCommentaryEntries(title: String, section: String, siman: Int): List<CommentaryEntry> {
-        val flat = flatten(fetchRawHeArray("$title, $section $siman:1-500"))
-        return flat.mapIndexed { i, text -> CommentaryEntry.Text(index = i, he = text, en = "") }
-    }
+    private suspend fun fetchTurCommentaryEntries(type: CommentaryType, section: String, siman: Int): List<CommentaryEntry> =
+        SefariaTextClient.fetchTurCommentaryEntries(type, "Tur, $section $siman")
 
     private data class Golden(
         val siman: Int,
@@ -83,7 +57,7 @@ class TurParagraphEngineTest {
     @Test
     fun `Beit Yosef raw entry counts match Sefaria's own segmentation`() = runBlocking {
         for (g in golden) {
-            val entries = fetchTurCommentaryEntries("Beit Yosef", "Orach Chayim", g.siman)
+            val entries = fetchTurCommentaryEntries(CommentaryType.BEIT_YOSEF, "Orach Chayim", g.siman)
             assertEquals("OC ${g.siman} Beit Yosef entry count", g.beitYosefCount, entries.size)
         }
     }
@@ -94,7 +68,7 @@ class TurParagraphEngineTest {
             val mainHe = fetchTurMainHe("Orach Chayim", g.siman)
             val enPlaceholder = List(mainHe.size) { "" }
             val segments = TurParagraphEngine.buildTurSegments(mainHe, enPlaceholder) {
-                fetchTurCommentaryEntries("Beit Yosef", "Orach Chayim", g.siman)
+                fetchTurCommentaryEntries(CommentaryType.BEIT_YOSEF, "Orach Chayim", g.siman)
             }
             assertEquals("OC ${g.siman} main-text segment count", g.mainSegmentCount, segments.size)
         }
@@ -104,7 +78,7 @@ class TurParagraphEngineTest {
     fun `Beit Yosef entries are labeled with the correct Tur paragraph`() = runBlocking {
         for (g in golden) {
             val mainHe = fetchTurMainHe("Orach Chayim", g.siman)
-            val byEntries = fetchTurCommentaryEntries("Beit Yosef", "Orach Chayim", g.siman)
+            val byEntries = fetchTurCommentaryEntries(CommentaryType.BEIT_YOSEF, "Orach Chayim", g.siman)
             val paragraphs = TurParagraphEngine.fetchTurParagraphPlainList(mainHe) { byEntries }
             val labeled = TurParagraphEngine.assignTurParagraphLabels(byEntries, paragraphs)
             val labels = labeled.filterIsInstance<CommentaryEntry.Text>().map { it.label }
@@ -119,7 +93,7 @@ class TurParagraphEngineTest {
         val mainHe = fetchTurMainHe("Orach Chayim", 43)
         val enPlaceholder = List(mainHe.size) { "" }
         val segments = TurParagraphEngine.buildTurSegments(mainHe, enPlaceholder) {
-            fetchTurCommentaryEntries("Beit Yosef", "Orach Chayim", 43)
+            fetchTurCommentaryEntries(CommentaryType.BEIT_YOSEF, "Orach Chayim", 43)
         }
         val firstParagraphText = SefariaTextClient.processedHebrew(segments.first().he, showTrop = false).trim()
         assertTrue(
@@ -133,7 +107,7 @@ class TurParagraphEngineTest {
         val mainHe = fetchTurMainHe("Orach Chayim", 132)
         val enPlaceholder = List(mainHe.size) { "" }
         val segments = TurParagraphEngine.buildTurSegments(mainHe, enPlaceholder) {
-            fetchTurCommentaryEntries("Beit Yosef", "Orach Chayim", 132)
+            fetchTurCommentaryEntries(CommentaryType.BEIT_YOSEF, "Orach Chayim", 132)
         }
         assertEquals(3, segments.size)
     }
@@ -143,7 +117,7 @@ class TurParagraphEngineTest {
         val mainHe = fetchTurMainHe("Orach Chayim", 133)
         val enPlaceholder = List(mainHe.size) { "" }
         val segments = TurParagraphEngine.buildTurSegments(mainHe, enPlaceholder) {
-            fetchTurCommentaryEntries("Beit Yosef", "Orach Chayim", 133)
+            fetchTurCommentaryEntries(CommentaryType.BEIT_YOSEF, "Orach Chayim", 133)
         }
         assertEquals(2, segments.size)
     }
@@ -164,14 +138,10 @@ class TurParagraphEngineTest {
     @Test
     fun `Darkhei Moshe marks anchored in Beit Yosef fill exactly the gaps Tur's own tags miss`() = runBlocking {
         for (g in dmGolden) {
-            // turRawHe must be the per-seif array with tags intact (not flattened past the seif
-            // level, unlike fetchTurMainHe/flatten which is for depth-3 commentary refs) — a
-            // bare "Tur, Orach Chayim N" ref returns one raw HTML string per seif directly.
-            val rawArray = fetchRawHeArray("Tur, Orach Chayim ${g.siman}")
-            val turRawHe = (0 until rawArray.length()).map { rawArray.getString(it) }
-            val byEntries = fetchTurCommentaryEntries("Beit Yosef", "Orach Chayim", g.siman)
+            val turRawHe = fetchTurMainHe("Orach Chayim", g.siman)
+            val byEntries = fetchTurCommentaryEntries(CommentaryType.BEIT_YOSEF, "Orach Chayim", g.siman)
             val assignment = TurParagraphEngine.computeBeitYosefDarkheiMosheMarks(turRawHe, byEntries) {
-                fetchTurCommentaryEntries("Darkhei Moshe", "Orach Chayim", g.siman)
+                fetchTurCommentaryEntries(CommentaryType.DARKHEI_MOSHE, "Orach Chayim", g.siman)
             }
             assertEquals("OC ${g.siman} Beit-Yosef-anchored Darkhei Moshe assignment", g.beitYosefAssignment, assignment)
         }
@@ -190,7 +160,7 @@ class TurParagraphEngineTest {
         val mainHe = fetchTurMainHe("Orach Chayim", 1)
         val enPlaceholder = List(mainHe.size) { "" }
         val segments = TurParagraphEngine.buildTurSegments(mainHe, enPlaceholder) {
-            fetchTurCommentaryEntries("Beit Yosef", "Orach Chayim", 1)
+            fetchTurCommentaryEntries(CommentaryType.BEIT_YOSEF, "Orach Chayim", 1)
         }
         val segWithMark1 = segments.firstOrNull { it.label == "12" }
         val segWithMark3 = segments.firstOrNull { it.label == "17" }

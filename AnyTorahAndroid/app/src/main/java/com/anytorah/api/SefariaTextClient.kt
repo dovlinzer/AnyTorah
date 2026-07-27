@@ -218,8 +218,32 @@ object SefariaTextClient {
                                 repeat(heSegs.size - before) { outerIndices.add(i) }
                             }
                         }
+                        heArr.length() > enArr.length() -> {
+                            // Hebrew has more (real, granular) outer paragraphs than English —
+                            // e.g. Beit Yosef, Orach Chayim 1 has 17 Hebrew comments but
+                            // Sefaria's English translation only covers the first one (confirmed
+                            // live: the lone English entry is verbatim just paragraph 1's
+                            // translation). Hebrew's own paragraph count is the ground truth here
+                            // and must not be collapsed just because the translation is sparse —
+                            // pair by outer index, leaving English empty wherever there's no
+                            // corresponding entry, instead of joining every Hebrew paragraph into
+                            // one blob (the old behavior here silently collapsed Tur OC 1's Beit
+                            // Yosef down to a single entry, which cascades into a single unbroken
+                            // Tur paragraph and missing Darkhei Moshe marks — real regression
+                            // found live, not a hypothetical).
+                            for (i in 0 until heArr.length()) {
+                                val hInner = flattenValue(heArr[i]).filter { it.isNotBlank() }
+                                val eInner = if (i < enArr.length()) flattenValue(enArr[i]).filter { it.isNotBlank() } else emptyList()
+                                val before = heSegs.size
+                                alignedAppend(hInner, eInner, heSegs, enSegs)
+                                repeat(heSegs.size - before) { outerIndices.add(i) }
+                            }
+                        }
                         else -> {
-                            // Outer counts differ and both non-zero (e.g. intro: 1 he vs 7 en).
+                            // Opposite direction (e.g. intro: 1 he vs 7 en at top level) —
+                            // Hebrew's single outer entry is the real paragraph unit and
+                            // English's extra granularity is just translation-side formatting,
+                            // so merge everything into one combined entry, as before.
                             val hInner = flattenValue(heArr).filter { it.isNotBlank() }
                             val eInner = flattenValue(enArr).filter { it.isNotBlank() }
                             val before = heSegs.size

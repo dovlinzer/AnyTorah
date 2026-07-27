@@ -8,48 +8,21 @@ import XCTest
 /// GETs, no auth) rather than baked fixtures, so a failure here could in principle mean Sefaria's
 /// underlying text changed — but that's exactly the kind of drift worth catching, not a reason to
 /// mock it away.
+///
+/// Deliberately routes every fetch through the *real* `SefariaTextClient` functions
+/// (`fetchBoth`, `fetchTurCommentaryEntries`) rather than a parallel test-only
+/// fetch/flatten implementation — an earlier version of this file reimplemented its own fetching,
+/// which meant it never exercised `fetchBothAligned`'s outer-count-mismatch handling and missed a
+/// real production bug (Tur OC 1's Beit Yosef collapsing to 1 entry) that only surfaced live in
+/// the app. Exercising the same code path production uses is the whole point.
 final class TurParagraphEngineTests: XCTestCase {
 
-    private func urlEncodeRef(_ ref: String) -> String {
-        var allowed = CharacterSet.urlQueryAllowed
-        allowed.remove(charactersIn: ", ")
-        return ref.addingPercentEncoding(withAllowedCharacters: allowed) ?? ref
-    }
-
-    private func fetchRawHeArray(_ ref: String) async throws -> [Any] {
-        let url = URL(string: "https://www.sefaria.org/api/texts/\(urlEncodeRef(ref))?context=0&lang=he")!
-        let (data, _) = try await URLSession.shared.data(from: url)
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-        if let error = json["error"] as? String {
-            throw NSError(domain: "Sefaria", code: 1, userInfo: [NSLocalizedDescriptionKey: "Sefaria error for \(ref): \(error)"])
-        }
-        return json["he"] as? [Any] ?? []
-    }
-
-    /// Recursively flattens a Sefaria `he`/`text` JSON value (arbitrarily nested arrays of
-    /// strings) into a flat list of non-blank strings, mirroring the reference web
-    /// implementation's `flattenTextValue`.
-    private func flatten(_ value: Any?) -> [String] {
-        if let arr = value as? [Any] {
-            return arr.flatMap { flatten($0) }
-        }
-        if let str = value as? String, !str.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return [str]
-        }
-        return []
-    }
-
     private func fetchTurMainHe(_ section: String, _ siman: Int) async throws -> [String] {
-        flatten(try await fetchRawHeArray("Tur, \(section) \(siman)") as Any)
+        try await SefariaTextClient.shared.fetchBoth(ref: "Tur, \(section) \(siman)").hebrew
     }
 
-    /// Fetches a Tur commentary's entries for `siman`, applying the same blanket `:1-500`
-    /// depth-3 range fix production code uses, and wraps each flattened entry as a plain
-    /// sequential `CommentaryEntry.text` (English left blank — not needed for these
-    /// paragraph-engine assertions).
-    private func fetchTurCommentaryEntries(_ title: String, _ section: String, _ siman: Int) async throws -> [CommentaryEntry] {
-        let flat = flatten(try await fetchRawHeArray("\(title), \(section) \(siman):1-500") as Any)
-        return flat.enumerated().map { (i, text) in .text(index: i, he: text, en: "") }
+    private func fetchTurCommentaryEntries(_ type: CommentaryType, _ section: String, _ siman: Int) async -> [CommentaryEntry] {
+        await SefariaTextClient.shared.fetchTurCommentaryEntries(type: type, mainRef: "Tur, \(section) \(siman)")
     }
 
     private struct Golden {
@@ -79,7 +52,7 @@ final class TurParagraphEngineTests: XCTestCase {
 
     func testBeitYosefRawEntryCountsMatchSefariasOwnSegmentation() async throws {
         for g in golden {
-            let entries = try await fetchTurCommentaryEntries("Beit Yosef", "Orach Chayim", g.siman)
+            let entries = await fetchTurCommentaryEntries(.beitYosef, "Orach Chayim", g.siman)
             XCTAssertEqual(entries.count, g.beitYosefCount, "OC \(g.siman) Beit Yosef entry count")
         }
     }
@@ -89,7 +62,7 @@ final class TurParagraphEngineTests: XCTestCase {
             let mainHe = try await fetchTurMainHe("Orach Chayim", g.siman)
             let enPlaceholder = Array(repeating: "", count: mainHe.count)
             let segments = await TurParagraphEngine.buildTurSegments(mainHe, enPlaceholder) {
-                (try? await self.fetchTurCommentaryEntries("Beit Yosef", "Orach Chayim", g.siman)) ?? []
+                await self.fetchTurCommentaryEntries(.beitYosef, "Orach Chayim", g.siman)
             }
             XCTAssertEqual(segments.count, g.mainSegmentCount, "OC \(g.siman) main-text segment count")
         }
@@ -98,7 +71,7 @@ final class TurParagraphEngineTests: XCTestCase {
     func testBeitYosefEntriesAreLabeledWithTheCorrectTurParagraph() async throws {
         for g in golden {
             let mainHe = try await fetchTurMainHe("Orach Chayim", g.siman)
-            let byEntries = try await fetchTurCommentaryEntries("Beit Yosef", "Orach Chayim", g.siman)
+            let byEntries = await fetchTurCommentaryEntries(.beitYosef, "Orach Chayim", g.siman)
             let paragraphs = await TurParagraphEngine.fetchTurParagraphPlainList(mainHe) { byEntries }
             let labeled = TurParagraphEngine.assignTurParagraphLabels(byEntries, paragraphs)
             let labels: [Int] = labeled.compactMap { entry in
@@ -115,7 +88,7 @@ final class TurParagraphEngineTests: XCTestCase {
         let mainHe = try await fetchTurMainHe("Orach Chayim", 43)
         let enPlaceholder = Array(repeating: "", count: mainHe.count)
         let segments = await TurParagraphEngine.buildTurSegments(mainHe, enPlaceholder) {
-            (try? await self.fetchTurCommentaryEntries("Beit Yosef", "Orach Chayim", 43)) ?? []
+            await self.fetchTurCommentaryEntries(.beitYosef, "Orach Chayim", 43)
         }
         let firstParagraphText = TurParagraphEngine.processedHebrew(segments.first?.he ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -126,7 +99,7 @@ final class TurParagraphEngineTests: XCTestCase {
         let mainHe = try await fetchTurMainHe("Orach Chayim", 132)
         let enPlaceholder = Array(repeating: "", count: mainHe.count)
         let segments = await TurParagraphEngine.buildTurSegments(mainHe, enPlaceholder) {
-            (try? await self.fetchTurCommentaryEntries("Beit Yosef", "Orach Chayim", 132)) ?? []
+            await self.fetchTurCommentaryEntries(.beitYosef, "Orach Chayim", 132)
         }
         XCTAssertEqual(segments.count, 3)
     }
@@ -135,7 +108,7 @@ final class TurParagraphEngineTests: XCTestCase {
         let mainHe = try await fetchTurMainHe("Orach Chayim", 133)
         let enPlaceholder = Array(repeating: "", count: mainHe.count)
         let segments = await TurParagraphEngine.buildTurSegments(mainHe, enPlaceholder) {
-            (try? await self.fetchTurCommentaryEntries("Beit Yosef", "Orach Chayim", 133)) ?? []
+            await self.fetchTurCommentaryEntries(.beitYosef, "Orach Chayim", 133)
         }
         XCTAssertEqual(segments.count, 2)
     }
@@ -157,11 +130,10 @@ final class TurParagraphEngineTests: XCTestCase {
 
     func testDarkheiMosheMarksAnchoredInBeitYosefFillExactlyTheGapsTursOwnTagsMiss() async throws {
         for g in dmGolden {
-            let rawArray = try await fetchRawHeArray("Tur, Orach Chayim \(g.siman)")
-            let turRawHe = rawArray.compactMap { $0 as? String }
-            let byEntries = try await fetchTurCommentaryEntries("Beit Yosef", "Orach Chayim", g.siman)
+            let turRawHe = try await fetchTurMainHe("Orach Chayim", g.siman)
+            let byEntries = await fetchTurCommentaryEntries(.beitYosef, "Orach Chayim", g.siman)
             let assignment = await TurParagraphEngine.computeBeitYosefDarkheiMosheMarks(turRawHe, byEntries) {
-                (try? await self.fetchTurCommentaryEntries("Darkhei Moshe", "Orach Chayim", g.siman)) ?? []
+                await self.fetchTurCommentaryEntries(.darkheiMoshe, "Orach Chayim", g.siman)
             }
             XCTAssertEqual(assignment, g.beitYosefAssignment, "OC \(g.siman) Beit-Yosef-anchored Darkhei Moshe assignment")
         }
@@ -178,7 +150,7 @@ final class TurParagraphEngineTests: XCTestCase {
         let mainHe = try await fetchTurMainHe("Orach Chayim", 1)
         let enPlaceholder = Array(repeating: "", count: mainHe.count)
         let segments = await TurParagraphEngine.buildTurSegments(mainHe, enPlaceholder) {
-            (try? await self.fetchTurCommentaryEntries("Beit Yosef", "Orach Chayim", 1)) ?? []
+            await self.fetchTurCommentaryEntries(.beitYosef, "Orach Chayim", 1)
         }
         let segWithMark1 = segments.first { $0.label == "12" }
         let segWithMark3 = segments.first { $0.label == "17" }
