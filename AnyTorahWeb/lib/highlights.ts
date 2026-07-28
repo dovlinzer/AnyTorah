@@ -5,6 +5,7 @@
 // keeps the note body plain text — this is the fast Kindle-style margin note, deliberately
 // lighter-weight than the Notebook's rich-text document (lib/notebooks.ts).
 import { anchorKey, type TextAnchor } from "./textAnchor";
+import { syncArrayDiff, reconcileArray } from "./supabase/sync";
 
 export interface Highlight {
   id: string;
@@ -36,11 +37,22 @@ export function loadHighlights(): Highlight[] {
 
 export function saveHighlights(highlights: Highlight[]) {
   if (typeof window === "undefined") return;
+  const previous = loadHighlights();
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(highlights));
   } catch {
     // localStorage unavailable (private browsing, quota) — highlights just won't persist.
   }
+  syncArrayDiff("user_highlights", previous, highlights, (h) => h.id);
+}
+
+/** Same reconcile-on-load pattern as lib/bookmarks.ts's loadAndReconcileBookmarks — see
+ *  lib/supabase/sync.ts for the merge rule. */
+export async function loadAndReconcileHighlights(): Promise<Highlight[]> {
+  const local = loadHighlights();
+  const merged = await reconcileArray("user_highlights", local, (h) => h.id);
+  saveHighlights(merged);
+  return merged;
 }
 
 /** One highlight per anchor point — a quick color-only highlight and a full written note are

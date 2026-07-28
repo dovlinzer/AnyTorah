@@ -8,6 +8,7 @@
 // native today, before building anchored inline notes later.
 import { getCategoryGroups, getCategoryDisplayName, getChapterUnitLabel } from "./categoryCatalog";
 import type { ReaderCategory } from "./commentaryPools";
+import { syncArrayDiff, reconcileArray } from "./supabase/sync";
 
 export interface Bookmark {
   id: string;
@@ -36,11 +37,23 @@ export function loadBookmarks(): Bookmark[] {
 
 export function saveBookmarks(bookmarks: Bookmark[]) {
   if (typeof window === "undefined") return;
+  const previous = loadBookmarks();
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(bookmarks));
   } catch {
     // localStorage unavailable (private browsing, quota) — bookmarks just won't persist.
   }
+  syncArrayDiff("user_bookmarks", previous, bookmarks, (b) => b.id);
+}
+
+/** Pulls remote bookmarks (if signed in) and merges them into the local copy — see
+ *  lib/supabase/sync.ts for the merge rule. Writes the merged result back to localStorage so it
+ *  becomes the new local cache, and returns it for the caller to hydrate React state with. */
+export async function loadAndReconcileBookmarks(): Promise<Bookmark[]> {
+  const local = loadBookmarks();
+  const merged = await reconcileArray("user_bookmarks", local, (b) => b.id);
+  saveBookmarks(merged);
+  return merged;
 }
 
 function getItemName(category: ReaderCategory, index: number): string {

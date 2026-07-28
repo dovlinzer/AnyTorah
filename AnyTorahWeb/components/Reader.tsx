@@ -27,8 +27,8 @@ import BookmarkEditModal from "@/components/BookmarkEditModal";
 import BookmarkListModal from "@/components/BookmarkListModal";
 import { loadTalmudPages, hasPages as hasTalmudPages, type TalmudPages } from "@/lib/talmudPages";
 import {
-  loadBookmarks,
   saveBookmarks,
+  loadAndReconcileBookmarks,
   findBookmark,
   buildDisplayTitle,
   buildSubtitle,
@@ -36,7 +36,7 @@ import {
 } from "@/lib/bookmarks";
 import type { YomiToday, YomiResult } from "@/lib/yomiService";
 import { toHebrewNumeral } from "@/lib/textModels";
-import { loadHighlights, saveHighlights, findHighlight, type Highlight } from "@/lib/highlights";
+import { saveHighlights, loadAndReconcileHighlights, findHighlight, type Highlight } from "@/lib/highlights";
 import { anchorKey, stripAnchorHTML, buildSegmentLabel, type TextAnchor } from "@/lib/textAnchor";
 import HighlightMark from "@/components/HighlightMark";
 import HighlightEditModal from "@/components/HighlightEditModal";
@@ -44,6 +44,9 @@ import HighlightsListModal from "@/components/HighlightsListModal";
 import NotebookPanel, { type NotebookScopeOption } from "@/components/NotebookPanel";
 import NotebookSearchModal from "@/components/NotebookSearchModal";
 import { notebookScopeKey, formatNotebookScopeLabel, type NotebookScope } from "@/lib/notebooks";
+import AccountButton from "@/components/AccountButton";
+import { useAuth } from "@/components/AuthProvider";
+import { schedulePreferencesSync, reconcilePreferences } from "@/lib/preferences";
 
 interface ChapterResponse {
   ref: string;
@@ -85,6 +88,7 @@ function storeSlots(contextKey: string, slots: CommentaryType[]) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(SLOT_STORAGE_PREFIX + contextKey, JSON.stringify(slots));
+    schedulePreferencesSync();
   } catch {
     // localStorage unavailable (private browsing, quota) — slot choice just won't persist.
   }
@@ -111,6 +115,7 @@ function storeFontSizeLevel(key: string, level: number) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(key, String(level));
+    schedulePreferencesSync();
   } catch {
     // localStorage unavailable — font size choice just won't persist.
   }
@@ -142,6 +147,7 @@ function storeHebrewMode(on: boolean) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(HEBREW_MODE_KEY, on ? "1" : "0");
+    schedulePreferencesSync();
   } catch {
     // localStorage unavailable — toggle just won't persist.
   }
@@ -171,6 +177,7 @@ function storeDisplayMode(key: string, mode: TextDisplayMode) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(key, mode);
+    schedulePreferencesSync();
   } catch {
     // localStorage unavailable — display mode choice just won't persist.
   }
@@ -194,6 +201,7 @@ function storeReverseNavigation(on: boolean) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(REVERSE_NAV_KEY, on ? "1" : "0");
+    schedulePreferencesSync();
   } catch {
     // localStorage unavailable — toggle just won't persist.
   }
@@ -214,6 +222,7 @@ function storeShowDafImage(show: boolean) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(SHOW_DAF_IMAGE_KEY, show ? "1" : "0");
+    schedulePreferencesSync();
   } catch {
     // localStorage unavailable — toggle just won't persist.
   }
@@ -247,6 +256,7 @@ function storeDafPosition(pos: DafPosition) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(DAF_POSITION_KEY, pos);
+    schedulePreferencesSync();
   } catch {
     // localStorage unavailable — position choice just won't persist.
   }
@@ -267,6 +277,7 @@ function storeWidth(key: string, px: number) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(key, String(px));
+    schedulePreferencesSync();
   } catch {
     // localStorage unavailable — width choice just won't persist.
   }
@@ -874,9 +885,16 @@ export default function Reader() {
   const rambamChapterLabelFor =
     category === "rambam" ? (n: number) => (n === 0 ? (hebrewMode ? "כותרת" : "Header") : undefined) : undefined;
 
+  // Signed-in users' bookmarks/highlights reconcile against Supabase on load and on every
+  // sign-in — see lib/supabase/sync.ts for the merge rule. Depending on user.id (not just
+  // mounting once) is what makes a mid-session sign-in (no page reload) also trigger the pull.
+  const { user } = useAuth();
+
   // Bookmarks (+ phase-1 notes, stored as a field on the bookmark — see lib/bookmarks.ts).
   const [bookmarks, setBookmarksState] = useState<Bookmark[]>([]);
-  useEffect(() => setBookmarksState(loadBookmarks()), []);
+  useEffect(() => {
+    loadAndReconcileBookmarks().then(setBookmarksState);
+  }, [user?.id]);
   const [bookmarkEditOpen, setBookmarkEditOpen] = useState(false);
   const [bookmarkListOpen, setBookmarkListOpen] = useState(false);
   const currentBookmark = useMemo(
@@ -928,7 +946,17 @@ export default function Reader() {
   // (a saved chapter-level *place*) and from the Notebook (a long-form rich-text document with
   // embedded navigation anchors, built separately).
   const [highlights, setHighlightsState] = useState<Highlight[]>([]);
-  useEffect(() => setHighlightsState(loadHighlights()), []);
+  useEffect(() => {
+    loadAndReconcileHighlights().then(setHighlightsState);
+  }, [user?.id]);
+
+  // Preferences (font sizes, hebrew mode, display modes, panel widths, commentary slots — see
+  // lib/preferences.ts) reconcile the same way, but since those values are already read into ~12
+  // separate pieces of component state at mount, reconcilePreferences reloads the page once if
+  // the remote copy actually differs, rather than trying to hot-swap every piece of state here.
+  useEffect(() => {
+    void reconcilePreferences();
+  }, [user?.id]);
   const [highlightEditorAnchor, setHighlightEditorAnchor] = useState<TextAnchor | null>(null);
   const [highlightEditorQuote, setHighlightEditorQuote] = useState({ he: "", en: "" });
   const [highlightsListOpen, setHighlightsListOpen] = useState(false);
@@ -1393,6 +1421,8 @@ export default function Reader() {
             >
               <HighlighterIcon size={hebrewMode ? 20 : 17} />
             </button>
+            <VerticalDivider />
+            <AccountButton pillButtonClass={pillButtonClass} hebrewMode={hebrewMode} />
           </div>
         </header>
 

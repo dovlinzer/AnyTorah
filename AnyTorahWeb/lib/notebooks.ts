@@ -13,6 +13,7 @@ import {
 } from "./commentaryTypes";
 import type { AnchorSource, TextAnchor } from "./textAnchor";
 import { getCategoryItemName, getCategoryDisplayName } from "./categoryCatalog";
+import { syncArrayDiff, reconcileArray } from "./supabase/sync";
 
 export interface NotebookScope {
   category: ReaderCategory;
@@ -27,6 +28,12 @@ export interface Notebook {
   scopeKey: string;
   scope: NotebookScope;
   bodyJSON: JSONContent;
+  /** ISO 8601, set once at first save and never touched again — determines which notebook is the
+   *  permanently-free one under the subscription paywall (see supabase/migrations/
+   *  004_user_notebooks.sql and lib/notebookAccess.ts). Optional only because notebooks saved
+   *  before this field existed don't have it — callers sorting by creation order should fall back
+   *  to updatedAt for those. */
+  createdAt?: string;
   updatedAt: string; // ISO 8601
 }
 
@@ -97,9 +104,32 @@ export function loadNotebook(scope: NotebookScope): Notebook | undefined {
 
 export function saveNotebook(scope: NotebookScope, bodyJSON: JSONContent) {
   const store = loadStore();
+  const previous = Object.values(store);
   const scopeKey = notebookScopeKey(scope);
-  store[scopeKey] = { scopeKey, scope, bodyJSON, updatedAt: new Date().toISOString() };
+  const existing = store[scopeKey];
+  store[scopeKey] = {
+    scopeKey,
+    scope,
+    bodyJSON,
+    createdAt: existing?.createdAt ?? new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
   saveStore(store);
+  syncArrayDiff("user_notebooks", previous, Object.values(store), (n) => n.scopeKey, "scope_key");
+}
+
+/** Same reconcile-on-load pattern as lib/bookmarks.ts's loadAndReconcileBookmarks — see
+ *  lib/supabase/sync.ts for the merge rule. A locked (non-free, unsubscribed) notebook's row is
+ *  invisible via Supabase's RLS policy even to its own owner, so this only ever pulls in whatever
+ *  the current subscription status actually grants; pushing a local-only locked notebook up will
+ *  fail silently (logged, not thrown) and it simply stays local-only until unlocked. */
+export async function loadAndReconcileNotebooks(): Promise<Notebook[]> {
+  const local = loadNotebooks();
+  const merged = await reconcileArray("user_notebooks", local, (n) => n.scopeKey, "scope_key");
+  const store: NotebookStore = {};
+  for (const notebook of merged) store[notebook.scopeKey] = notebook;
+  saveStore(store);
+  return merged;
 }
 
 function isAnchorNode(node: JSONContent): boolean {

@@ -18,14 +18,20 @@ import {
   formatNotebookScopeLabel,
   loadNotebook,
   loadNotebooks,
+  loadAndReconcileNotebooks,
   notebookScopeKey,
   saveNotebook,
+  type Notebook,
   type NotebookScope,
 } from "@/lib/notebooks";
 import { formatAnchorLabel, type TextAnchor } from "@/lib/textAnchor";
 import { HIGHLIGHT_CATEGORY_COUNT, loadHighlightCategoryLabels } from "@/lib/highlightCategories";
 import FontSizeSlider from "@/components/FontSizeSlider";
 import { fontSizePx, FONT_SIZE_MIN, FONT_SIZE_MAX } from "@/lib/fontSizeLevels";
+import { schedulePreferencesSync } from "@/lib/preferences";
+import { useAuth } from "@/components/AuthProvider";
+import { getSubscriptionStatus, isActiveStatus } from "@/lib/subscription";
+import { isNotebookScopeLocked } from "@/lib/notebookAccess";
 
 const AUTOSAVE_DELAY_MS = 500;
 const NOTEBOOK_FONT_SIZE_KEY = "anytorah:notebookFontSizeLevel";
@@ -45,6 +51,7 @@ function storeNotebookFontSizeLevel(level: number) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(NOTEBOOK_FONT_SIZE_KEY, String(level));
+    schedulePreferencesSync();
   } catch {
     // localStorage unavailable — font size choice just won't persist.
   }
@@ -141,7 +148,32 @@ export default function NotebookPanel({
   };
   // Loaded once per mount (this component remounts on scope change anyway) — the "Other
   // notebooks" picker doesn't need to react to notebooks created in other tabs/sessions live.
-  const [allNotebooks] = useState(() => loadNotebooks());
+  // Signed-in users additionally reconcile against Supabase on each mount, both to pick up
+  // notebooks created on another device and to keep the free/locked computation below accurate.
+  // loadAndReconcileNotebooks/getSubscriptionStatus both no-op to a signed-out-safe default
+  // internally (they read the current user id themselves — see lib/supabase/sync.ts's
+  // getSyncUserId), so these effects can call them unconditionally, same as Reader.tsx's
+  // bookmarks/highlights reconcile effects.
+  const { user } = useAuth();
+  const [allNotebooks, setAllNotebooks] = useState<Notebook[]>(() => loadNotebooks());
+  useEffect(() => {
+    loadAndReconcileNotebooks().then(setAllNotebooks);
+  }, [user?.id]);
+
+  // Subscription gate (see lib/notebookAccess.ts) — UX only, the real gate is user_notebooks'
+  // RLS policy (supabase/migrations/004_user_notebooks.sql), re-checked by Postgres on every
+  // access regardless of what this predicts.
+  const [subscriptionActive, setSubscriptionActive] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    getSubscriptionStatus().then((status) => {
+      if (!cancelled) setSubscriptionActive(isActiveStatus(status));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+  const isLocked = isNotebookScopeLocked(scope, allNotebooks, { signedIn: !!user, subscriptionActive });
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -176,6 +208,12 @@ export default function NotebookPanel({
       });
     },
   });
+
+  // Toggling `editable` imperatively (rather than passing it into useEditor's config) survives
+  // this async, post-mount determination of isLocked without recreating the editor instance.
+  useEffect(() => {
+    editor?.setEditable(!isLocked);
+  }, [editor, isLocked]);
 
   const scrollToHeading = (pos: number) => {
     if (!editor) return;
@@ -589,11 +627,29 @@ export default function NotebookPanel({
       </p>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
-        <EditorContent
-          editor={editor}
-          className="notebook-editor-content h-full"
-          style={{ fontSize: fontSizePx(14, fontSizeLevel) }}
-        />
+        {isLocked ? (
+          <div dir={hebrewMode ? "rtl" : "ltr"} className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
+            <p className="text-sm font-medium opacity-80">{hebrewMode ? "מחברת זו נעולה" : "This notebook is locked"}</p>
+            <p className="max-w-xs text-xs opacity-60">
+              {hebrewMode
+                ? "מחברת אחת חינם לכל משתמש רשום. הרשמה לתמיכה תפתח מחברות נוספות."
+                : "One free notebook per signed-in account. Subscribe to unlock additional notebooks."}
+            </p>
+            <a
+              href="/api/stripe/checkout"
+              className="shrink-0 rounded-full border border-border px-4 py-1.5 text-xs transition-colors hover:border-[var(--accent)]"
+              style={{ background: "var(--accent)", color: "var(--accent-foreground)" }}
+            >
+              {hebrewMode ? "הרשמה לתמיכה" : "Subscribe"}
+            </a>
+          </div>
+        ) : (
+          <EditorContent
+            editor={editor}
+            className="notebook-editor-content h-full"
+            style={{ fontSize: fontSizePx(14, fontSizeLevel) }}
+          />
+        )}
       </div>
 
       <div className="flex shrink-0 items-center justify-end border-t border-border p-1.5">
