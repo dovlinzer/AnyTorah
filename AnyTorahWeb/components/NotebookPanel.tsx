@@ -30,8 +30,6 @@ import FontSizeSlider from "@/components/FontSizeSlider";
 import { fontSizePx, FONT_SIZE_MIN, FONT_SIZE_MAX } from "@/lib/fontSizeLevels";
 import { schedulePreferencesSync } from "@/lib/preferences";
 import { useAuth } from "@/components/AuthProvider";
-import { getSubscriptionStatus, isActiveStatus } from "@/lib/subscription";
-import { isNotebookScopeLocked } from "@/lib/notebookAccess";
 
 const AUTOSAVE_DELAY_MS = 500;
 const NOTEBOOK_FONT_SIZE_KEY = "anytorah:notebookFontSizeLevel";
@@ -122,7 +120,7 @@ export default function NotebookPanel({
    *  ones for the current book) — unlike onScopeChange, this can change category/index too. */
   onNavigateToOtherScope: (scope: NotebookScope) => void;
   onNavigateAnchor: (anchor: TextAnchor) => void;
-  onEditorReady: (insertAnchor: (anchor: TextAnchor) => void) => void;
+  onEditorReady: (insertAnchor: (anchor: TextAnchor, quoteHe?: string, quoteEn?: string) => void) => void;
   onClose: () => void;
   /** Set when arriving here from a cross-notebook search result (NotebookSearchModal) — opens
    *  the in-doc find bar pre-seeded with the query that matched, so the user lands on the hit. */
@@ -153,11 +151,10 @@ export default function NotebookPanel({
   };
   // Loaded once per mount (this component remounts on scope change anyway) — the "Other
   // notebooks" picker doesn't need to react to notebooks created in other tabs/sessions live.
-  // Signed-in users additionally reconcile against Supabase on each mount, both to pick up
-  // notebooks created on another device and to keep the free/locked computation below accurate.
-  // loadAndReconcileNotebooks/getSubscriptionStatus both no-op to a signed-out-safe default
-  // internally (they read the current user id themselves — see lib/supabase/sync.ts's
-  // getSyncUserId), so these effects can call them unconditionally, same as Reader.tsx's
+  // Signed-in users additionally reconcile against Supabase on each mount, to pick up notebooks
+  // created on another device. loadAndReconcileNotebooks no-ops to a signed-out-safe default
+  // internally (it reads the current user id itself — see lib/supabase/sync.ts's
+  // getSyncUserId), so this effect can call it unconditionally, same as Reader.tsx's
   // bookmarks/highlights reconcile effects.
   const { user } = useAuth();
   const [allNotebooks, setAllNotebooks] = useState<Notebook[]>(() => loadNotebooks());
@@ -165,20 +162,12 @@ export default function NotebookPanel({
     loadAndReconcileNotebooks().then(setAllNotebooks);
   }, [user?.id]);
 
-  // Subscription gate (see lib/notebookAccess.ts) — UX only, the real gate is user_notebooks'
-  // RLS policy (supabase/migrations/004_user_notebooks.sql), re-checked by Postgres on every
-  // access regardless of what this predicts.
-  const [subscriptionActive, setSubscriptionActive] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    getSubscriptionStatus().then((status) => {
-      if (!cancelled) setSubscriptionActive(isActiveStatus(status));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id]);
-  const isLocked = isNotebookScopeLocked(scope, allNotebooks, { signedIn: !!user, subscriptionActive });
+  // Multi-notebook subscription gating (lib/notebookAccess.ts's isNotebookScopeLocked, still
+  // enforced independently by user_notebooks' RLS policy) is disabled here for now — the
+  // subscription flow isn't ready to ship yet and the lock screen was blocking normal
+  // multi-notebook testing. Re-enable by restoring the isNotebookScopeLocked call (plus the
+  // subscriptionActive fetch it depended on) once that flow is actually ready to launch.
+  const isLocked = false;
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -256,11 +245,17 @@ export default function NotebookPanel({
 
   useEffect(() => {
     if (!editor) return;
-    onEditorReady((anchor: TextAnchor) => {
+    onEditorReady((anchor: TextAnchor, quoteHe?: string, quoteEn?: string) => {
       editor
         .chain()
         .focus()
-        .insertAnchor({ anchor, nodeId: crypto.randomUUID(), label: formatAnchorLabel(anchor, hebrewMode) })
+        .insertAnchor({
+          anchor,
+          nodeId: crypto.randomUUID(),
+          label: formatAnchorLabel(anchor, hebrewMode),
+          quoteHe,
+          quoteEn,
+        })
         .insertContent(" ")
         .run();
     });

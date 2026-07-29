@@ -222,6 +222,40 @@ body {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
+/* Expand-in-place toggle — reveals the anchor's captured quote snapshot without leaving the
+ * notebook, alongside (not instead of) the pill's own navigate-to-reader click. */
+.notebook-anchor-pill-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-inline-start: 0.15rem;
+  border: none;
+  background: none;
+  color: var(--accent);
+  opacity: 0.6;
+  font-size: 0.75em;
+  cursor: pointer;
+}
+.notebook-anchor-pill-toggle:hover {
+  opacity: 1;
+}
+.notebook-anchor-pill-quote {
+  display: block;
+  margin: 0.3rem 0 0.3rem 0;
+  padding: 0.4rem 0.6rem;
+  border-inline-start: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-radius: 0.2rem;
+  font-size: 0.9em;
+  opacity: 0.85;
+}
+.notebook-anchor-pill-quote-line {
+  display: block;
+}
+.notebook-anchor-pill-quote-line + .notebook-anchor-pill-quote-line {
+  margin-top: 0.25rem;
+}
+
 /* Notebook tag chip (TagChip NodeView) — a small inline label marking a specific passage,
  * distinct from the anchor pill's accent styling so the two are visually distinguishable at a
  * glance. Its own ✕ deletes just this chip (no other editor action removes one). */

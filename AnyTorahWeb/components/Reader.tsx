@@ -1078,7 +1078,7 @@ export default function Reader() {
     ];
   }, [category, index, hebrewMode, effectiveSlots]);
 
-  const notebookInsertRef = useRef<((anchor: TextAnchor) => void) | null>(null);
+  const notebookInsertRef = useRef<((anchor: TextAnchor, quoteHe?: string, quoteEn?: string) => void) | null>(null);
   const [notebookSearchOpen, setNotebookSearchOpen] = useState(false);
   // Set only when arriving from a cross-notebook search result — seeds NotebookPanel's in-doc
   // find bar so the user lands on the hit that matched, not just the top of the document.
@@ -1653,6 +1653,8 @@ export default function Reader() {
                                     );
                                     notebookInsertRef.current?.(
                                       buildAnchor("main", seg.index, 0, undefined, category === "talmud" ? talmudAmud : undefined, segmentLabel),
+                                      quoteHe,
+                                      quoteEn,
                                     );
                                   }
                                 : undefined
@@ -1797,9 +1799,11 @@ export default function Reader() {
             }
             onInsertToNotebook={
               notebookOpen
-                ? (segmentIndex, paragraphIndex, commentaryType, amud, segmentLabel) =>
+                ? (segmentIndex, paragraphIndex, commentaryType, amud, segmentLabel, quoteHe, quoteEn) =>
                     notebookInsertRef.current?.(
                       buildAnchor("commentary", segmentIndex, paragraphIndex, commentaryType, amud, segmentLabel),
+                      quoteHe,
+                      quoteEn,
                     )
                 : undefined
             }

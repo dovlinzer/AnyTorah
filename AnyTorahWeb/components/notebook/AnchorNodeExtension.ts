@@ -14,7 +14,16 @@ export interface AnchorNodeOptions {
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     anchor: {
-      insertAnchor: (attrs: { anchor: TextAnchor; nodeId: string; label: string }) => ReturnType;
+      insertAnchor: (attrs: {
+        anchor: TextAnchor;
+        nodeId: string;
+        label: string;
+        /** Quote snapshot captured once at anchor-creation time (same pattern as
+         *  Highlight.anchorQuoteHe/En) — powers AnchorPill's expand-in-place preview without a
+         *  live re-fetch. Omitted on anchors created before this field existed. */
+        quoteHe?: string;
+        quoteEn?: string;
+      }) => ReturnType;
     };
   }
 }
@@ -36,6 +45,8 @@ const AnchorNodeExtension = Node.create<AnchorNodeOptions>({
       anchor: { default: null },
       nodeId: { default: null },
       label: { default: "" },
+      quoteHe: { default: null },
+      quoteEn: { default: null },
     };
   },
 

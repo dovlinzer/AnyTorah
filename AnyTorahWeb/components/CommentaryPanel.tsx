@@ -64,13 +64,17 @@ export default function CommentaryPanel({
   /** Set only while the Notebook side panel is open — inserts this paragraph as an anchor at the
    *  notebook's cursor. See HighlightMark's onInsertToNotebook for the click affordance. `amud`/
    *  `segmentLabel` are captured here (this panel is the only place that knows the entry's
-   *  number/text) for the anchor's granular label — see TextAnchor.segmentLabel. */
+   *  number/text) for the anchor's granular label — see TextAnchor.segmentLabel. `quoteHe`/
+   *  `quoteEn` are the same display-mode-gated snapshot already computed for highlight capture
+   *  (see quoteHe/quoteEn below), reused here so the anchor pill can preview this source inline. */
   onInsertToNotebook?: (
     segmentIndex: number,
     paragraphIndex: number,
     commentaryType: CommentaryType,
     amud: "a" | "b" | undefined,
     segmentLabel: string | undefined,
+    quoteHe: string,
+    quoteEn: string,
   ) => void;
   /** Fired whenever the active commentary tab changes — Reader.tsx uses this to auto-follow the
    *  Notebook's scope to whichever commentary the reader is currently viewing (see notebook
@@ -360,7 +364,15 @@ export default function CommentaryPanel({
                                   isGemara ? heParagraphsAll[pIdx] ?? "" : "",
                                   isGemara ? enParagraphsAll[pIdx] ?? "" : "",
                                 );
-                                onInsertToNotebook(entry.index, pIdx, activeType, category === "talmud" ? talmudAmud : undefined, segmentLabel);
+                                onInsertToNotebook(
+                                  entry.index,
+                                  pIdx,
+                                  activeType,
+                                  category === "talmud" ? talmudAmud : undefined,
+                                  segmentLabel,
+                                  quoteHe,
+                                  quoteEn,
+                                );
                               }
                             : undefined
                         }

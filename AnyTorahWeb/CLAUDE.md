@@ -878,6 +878,50 @@ session).
   simply had no tags yet; confirmed working as soon as a tag existed. If this comes up again,
   check for an actual `.notebook-tag-chip` in that notebook's content before assuming a regression.
 
+## Notebook — AnchorPill expand-in-place (quote preview) — shipped
+
+Phase A of a larger "source sheets" feature (design doc/staged plan discussed with the user, not
+yet built beyond this phase — Phase B is tag/color-to-anchor association, Phase C is a Source
+Sheet Builder that queries both Highlights and Notebooks; see the session's plan file if resuming
+this). This phase only adds an inline quote preview to the existing anchor pill — it does not
+touch tags, colors, or source sheets themselves.
+
+**Goal:** an anchor pill should let a user preview the source quote inline, without losing its
+existing click-to-navigate-to-reader behavior — both need to coexist on one small pill, useful for
+on-screen reading and (eventually) printing a notebook as-is.
+
+- `AnchorNodeExtension.ts` gained two optional attrs, `quoteHe`/`quoteEn` — a quote snapshot
+  captured once at anchor-*creation* time (same snapshot philosophy as `Highlight.anchorQuoteHe/
+  En` and `TextAnchor.segmentLabel` — the source segment data may not still be loaded whenever the
+  pill is later displayed), not a live re-fetch. Reuses the exact same `truncateAnchorQuote`/
+  `stripAnchorHTML` capture already computed at the existing highlight-capture call sites in
+  `Reader.tsx` (main text) and `CommentaryPanel.tsx` (commentary paragraphs) — just threaded two
+  more params through `onInsertToNotebook`'s closure and `notebookInsertRef`'s callback signature
+  (now `(anchor, quoteHe?, quoteEn?) => void`) rather than computing anything new.
+- `AnchorPill.tsx` now renders **two independent controls** in the same `NodeViewWrapper`: the
+  original 📍 navigate button (unchanged), and a new ▾/▸ toggle with its own
+  `e.stopPropagation()` — mirrors `HighlightMark.tsx`'s 📌 button sitting alongside the highlight's
+  own click area, the established pattern in this codebase for "two click targets, one small
+  wrapper." The toggle only renders when the pill actually has a captured quote
+  (`quoteHe || quoteEn`) — **anchors created before this shipped have no snapshot and simply show
+  no toggle**, rather than an empty/broken expand box. Same precedented gap as `segmentLabel`/
+  `amud`'s new-anchors-only rollout in Phase 3.
+- Expanded state renders each language as its own block with an explicit `dir` (`rtl`/Hebrew,
+  `ltr`/English) — does not inherit the pill's own direction, matching how main-text paragraphs
+  already set `dir` per language rather than relying on the surrounding context.
+- New CSS in `globals.css`: `.notebook-anchor-pill-toggle` (ghost-styled, low-opacity until hover)
+  and `.notebook-anchor-pill-quote`/`-quote-line` (italicized, accent-bordered block, one line per
+  language present).
+- `npm run build`/`tsc --noEmit`/`npm run lint` all clean — lint's remaining errors are the
+  pre-existing `react-hooks/set-state-in-effect`/`refs-during-render` items already documented
+  throughout `Reader.tsx` (confirmed by file:line diff against the pre-session baseline; none of
+  this session's changed lines appear in the list).
+- **Not yet verified live in the browser** — another chat session already had `next dev` running
+  against this same project directory when this phase finished, and Next's dev-server lock is
+  per-directory (not per-port), so a second instance against the same folder can't start
+  regardless of port. User opted to click-test it themselves in their own already-running session
+  rather than have this session kill the other one's process.
+
 ## Daily learning dedication banner — shipped
 
 `lib/dedicationService.ts` (types + `periodTitle`/`formattedMessage`, ported from native's
