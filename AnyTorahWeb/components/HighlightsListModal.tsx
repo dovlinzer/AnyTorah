@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Highlight } from "@/lib/highlights";
 import { matchesQuery } from "@/lib/highlights";
 import { buildSubtitle } from "@/lib/bookmarks";
@@ -23,6 +23,24 @@ export default function HighlightsListModal({
 }) {
   const [query, setQuery] = useState("");
   const [colorFilter, setColorFilter] = useState<number | null>(null);
+  // A Set, not a single value — plain click selects just that one tag; Ctrl/Cmd-click toggles it
+  // into/out of the current selection, so several tags can be active at once (OR: a highlight
+  // matches if it carries *any* selected tag). See toggleTagFilter below.
+  const [tagFilters, setTagFilters] = useState<Set<string>>(new Set());
+
+  const toggleTagFilter = (t: string, additive: boolean) => {
+    setTagFilters((prev) => {
+      if (additive) {
+        const next = new Set(prev);
+        if (next.has(t)) next.delete(t);
+        else next.add(t);
+        return next;
+      }
+      // Plain click on the only currently-selected tag clears the filter; otherwise it replaces
+      // the whole selection with just this tag (dropping any multi-select from Ctrl/Cmd-clicks).
+      return prev.size === 1 && prev.has(t) ? new Set() : new Set([t]);
+    });
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -32,8 +50,15 @@ export default function HighlightsListModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const h of highlights) for (const t of h.tags) set.add(t);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [highlights]);
+
   const filtered = highlights
     .filter((h) => colorFilter === null || h.colorIndex === colorFilter)
+    .filter((h) => tagFilters.size === 0 || h.tags.some((t) => tagFilters.has(t)))
     .filter((h) => !query.trim() || matchesQuery(h, query));
 
   return (
@@ -58,6 +83,37 @@ export default function HighlightsListModal({
             className="w-full rounded border border-border bg-background px-2 py-1.5 text-sm"
           />
           <HighlightColorPicker value={colorFilter} onChange={setColorFilter} allowClear />
+          {allTags.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setTagFilters(new Set())}
+                className="rounded-full border px-2 py-1 text-xs"
+                style={{
+                  borderColor: tagFilters.size === 0 ? "var(--accent)" : "var(--border)",
+                  opacity: tagFilters.size === 0 ? 1 : 0.6,
+                }}
+              >
+                All tags
+              </button>
+              {allTags.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  title="Click to select; Ctrl/Cmd-click to select multiple tags"
+                  onClick={(e) => toggleTagFilter(t, e.metaKey || e.ctrlKey)}
+                  className="rounded-full border px-2 py-1 text-xs"
+                  style={{
+                    borderColor: tagFilters.has(t) ? "var(--accent)" : "var(--border)",
+                    opacity: tagFilters.has(t) ? 1 : 0.6,
+                  }}
+                >
+                  {t}
+                </button>
+              ))}
+              {tagFilters.size > 1 && <span className="text-[10px] opacity-50">any of {tagFilters.size} tags</span>}
+            </div>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto p-2">
           {highlights.length === 0 ? (

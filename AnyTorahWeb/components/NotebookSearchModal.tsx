@@ -10,6 +10,8 @@ import {
   type Notebook,
 } from "@/lib/notebooks";
 import { HIGHLIGHT_CATEGORY_COUNT, loadHighlightCategoryLabels } from "@/lib/highlightCategories";
+import { matchesQuery, type Highlight } from "@/lib/highlights";
+import { buildSubtitle } from "@/lib/bookmarks";
 
 const SNIPPET_RADIUS = 60;
 
@@ -31,19 +33,44 @@ function buildSnippet(text: string, query: string): string {
  *  and by highlighted-section color, on top of the tag filter. Chrome mirrors
  *  HighlightsListModal.tsx. */
 export default function NotebookSearchModal({
+  highlights,
   onNavigate,
+  onNavigateHighlight,
   onClose,
 }: {
+  /** All of the user's highlights — passed down rather than loaded here, since Reader.tsx already
+   *  owns/loads this array for HighlightsListModal and keeps it in sync with edits made elsewhere. */
+  highlights: Highlight[];
   /** Navigates the reader to this notebook's scope, opens the panel, and seeds its in-doc find
    *  bar with the query that matched (so the user lands on the hit, not just the doc's top). */
   onNavigate: (notebook: Notebook, seedSearchTerm: string) => void;
+  /** Navigates the reader straight to a highlight's anchor location (no notebook panel involved)
+   *  — mirrors HighlightsListModal's own onNavigate. */
+  onNavigateHighlight: (h: Highlight) => void;
   onClose: () => void;
 }) {
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
   const [query, setQuery] = useState("");
-  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  // A Set, not a single value — plain click selects just that one tag; Ctrl/Cmd-click toggles it
+  // into/out of the current selection (OR: a result matches if it carries *any* selected tag).
+  const [tagFilters, setTagFilters] = useState<Set<string>>(new Set());
   const [colorFilter, setColorFilter] = useState<number | null>(null);
   const [colorLabels] = useState<string[]>(() => loadHighlightCategoryLabels());
+  // Opt-in — cross-notebook search predates Highlights integration, so this stays off by default
+  // rather than silently widening every existing search's results.
+  const [includeHighlights, setIncludeHighlights] = useState(false);
+
+  const toggleTagFilter = (t: string, additive: boolean) => {
+    setTagFilters((prev) => {
+      if (additive) {
+        const next = new Set(prev);
+        if (next.has(t)) next.delete(t);
+        else next.add(t);
+        return next;
+      }
+      return prev.size === 1 && prev.has(t) ? new Set() : new Set([t]);
+    });
+  };
   // Empty = every notebook included — tracking exclusions (rather than a positive selection set)
   // means newly-loaded notebooks default to "included" without needing to pre-populate anything.
   const [excludedScopeKeys, setExcludedScopeKeys] = useState<Set<string>>(new Set());
@@ -76,18 +103,36 @@ export default function NotebookSearchModal({
   const allTags = useMemo(() => {
     const set = new Set<string>();
     for (const entry of indexed) for (const t of entry.tags) set.add(t);
+    if (includeHighlights) for (const h of highlights) for (const t of h.tags) set.add(t);
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [indexed]);
+  }, [indexed, includeHighlights, highlights]);
 
   const q = query.trim().toLowerCase();
+  const hasActiveFilter = !!q || tagFilters.size > 0 || colorFilter !== null;
   const results = indexed
     .filter((entry) => !excludedScopeKeys.has(entry.notebook.scopeKey))
-    .filter((entry) => !tagFilter || entry.tags.includes(tagFilter))
+    .filter((entry) => tagFilters.size === 0 || entry.tags.some((t) => tagFilters.has(t)))
     .filter((entry) => colorFilter === null || entry.coloredRuns.some((r) => r.colorIndex === colorFilter))
     .filter((entry) => {
-      if (!q) return tagFilter !== null || colorFilter !== null;
+      if (!q) return tagFilters.size > 0 || colorFilter !== null;
       return entry.text.toLowerCase().includes(q);
     });
+
+  // Same three filters (text/tag/color) reused against highlights, so "yellow" or a tag name
+  // turns up matches from both surfaces at once — the whole point of this toggle. matchesQuery
+  // (lib/highlights.ts) already covers text/tag/note substring matching the same way
+  // HighlightsListModal's own search does.
+  const highlightResults = useMemo(() => {
+    if (!includeHighlights) return [];
+    const trimmed = query.trim();
+    return highlights
+      .filter((h) => colorFilter === null || h.colorIndex === colorFilter)
+      .filter((h) => tagFilters.size === 0 || h.tags.some((t) => tagFilters.has(t)))
+      .filter((h) => {
+        if (!trimmed) return tagFilters.size > 0 || colorFilter !== null;
+        return matchesQuery(h, trimmed);
+      });
+  }, [includeHighlights, highlights, colorFilter, tagFilters, query]);
 
   const includedCount = notebooks.length - excludedScopeKeys.size;
 
@@ -117,11 +162,11 @@ export default function NotebookSearchModal({
             <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => setTagFilter(null)}
+                onClick={() => setTagFilters(new Set())}
                 className="rounded-full border px-2 py-1 text-xs"
                 style={{
-                  borderColor: tagFilter === null ? "var(--accent)" : "var(--border)",
-                  opacity: tagFilter === null ? 1 : 0.6,
+                  borderColor: tagFilters.size === 0 ? "var(--accent)" : "var(--border)",
+                  opacity: tagFilters.size === 0 ? 1 : 0.6,
                 }}
               >
                 All tags
@@ -130,16 +175,18 @@ export default function NotebookSearchModal({
                 <button
                   key={t}
                   type="button"
-                  onClick={() => setTagFilter(t === tagFilter ? null : t)}
+                  title="Click to select; Ctrl/Cmd-click to select multiple tags"
+                  onClick={(e) => toggleTagFilter(t, e.metaKey || e.ctrlKey)}
                   className="rounded-full border px-2 py-1 text-xs"
                   style={{
-                    borderColor: tagFilter === t ? "var(--accent)" : "var(--border)",
-                    opacity: tagFilter === t ? 1 : 0.6,
+                    borderColor: tagFilters.has(t) ? "var(--accent)" : "var(--border)",
+                    opacity: tagFilters.has(t) ? 1 : 0.6,
                   }}
                 >
                   🏷 {t}
                 </button>
               ))}
+              {tagFilters.size > 1 && <span className="text-[10px] opacity-50">any of {tagFilters.size} tags</span>}
             </div>
           )}
           <div className="flex flex-wrap items-center gap-1.5">
@@ -157,6 +204,10 @@ export default function NotebookSearchModal({
               />
             ))}
           </div>
+          <label className="flex items-center gap-1.5 text-xs">
+            <input type="checkbox" checked={includeHighlights} onChange={(e) => setIncludeHighlights(e.target.checked)} />
+            Also search highlights
+          </label>
           <div className="flex flex-col gap-1">
             <button
               type="button"
@@ -203,48 +254,89 @@ export default function NotebookSearchModal({
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-2">
-          {notebooks.length === 0 ? (
+          {notebooks.length === 0 && !includeHighlights ? (
             <p className="p-6 text-center text-sm opacity-60">
               Open the notebook panel (📓) and start writing to create your first notebook.
             </p>
-          ) : !q && tagFilter === null && colorFilter === null ? (
+          ) : !hasActiveFilter ? (
             <p className="p-6 text-center text-sm opacity-60">Type to search, or pick a tag/color above.</p>
-          ) : results.length === 0 ? (
+          ) : results.length === 0 && highlightResults.length === 0 ? (
             <p className="p-6 text-center text-sm opacity-60">No matches.</p>
           ) : (
-            results.map(({ notebook, text, tags, coloredRuns }) => {
-              const colorSnippet = colorFilter !== null ? coloredRuns.find((r) => r.colorIndex === colorFilter)?.text : undefined;
-              const snippet = q ? buildSnippet(text, query) : (colorSnippet ?? text.slice(0, SNIPPET_RADIUS * 2)).trim();
-              return (
-                <button
-                  key={notebook.scopeKey}
-                  onClick={() => onNavigate(notebook, query)}
-                  className="flex w-full flex-col items-start gap-1 rounded px-2 py-2 text-left hover:bg-[var(--border)]"
-                >
-                  <div className="text-xs font-medium" style={{ color: "var(--accent)" }}>
-                    {formatNotebookScopeLabel(notebook.scope)}
-                  </div>
-                  {snippet && (
-                    <div className={colorSnippet && !q ? `highlight-text highlight-text-${colorFilter}` : "text-sm"}>
-                      {snippet}
+            <>
+              {includeHighlights && highlightResults.length > 0 && results.length > 0 && (
+                <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wide opacity-50">Notebooks</div>
+              )}
+              {results.map(({ notebook, text, tags, coloredRuns }) => {
+                const colorSnippet = colorFilter !== null ? coloredRuns.find((r) => r.colorIndex === colorFilter)?.text : undefined;
+                const snippet = q ? buildSnippet(text, query) : (colorSnippet ?? text.slice(0, SNIPPET_RADIUS * 2)).trim();
+                return (
+                  <button
+                    key={notebook.scopeKey}
+                    onClick={() => onNavigate(notebook, query)}
+                    className="flex w-full flex-col items-start gap-1 rounded px-2 py-2 text-left hover:bg-[var(--border)]"
+                  >
+                    <div className="text-xs font-medium" style={{ color: "var(--accent)" }}>
+                      {formatNotebookScopeLabel(notebook.scope)}
                     </div>
+                    {snippet && (
+                      <div className={colorSnippet && !q ? `highlight-text highlight-text-${colorFilter}` : "text-sm"}>
+                        {snippet}
+                      </div>
+                    )}
+                    {tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {tags.map((t, i) => (
+                          <span
+                            key={`${t}-${i}`}
+                            className="rounded-full px-1.5 py-0.5 text-[10px]"
+                            style={{ background: "var(--border)" }}
+                          >
+                            🏷 {t}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+              {includeHighlights && highlightResults.length > 0 && (
+                <>
+                  {results.length > 0 && (
+                    <div className="mt-2 mb-1 px-2 text-[10px] font-semibold uppercase tracking-wide opacity-50">Highlights</div>
                   )}
-                  {tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {tags.map((t, i) => (
-                        <span
-                          key={`${t}-${i}`}
-                          className="rounded-full px-1.5 py-0.5 text-[10px]"
-                          style={{ background: "var(--border)" }}
-                        >
-                          🏷 {t}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </button>
-              );
-            })
+                  {highlightResults.map((h) => (
+                    <button
+                      key={h.id}
+                      onClick={() => onNavigateHighlight(h)}
+                      className="flex w-full items-start gap-2 rounded px-2 py-2 text-left hover:bg-[var(--border)]"
+                    >
+                      <span className={`highlight-dot highlight-dot-${h.colorIndex} mt-1 shrink-0`} />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs opacity-60">
+                          {buildSubtitle(h.anchor.category, h.anchor.index, h.anchor.chapter, h.anchor.halakha)}
+                        </div>
+                        <div className="text-sm font-medium">{h.anchorQuoteEn || h.anchorQuoteHe}</div>
+                        {h.note && <div className="mt-0.5 line-clamp-2 text-xs opacity-50">{h.note}</div>}
+                        {h.tags.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {h.tags.map((t) => (
+                              <span
+                                key={t}
+                                className="rounded-full px-1.5 py-0.5 text-[10px]"
+                                style={{ background: "var(--border)" }}
+                              >
+                                {t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </>
+              )}
+            </>
           )}
         </div>
       </div>

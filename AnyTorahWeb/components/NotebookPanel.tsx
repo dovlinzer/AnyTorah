@@ -135,6 +135,11 @@ export default function NotebookPanel({
   const [findOpen, setFindOpen] = useState(!!initialSearchTerm);
   const [findQuery, setFindQuery] = useState(initialSearchTerm ?? "");
   const [colorFilter, setColorFilter] = useState<number | null>(null);
+  // A Set, not a single value — plain click on a tag chip selects just that one; Ctrl/Cmd-click
+  // toggles it into/out of the current selection, so the find bar can jump through matches of
+  // several tags at once (OR). Cleared whenever the free-text box is typed into directly, since
+  // that's a distinct, single literal search rather than a tag selection.
+  const [tagFilters, setTagFilters] = useState<Set<string>>(new Set());
   const [findMatchInfo, setFindMatchInfo] = useState({ count: 0, index: -1 });
   const findInputRef = useRef<HTMLInputElement>(null);
   const [outlineOpen, setOutlineOpen] = useState(false);
@@ -374,6 +379,11 @@ export default function NotebookPanel({
             active={editor?.isActive("heading", { level })}
           />
         ))}
+        <ToolbarButton
+          label="―"
+          title="Insert a horizontal rule to break up sections (next line starts as Heading 1)"
+          onClick={() => editor?.chain().focus().setHorizontalRule().setHeading({ level: 1 }).run()}
+        />
         <ToolbarDivider />
         <ToolbarButton
           label="•"
@@ -473,6 +483,7 @@ export default function NotebookPanel({
                 editor?.commands.setSearchTerm("");
                 editor?.commands.setColorFilter(null);
                 setColorFilter(null);
+                setTagFilters(new Set());
               }
               return next;
             });
@@ -519,6 +530,7 @@ export default function NotebookPanel({
               value={findQuery}
               onChange={(e) => {
                 setFindQuery(e.target.value);
+                setTagFilters(new Set());
                 editor?.commands.setSearchTerm(e.target.value);
               }}
               onKeyDown={(e) => {
@@ -530,6 +542,7 @@ export default function NotebookPanel({
                   setFindOpen(false);
                   setFindQuery("");
                   setColorFilter(null);
+                  setTagFilters(new Set());
                   editor?.commands.setSearchTerm("");
                   editor?.commands.setColorFilter(null);
                 }
@@ -564,6 +577,7 @@ export default function NotebookPanel({
                 setFindOpen(false);
                 setFindQuery("");
                 setColorFilter(null);
+                setTagFilters(new Set());
                 editor?.commands.setSearchTerm("");
                 editor?.commands.setColorFilter(null);
               }}
@@ -581,20 +595,32 @@ export default function NotebookPanel({
                 <button
                   key={t}
                   type="button"
-                  onClick={() => {
-                    const next = findQuery === t ? "" : t;
-                    setFindQuery(next);
-                    editor?.commands.setSearchTerm(next);
+                  title="Click to search this tag; Ctrl/Cmd-click to add more tags (matches any selected)"
+                  onClick={(e) => {
+                    const additive = e.metaKey || e.ctrlKey;
+                    let next: Set<string>;
+                    if (additive) {
+                      next = new Set(tagFilters);
+                      if (next.has(t)) next.delete(t);
+                      else next.add(t);
+                    } else {
+                      next = tagFilters.size === 1 && tagFilters.has(t) ? new Set() : new Set([t]);
+                    }
+                    setTagFilters(next);
+                    const terms = Array.from(next);
+                    setFindQuery(terms.join(", "));
+                    editor?.commands.setSearchTerms(terms);
                   }}
                   className="rounded-full border px-2 py-0.5 text-[10px]"
                   style={{
-                    borderColor: findQuery === t ? "var(--accent)" : "var(--border)",
-                    opacity: findQuery === t ? 1 : 0.7,
+                    borderColor: tagFilters.has(t) ? "var(--accent)" : "var(--border)",
+                    opacity: tagFilters.has(t) ? 1 : 0.7,
                   }}
                 >
                   🏷 {t}
                 </button>
               ))}
+              {tagFilters.size > 1 && <span className="text-[10px] opacity-50">any of {tagFilters.size}</span>}
             </div>
           )}
           <div className="flex items-center gap-1.5">

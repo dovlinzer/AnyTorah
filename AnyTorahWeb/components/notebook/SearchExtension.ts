@@ -17,7 +17,10 @@ export interface SearchMatch {
 }
 
 interface SearchStorage {
-  searchTerm: string;
+  /** One or more terms, OR'd together — a plain free-text search is just a single-element array;
+   *  the find bar's tag-chip row (NotebookPanel.tsx) can select several tags at once (Ctrl/Cmd-
+   *  click) and search for a match against any of them. */
+  searchTerms: string[];
   /** null = no color filter (plain text search); a HIGHLIGHT_CATEGORY index otherwise — see
    *  lib/highlightCategories.ts, the same 4 colors SectionColorExtension marks text with. */
   colorFilter: number | null;
@@ -44,11 +47,11 @@ function overlaps(a: SearchMatch, b: SearchMatch): boolean {
   return a.from < b.to && b.from < a.to;
 }
 
-function findMatches(doc: ProseMirrorNode, term: string, colorFilter: number | null): SearchMatch[] {
-  const q = term.trim().toLowerCase();
+function findMatches(doc: ProseMirrorNode, terms: string[], colorFilter: number | null): SearchMatch[] {
+  const qs = terms.map((t) => t.trim().toLowerCase()).filter(Boolean);
   const coloredRanges = colorFilter !== null ? findColoredRanges(doc, colorFilter) : null;
 
-  if (!q) {
+  if (qs.length === 0) {
     // No text term — a color filter alone means "every colored run of this color", otherwise
     // there's nothing to match.
     return coloredRanges ?? [];
@@ -58,18 +61,22 @@ function findMatches(doc: ProseMirrorNode, term: string, colorFilter: number | n
   doc.descendants((node, pos) => {
     if (node.isText && node.text) {
       const text = node.text.toLowerCase();
-      let idx = text.indexOf(q);
-      while (idx !== -1) {
-        results.push({ from: pos + idx, to: pos + idx + q.length });
-        idx = text.indexOf(q, idx + 1);
+      for (const q of qs) {
+        let idx = text.indexOf(q);
+        while (idx !== -1) {
+          results.push({ from: pos + idx, to: pos + idx + q.length });
+          idx = text.indexOf(q, idx + 1);
+        }
       }
-    } else if (node.type.name === "tag" && typeof node.attrs.label === "string" && node.attrs.label.toLowerCase().includes(q)) {
+    } else if (node.type.name === "tag" && typeof node.attrs.label === "string") {
       // Atom node, not text — the whole node is the match, same convention extractAnchors/
       // extractTags (lib/notebooks.ts) already use for "this node is the unit," not a substring
       // range within it.
-      results.push({ from: pos, to: pos + node.nodeSize });
+      const label = node.attrs.label.toLowerCase();
+      if (qs.some((q) => label.includes(q))) results.push({ from: pos, to: pos + node.nodeSize });
     }
   });
+  results.sort((a, b) => a.from - b.from);
 
   if (!coloredRanges) return results;
   return results.filter((r) => coloredRanges.some((c) => overlaps(r, c)));
@@ -78,9 +85,14 @@ function findMatches(doc: ProseMirrorNode, term: string, colorFilter: number | n
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     notebookSearch: {
-      /** Sets the term, recomputes matches, and jumps to the first one. Empty string clears
-       *  (unless a color filter is also active, in which case it seeds from that instead). */
+      /** Sets a single term, recomputes matches, and jumps to the first one. Empty string clears
+       *  (unless a color filter is also active, in which case it seeds from that instead). Thin
+       *  wrapper around setSearchTerms([term]) for the free-text search box, which only ever
+       *  holds one term. */
       setSearchTerm: (term: string) => ReturnType;
+      /** Sets several terms at once, OR'd together — a match against any one of them counts.
+       *  Powers the find bar's tag-chip row, where Ctrl/Cmd-click selects more than one tag. */
+      setSearchTerms: (terms: string[]) => ReturnType;
       /** null clears the filter back to plain text search. */
       setColorFilter: (colorIndex: number | null) => ReturnType;
       goToNextMatch: () => ReturnType;
@@ -96,7 +108,7 @@ const SearchExtension = Extension.create({
   name: "notebookSearch",
 
   addStorage(): SearchStorage {
-    return { searchTerm: "", colorFilter: null, results: [], resultIndex: -1 };
+    return { searchTerms: [], colorFilter: null, results: [], resultIndex: -1 };
   },
 
   addCommands() {
@@ -109,7 +121,7 @@ const SearchExtension = Extension.create({
       tr.setMeta(SearchPluginKey, true);
     };
     const recompute = (doc: ProseMirrorNode) => {
-      this.storage.results = findMatches(doc, this.storage.searchTerm, this.storage.colorFilter);
+      this.storage.results = findMatches(doc, this.storage.searchTerms, this.storage.colorFilter);
       this.storage.resultIndex = this.storage.results.length > 0 ? 0 : -1;
     };
 
@@ -117,7 +129,18 @@ const SearchExtension = Extension.create({
       setSearchTerm:
         (term: string) =>
         ({ editor, tr, dispatch }) => {
-          this.storage.searchTerm = term;
+          this.storage.searchTerms = term.trim() ? [term] : [];
+          recompute(editor.state.doc);
+          if (dispatch) {
+            jumpToActiveMatch(tr);
+            dispatch(tr);
+          }
+          return true;
+        },
+      setSearchTerms:
+        (terms: string[]) =>
+        ({ editor, tr, dispatch }) => {
+          this.storage.searchTerms = terms;
           recompute(editor.state.doc);
           if (dispatch) {
             jumpToActiveMatch(tr);
@@ -139,7 +162,7 @@ const SearchExtension = Extension.create({
       goToNextMatch:
         () =>
         ({ editor, tr, dispatch }) => {
-          this.storage.results = findMatches(editor.state.doc, this.storage.searchTerm, this.storage.colorFilter);
+          this.storage.results = findMatches(editor.state.doc, this.storage.searchTerms, this.storage.colorFilter);
           if (this.storage.results.length === 0) return false;
           this.storage.resultIndex = (this.storage.resultIndex + 1 + this.storage.results.length) % this.storage.results.length;
           if (dispatch) {
@@ -151,7 +174,7 @@ const SearchExtension = Extension.create({
       goToPreviousMatch:
         () =>
         ({ editor, tr, dispatch }) => {
-          this.storage.results = findMatches(editor.state.doc, this.storage.searchTerm, this.storage.colorFilter);
+          this.storage.results = findMatches(editor.state.doc, this.storage.searchTerms, this.storage.colorFilter);
           if (this.storage.results.length === 0) return false;
           this.storage.resultIndex = (this.storage.resultIndex - 1 + this.storage.results.length) % this.storage.results.length;
           if (dispatch) {

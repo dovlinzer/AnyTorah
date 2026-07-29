@@ -494,11 +494,40 @@ function BookmarkListIcon({ size = 16 }: { size?: number }) {
   );
 }
 
-/** Highlighter-marker glyph for the "view highlights" button — a real marker pen shape (angled
- *  barrel + felt tip + a short highlighted stroke), not the crayon emoji this replaced, per
- *  explicit user reference image. Fixed marker colors (not theme-driven) since a highlighter's
- *  own color is part of what makes it read as a highlighter. */
-function HighlighterIcon({ size = 17 }: { size?: number }) {
+/** Notebook (page + ruled lines) with a magnifying glass over its corner — the "search all
+ *  notebooks" button, replacing the plain 🔎 emoji so it reads as "search notebooks" specifically
+ *  rather than a generic search action, per explicit user request. The magnifying glass reuses
+ *  BookmarkListIcon's knockout-circle trick (a `var(--background)` fill behind it) so it stays
+ *  legible over the ruled lines it overlaps. */
+function NotebookSearchIcon({ size = 17 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ display: "inline-block", verticalAlign: "-2px" }}
+      aria-hidden="true"
+    >
+      <rect x="2.2" y="2.5" width="13" height="18" rx="1.5" />
+      <path d="M5.4 2.5v18" strokeWidth="1.2" />
+      <path d="M8.2 7h4.6M8.2 10.3h4.6M8.2 13.6h2.8" strokeWidth="1.1" />
+      <circle cx="16.9" cy="16.9" r="4.3" fill="var(--background)" />
+      <path d="M20 20 22.5 22.5" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+/** A yellow highlighter mark with a magnifying glass over it — the "view/search highlights"
+ *  button, replacing the plain marker-pen HighlighterIcon so the icon itself shows both halves of
+ *  what the button does (highlights + search), per explicit user request. Swatch color reuses
+ *  `--highlight-color-0`, the same default yellow every other highlight-color swatch in the app
+ *  draws from, so it stays correct in both themes automatically. */
+function HighlightSearchIcon({ size = 17 }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -507,11 +536,10 @@ function HighlighterIcon({ size = 17 }: { size?: number }) {
       style={{ display: "inline-block", verticalAlign: "-2px" }}
       aria-hidden="true"
     >
-      <g transform="rotate(45 12 12)">
-        <rect x="9" y="1.5" width="6" height="11" rx="1.2" fill="#f2a127" stroke="#c97f0d" strokeWidth="0.6" />
-        <path d="M8.7 12.5h6.6l-2.2 5.2a1.2 1.2 0 0 1-2.2 0Z" fill="#1f1f1f" />
-      </g>
-      <path d="M4 20.5h5" stroke="#f2a127" strokeWidth="2.4" strokeLinecap="round" />
+      <rect x="1.8" y="4.5" width="13.5" height="6.2" rx="1.4" fill="var(--highlight-color-0)" />
+      <path d="M3 7.6h11.1M3 10h7.5" stroke="#5b4a00" strokeWidth="1.1" strokeLinecap="round" opacity="0.55" />
+      <circle cx="16.9" cy="16.9" r="4.3" fill="var(--background)" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M20 20 22.5 22.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }
@@ -1411,15 +1439,15 @@ export default function Reader() {
               title="Search all notebooks"
               className={pillButtonClass}
             >
-              🔎
+              <NotebookSearchIcon size={hebrewMode ? 20 : 17} />
             </button>
             <button
               onClick={() => setHighlightsListOpen(true)}
-              aria-label="View highlights"
-              title="View highlights"
+              aria-label="View / search highlights"
+              title="View / search highlights"
               className={pillButtonClass}
             >
-              <HighlighterIcon size={hebrewMode ? 20 : 17} />
+              <HighlightSearchIcon size={hebrewMode ? 20 : 17} />
             </button>
             <VerticalDivider />
             <AccountButton pillButtonClass={pillButtonClass} hebrewMode={hebrewMode} />
@@ -1902,7 +1930,12 @@ export default function Reader() {
 
       {notebookSearchOpen && (
         <NotebookSearchModal
+          highlights={highlights}
           onNavigate={(notebook, seedQuery) => navigateToNotebookScope(notebook.scope, seedQuery)}
+          onNavigateHighlight={(h) => {
+            handleNavigateHighlight(h);
+            setNotebookSearchOpen(false);
+          }}
           onClose={() => setNotebookSearchOpen(false)}
         />
       )}
