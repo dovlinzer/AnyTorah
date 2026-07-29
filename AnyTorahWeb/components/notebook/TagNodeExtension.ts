@@ -15,7 +15,15 @@ export interface TagNodeOptions {
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     tag: {
-      insertTag: (attrs: { tagId: string; label: string }) => ReturnType;
+      insertTag: (attrs: {
+        tagId: string;
+        label: string;
+        /** Source-sheet association (see lib/notebooks.ts's extractTaggedAnchors) — the
+         *  nodeId(s) of the anchor(s) this tag was explicitly created to tag, stamped only by
+         *  AnchorPill's "tag this source" control. A tag inserted via the general 🏷 toolbar
+         *  button omits this — it's just a plain, unassociated notebook tag. */
+        sourceNodeIds?: string[];
+      }) => ReturnType;
     };
   }
 }
@@ -30,6 +38,7 @@ const TagNodeExtension = Node.create<TagNodeOptions>({
     return {
       tagId: { default: null },
       label: { default: "" },
+      sourceNodeIds: { default: null },
     };
   },
 

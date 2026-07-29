@@ -222,6 +222,25 @@ body {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
+/* "Tag this source" button — inserts a tag chip stamped with this anchor's nodeId immediately
+ * after the pill (source-sheet association, see lib/notebooks.ts's extractTaggedAnchors).
+ * Styled identically to the expand toggle below (same ghost-icon treatment) for consistency. */
+.notebook-anchor-pill-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-inline-start: 0.15rem;
+  border: none;
+  background: none;
+  color: var(--accent);
+  opacity: 0.6;
+  font-size: 0.75em;
+  cursor: pointer;
+}
+.notebook-anchor-pill-tag:hover {
+  opacity: 1;
+}
+
 /* Expand-in-place toggle — reveals the anchor's captured quote snapshot without leaving the
  * notebook, alongside (not instead of) the pill's own navigate-to-reader click. */
 .notebook-anchor-pill-toggle {

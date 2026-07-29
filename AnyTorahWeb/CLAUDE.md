@@ -921,6 +921,102 @@ on-screen reading and (eventually) printing a notebook as-is.
   per-directory (not per-port), so a second instance against the same folder can't start
   regardless of port. User opted to click-test it themselves in their own already-running session
   rather than have this session kill the other one's process.
+- **Live-tested by the user afterward, one fix applied:** the expanded quote was italicized by
+  default — user asked for it not to be, `font-style: italic` removed from
+  `.notebook-anchor-pill-quote`.
+
+## Notebook — Phase B: tag/color-to-anchor source association — shipped
+
+Second phase of the "source sheets" feature (Phase A above was the anchor quote-preview groundwork;
+Phase C, not built yet, is the actual Source Sheet Builder UI that queries these associations).
+This phase adds the plumbing that lets a notebook passage's tag and color be resolved back to a
+specific anchor — needed so a future source sheet can pull "everything tagged lashon hara that's
+also yellow or blue" from Notebook content, not just Highlights (which already had `tags`/
+`colorIndex` as plain fields on the record).
+
+**Locked design decisions (from the design conversation, see the session's plan file if it still
+exists):**
+- **Color is by containment, not proximity:** an anchor's color-tier is whatever `sectionColor`
+  mark covers text in the same block (paragraph) as the anchor — unambiguous, since a color mark
+  already spans a range. No new attrs needed for this.
+- **Tags are by explicit association only, never a proximity guess:** a tag only counts as
+  "tagging" a given anchor if it was created via a new "tag this source" control on the anchor
+  pill itself, which stamps the tag with that anchor's `nodeId`. The existing free 🏷 toolbar
+  button (general, unassociated tagging) is unchanged and still exists side by side — those tags
+  just won't resolve to any anchor. This was an explicit user choice over a "auto-link when only
+  one anchor is in the paragraph" heuristic, trading a little convenience for a mechanism that
+  behaves identically regardless of what else happens to be nearby.
+
+**New in `lib/notebooks.ts`** (all three share one internal block-walking helper,
+`walkNotebookBlocks` — a "block" is whatever node holds inline content, i.e. text/anchor/tag
+nodes, directly: a paragraph or heading, not a blockquote/list-item, which hold block children
+instead and get recursed into):
+- `getAnchorColor(doc, nodeId): number | null` — the colorIndex of any `sectionColor`-marked text
+  in the anchor's block, or `null`. If a block somehow carries more than one distinct color (an
+  unusual case — the color mark is applied per-selection, not per-block), the first one found
+  wins; there's no principled tiebreak.
+- `getAnchorNotes(doc, nodeId): string` — the plain prose sharing the anchor's block, excluding
+  the anchor's own label and any tag-chip labels in the same block. This is the "notes" text for
+  a notebook-derived source-sheet entry (a locked design decision from the session: a source sheet
+  can optionally show the user's own prose alongside the source quote) — distinct from the
+  anchor's captured quote itself (`quoteHe`/`quoteEn`, Phase A).
+- `extractTaggedAnchors(doc)` — joins tag chips to the anchor(s) they were explicitly created to
+  tag, via the new `sourceNodeIds` attr (below). A tag whose `sourceNodeIds` points at a
+  since-deleted anchor is silently dropped, not surfaced as an error — an accepted gap, not a bug.
+- `extractTags` now additionally returns each tag's `sourceNodeIds?: string[]` (additive — every
+  existing caller, e.g. `NotebookSearchModal.tsx`, is unaffected since they only read `.label`).
+
+**`components/notebook/TagNodeExtension.ts`:** gained a `sourceNodeIds?: string[]` attr (default
+`null`), present only on tags created via the anchor pill's new control — a tag from the general
+toolbar button never sets it.
+
+**`components/notebook/AnchorPill.tsx`:** gained a third control (order, left to right: 📍
+navigate, ▾/▸ expand-in-place, 🏷 "tag this source" — 🏷 deliberately placed last per explicit user
+request after initially shipping it in the middle; each independently `stopPropagation`-ed per the
+established multi-control pattern on this pill). Clicking 🏷 prompts for a tag name
+(`window.prompt`, same UX as the existing free-tag toolbar button — no new interaction pattern
+introduced) and inserts a new tag chip immediately after the pill via
+`editor.chain().insertContentAt(pos + node.nodeSize, ...)`, stamped with
+`sourceNodeIds: [node.attrs.nodeId]`. Needs `editor`/`getPos` off `NodeViewProps` (both already
+part of Tiptap's standard NodeView props, no new plumbing needed to access them).
+
+**`components/notebook/TagChip.tsx`:** a sourced tag (non-empty `sourceNodeIds`) renders a small
+📍 suffix and a `title="Tag linked to a source"` — a small, deliberate visual cue so a user can
+tell at a glance which tags actually feed a future source sheet vs. a plain, unassociated tag from
+the general toolbar button. Not asked for explicitly, but a same-session addition since otherwise
+the two tag kinds would be visually identical despite behaving very differently downstream.
+
+**Verified two ways:**
+1. Live in the browser (this session's own `next dev`, port free this time): inserted an anchor
+   from main text, clicked "Tag this source" (had to monkey-patch `window.prompt` first — this
+   browser-preview harness still can't drive a native `prompt()` dialog, same documented
+   limitation as every previous Notebook phase), confirmed the tag chip appears immediately after
+   the pill with a 📍 suffix, confirmed the raw `localStorage['anytorah:notebooks']` JSON has the
+   tag's `sourceNodeIds` correctly pointing at the anchor's `nodeId`, confirmed the expand toggle
+   and navigate button still both work unchanged, and confirmed everything survives a full page
+   reload.
+2. A standalone `tsx`-run script (not committed — thrown away after use) directly exercised
+   `getAnchorColor`/`getAnchorNotes`/`extractTaggedAnchors` against a hand-built doc fixture
+   covering: color containment within a block, prose-only notes extraction excluding
+   anchor/tag labels, correct tag→anchor joining, and silent-drop of an orphaned
+   `sourceNodeIds` reference — all passed. This covered the color-association path that the
+   live browser pass couldn't easily exercise (this harness can't reliably drive ProseMirror
+   text-selection to apply a color mark, a documented limitation since Notebook Phase 2).
+
+`npm run build`/`tsc --noEmit`/`npm run lint` all clean — same pre-existing lint baseline as every
+prior phase, no new items.
+
+## Notebook — Source Sheet Builder UI (Phase C) — designed, not built
+
+The final phase of "source sheets": a UI that queries both Highlights (`colorIndex`/`tags` already
+on the record) and Notebook anchors (via Phase B's `extractTaggedAnchors`/`getAnchorColor`/
+`getAnchorNotes` above) by tag and/or color-tier — independently optional, so "everything yellow"
+(no tag) and "everything tagged lashon hara" (no color) both need to work, not just the
+combination — and renders a printable sheet. Also needs an "include notes" toggle (`Highlight.note`
+for highlight entries, `getAnchorNotes` for notebook entries) and to extend
+`NotebookSearchModal.tsx`'s existing tag/color filter machinery (change its single-select
+`colorFilter` to a `Set`-based multi-select, mirroring how `tagFilters` already works) rather than
+building new query logic from scratch. No code exists yet beyond the Phase A/B plumbing above.
 
 ## Daily learning dedication banner — shipped
 

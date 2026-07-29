@@ -163,12 +163,19 @@ export function extractAnchors(doc: JSONContent): { anchor: TextAnchor; nodeId: 
 /** Walks a notebook doc for embedded tag chips (components/notebook/TagNodeExtension.ts) — used
  *  by cross-notebook search to filter/jump to a specific tagged passage, and to build the set of
  *  distinct tags in use across all notebooks for the search modal's filter row. `tagId` matches
- *  the DOM id TagChip's NodeView renders, same scrollIntoView pattern as extractAnchors. */
-export function extractTags(doc: JSONContent): { tagId: string; label: string }[] {
-  const found: { tagId: string; label: string }[] = [];
+ *  the DOM id TagChip's NodeView renders, same scrollIntoView pattern as extractAnchors.
+ *  `sourceNodeIds` (source-sheet association, see extractTaggedAnchors below) is present only on
+ *  tags created via AnchorPill's "tag this source" control — a tag inserted via the general 🏷
+ *  toolbar button has none, and is just a plain unassociated notebook tag. */
+export function extractTags(doc: JSONContent): { tagId: string; label: string; sourceNodeIds?: string[] }[] {
+  const found: { tagId: string; label: string; sourceNodeIds?: string[] }[] = [];
   function walk(node: JSONContent) {
     if (isTagNode(node)) {
-      found.push({ tagId: node.attrs!.tagId as string, label: node.attrs!.label as string });
+      found.push({
+        tagId: node.attrs!.tagId as string,
+        label: node.attrs!.label as string,
+        sourceNodeIds: (node.attrs!.sourceNodeIds as string[] | null) ?? undefined,
+      });
     }
     node.content?.forEach(walk);
   }
@@ -209,4 +216,118 @@ export function extractPlainText(doc: JSONContent): string {
   }
   walk(doc);
   return parts.join(" ");
+}
+
+// --- Source-sheet association (Phase B) ---------------------------------------------------
+//
+// Source sheets (design doc discussed with the user, not yet built beyond this plumbing) need to
+// resolve, for a given anchor, which color-tier and which tags apply to it. Color is by
+// *containment* (an anchor sitting inside/alongside a sectionColor-marked range in the same
+// block) — unambiguous, since a color mark already spans a range. Tags are by *explicit*
+// association only (AnchorPill's "tag this source" control stamps a new tag chip's
+// `sourceNodeIds` with the anchor's `nodeId`) — deliberately not a proximity guess, so the same
+// visual action never silently behaves differently depending on how many anchors happen to sit
+// in the same paragraph. Both need a notion of "the block an anchor lives in" (a paragraph/
+// heading — whatever directly holds inline content: text, anchor, and tag nodes), which the
+// three helpers below share via one internal walker.
+
+interface NotebookBlockContext {
+  anchors: { anchor: TextAnchor; nodeId: string; label: string }[];
+  tags: { tagId: string; label: string; sourceNodeIds?: string[] }[];
+  coloredRuns: { colorIndex: number; text: string }[];
+  /** Plain prose in the block — literal text only, excluding anchor/tag label text. This is what
+   *  "notes" means for a notebook-derived source-sheet entry (see getAnchorNotes). */
+  plainText: string;
+}
+
+/** A paragraph/heading (or similar) holds inline content — text, anchor, and tag nodes — directly
+ *  in its own `content` array. Blockquotes/list items instead hold block children (paragraphs),
+ *  so this is false for them and the walk below recurses into their paragraphs instead. */
+function isInlineContentNode(node: JSONContent): boolean {
+  return !!node.content?.some((c) => c.type === "text" || isAnchorNode(c) || isTagNode(c));
+}
+
+function collectBlockContext(node: JSONContent): NotebookBlockContext {
+  const ctx: NotebookBlockContext = { anchors: [], tags: [], coloredRuns: [], plainText: "" };
+  for (const child of node.content ?? []) {
+    if (isAnchorNode(child)) {
+      ctx.anchors.push({
+        anchor: child.attrs!.anchor as TextAnchor,
+        nodeId: child.attrs!.nodeId as string,
+        label: child.attrs!.label as string,
+      });
+    } else if (isTagNode(child)) {
+      ctx.tags.push({
+        tagId: child.attrs!.tagId as string,
+        label: child.attrs!.label as string,
+        sourceNodeIds: (child.attrs!.sourceNodeIds as string[] | null) ?? undefined,
+      });
+    } else if (child.type === "text" && child.text) {
+      const mark = child.marks?.find((m) => m.type === "sectionColor");
+      const colorIndex = mark?.attrs?.colorIndex;
+      if (typeof colorIndex === "number") ctx.coloredRuns.push({ colorIndex, text: child.text });
+      ctx.plainText += (ctx.plainText ? " " : "") + child.text;
+    }
+  }
+  return ctx;
+}
+
+function walkNotebookBlocks(doc: JSONContent, visit: (ctx: NotebookBlockContext) => void) {
+  function walk(node: JSONContent) {
+    if (isInlineContentNode(node)) {
+      visit(collectBlockContext(node));
+      return;
+    }
+    node.content?.forEach(walk);
+  }
+  walk(doc);
+}
+
+/** The color-tier for a given anchor, by containment: the colorIndex of any sectionColor-marked
+ *  text in the same block as the anchor, or null if the anchor's block has no colored text (or
+ *  the anchor isn't found at all). If a block somehow carries more than one distinct color (an
+ *  unusual case — SectionColorExtension applies one color per selection, not per block), the
+ *  first one encountered wins; there's no principled way to prefer one over another. */
+export function getAnchorColor(doc: JSONContent, nodeId: string): number | null {
+  let result: number | null = null;
+  walkNotebookBlocks(doc, (ctx) => {
+    if (result !== null) return;
+    if (ctx.anchors.some((a) => a.nodeId === nodeId) && ctx.coloredRuns.length > 0) {
+      result = ctx.coloredRuns[0].colorIndex;
+    }
+  });
+  return result;
+}
+
+/** The user-authored prose sharing an anchor's block, excluding the anchor's own label and any
+ *  tag-chip labels in the same block — this is the "notes" text for a notebook-derived
+ *  source-sheet entry (see the "include notes" design decision), distinct from the anchor's own
+ *  captured quote (AnchorNodeExtension's quoteHe/quoteEn — the source, not the note about it). */
+export function getAnchorNotes(doc: JSONContent, nodeId: string): string {
+  let result = "";
+  walkNotebookBlocks(doc, (ctx) => {
+    if (result) return;
+    if (ctx.anchors.some((a) => a.nodeId === nodeId)) result = ctx.plainText.trim();
+  });
+  return result;
+}
+
+/** Joins tag chips to the anchor(s) they were explicitly created to tag (TagNodeExtension's
+ *  `sourceNodeIds`, stamped only by AnchorPill's "tag this source" control — see the module
+ *  comment above). A tag whose `sourceNodeIds` points at an anchor that's since been deleted is
+ *  silently dropped (an honest, accepted gap, not an error) rather than surfaced as broken. Feeds
+ *  the Source Sheet Builder's tag+color query directly. */
+export function extractTaggedAnchors(
+  doc: JSONContent,
+): { tag: { tagId: string; label: string }; anchor: { anchor: TextAnchor; nodeId: string; label: string } }[] {
+  const tags = extractTags(doc);
+  const anchorsById = new Map(extractAnchors(doc).map((a) => [a.nodeId, a] as const));
+  const result: { tag: { tagId: string; label: string }; anchor: { anchor: TextAnchor; nodeId: string; label: string } }[] = [];
+  for (const t of tags) {
+    for (const nodeId of t.sourceNodeIds ?? []) {
+      const anchor = anchorsById.get(nodeId);
+      if (anchor) result.push({ tag: { tagId: t.tagId, label: t.label }, anchor });
+    }
+  }
+  return result;
 }
