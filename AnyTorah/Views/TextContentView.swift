@@ -237,10 +237,18 @@ private struct SegmentRow: View {
         }
     }
 
-    /// Builds a `Text` by parsing `<rf>…</rf>` small-marker spans.
+    /// Builds a `Text` by parsing `<rf>…</rf>` small-marker spans and `<rm>…</rm>` Rema glosses.
     /// Tanakh uses Noto Serif Hebrew (has cantillation marks); all others use Frank Ruhl Libre.
     /// Normal spans use the scaled font size; `<rf>` spans (SA inline markers) get a
     /// smaller system font. RLM is prepended so the bidi algorithm treats the run as RTL.
+    ///
+    /// Rema's glosses (`<rm>`, tagged by SefariaTextClient.processRemaGlosses) are set in the
+    /// system Hebrew sans against the Mechaber's Frank Ruhl Libre, so a gloss is identifiable at a
+    /// glance from the change in texture alone — printed volumes make the same distinction with
+    /// Rashi script, but a sans/serif contrast reads better on screen. One step (2 pt, matching the
+    /// app's own font-size scale) smaller, since the system face has a noticeably larger apparent
+    /// size than Frank Ruhl and otherwise overpowers the text around it. A gloss can contain `<rf>`
+    /// markers of its own, so the two are scanned together rather than in separate passes.
     private func styledHebrew(_ html: String, fg: Color) -> Text {
         // Tanakh uses Noto Serif Hebrew — it covers cantillation marks (U+0591–U+05AF)
         // so letters with trop don't fall back to the system font.
@@ -256,7 +264,11 @@ private struct SegmentRow: View {
         let fontName = isTanakh ? "NotoSerifHebrew-Regular" : "FrankRuhlLibre-Regular"
         let heFont   = Font.custom(fontName, size: fontSize)
         let smFont   = Font.system(size: max(10, fontSize - 5))
-        let rfPattern = #"<rf>(.*?)</rf>"#
+        let remaFont = Font.system(size: max(10, fontSize - 2))
+        // One combined scan: an `<rf>` marker (capture group 1) or a Rema gloss's open/close tag.
+        // Scanning them separately would break on the common case of a marker sitting inside a
+        // gloss — whichever pass ran second would see the other's already-consumed text.
+        let spanPattern = #"<rf>(.*?)</rf>|<rm>|</rm>"#
         let htmlWithRlm = "\u{200F}" + html
         // Tur's Darkhei Moshe reference markers — a plain parenthesized Hebrew numeral inline,
         // not a per-slot bracket shape like SA's scheme. `<dm>` never appears outside Tur
@@ -264,7 +276,7 @@ private struct SegmentRow: View {
         if htmlWithRlm.contains("<dm>") {
             return Text(TurParagraphEngine.processedHebrewWithTurMarkers(htmlWithRlm)).font(heFont).foregroundColor(fg)
         }
-        guard let regex = try? NSRegularExpression(pattern: rfPattern) else {
+        guard let regex = try? NSRegularExpression(pattern: spanPattern) else {
             return Text(SefariaTextClient.processedHebrew(htmlWithRlm)).font(heFont).foregroundColor(fg)
         }
         let ns = htmlWithRlm as NSString
@@ -275,20 +287,27 @@ private struct SegmentRow: View {
         }
         var result = Text("")
         var lastEnd = 0
+        var inRema = false
         for match in matches {
             if match.range.location > lastEnd {
                 let raw = ns.substring(with: NSRange(location: lastEnd,
                                                      length: match.range.location - lastEnd))
                 let plain = SefariaTextClient.processedHebrew(raw)
                 if !plain.isEmpty {
-                    result = result + Text(plain).font(heFont).foregroundColor(fg)
+                    result = result + Text(plain).font(inRema ? remaFont : heFont).foregroundColor(fg)
                 }
             }
-            if let r = Range(match.range(at: 1), in: htmlWithRlm) {
-                let markerText = SefariaTextClient.stripHTML(String(htmlWithRlm[r]))
-                if !markerText.isEmpty {
-                    result = result + Text(markerText).font(smFont).foregroundColor(fg)
+            if match.range(at: 1).location != NSNotFound {
+                // An `<rf>` marker — same smaller system font whether or not it sits in a gloss.
+                if let r = Range(match.range(at: 1), in: htmlWithRlm) {
+                    let markerText = SefariaTextClient.stripHTML(String(htmlWithRlm[r]))
+                    if !markerText.isEmpty {
+                        result = result + Text(markerText).font(smFont).foregroundColor(fg)
+                    }
                 }
+            } else {
+                // A Rema open or close tag — `<rm>` is 4 characters, `</rm>` is 5.
+                inRema = (match.range.length == 4)
             }
             lastEnd = match.range.location + match.range.length
         }
@@ -297,7 +316,7 @@ private struct SegmentRow: View {
                                                  length: ns.length - lastEnd))
             let plain = SefariaTextClient.processedHebrew(raw)
             if !plain.isEmpty {
-                result = result + Text(plain).font(heFont).foregroundColor(fg)
+                result = result + Text(plain).font(inRema ? remaFont : heFont).foregroundColor(fg)
             }
         }
         return result

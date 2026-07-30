@@ -632,6 +632,10 @@ final class SefariaTextClient {
                     segments.append(.content(index: segments.count, he: split.header, en: "", label: nil))
                     heText = split.rest
                 }
+                // Rema first — its opening-word test needs Sefaria's own contentless <i> markers
+                // still in place, not the visible bracket text processCommentaryMarkers leaves
+                // behind. See processRemaGlosses.
+                heText = SefariaTextClient.processRemaGlosses(heText)
                 heText = SefariaTextClient.processCommentaryMarkers(
                     heText, section: bookOrTractateIndex,
                     selectedCommentaries: selectedCommentaries,
@@ -778,6 +782,84 @@ final class SefariaTextClient {
         case .sif:      return "\(number)"
         case .none:     return nil
         }
+    }
+
+    // MARK: - Rema (the Mapah) glosses
+
+    /// Matches a Rema gloss's opening word "הגה" — optionally behind a bracket/paren, and
+    /// tolerating either gershayim spelling alongside the far more common unpunctuated "הגה".
+    private static let remaOpeningPattern = #"^[\s\[\(]*הג["'׳״]?ה"#
+    private static let smallOpen  = "<small>"
+    private static let smallClose = "</small>"
+
+    /// Location of the `</small>` closing the `<small>` at `openIndex`, accounting for nesting.
+    /// Returns nil when the tag is never closed, leaving the caller's text untouched.
+    private static func matchingSmallEnd(_ ns: NSString, openIndex: Int) -> Int? {
+        var depth = 1
+        var i = openIndex + (smallOpen as NSString).length
+        while i < ns.length {
+            let rest = NSRange(location: i, length: ns.length - i)
+            let close = ns.range(of: smallClose, range: rest)
+            if close.location == NSNotFound { return nil }
+            let open = ns.range(of: smallOpen, range: rest)
+            if open.location != NSNotFound, open.location < close.location {
+                depth += 1
+                i = open.location + (smallOpen as NSString).length
+                continue
+            }
+            depth -= 1
+            if depth == 0 { return close.location }
+            i = close.location + (smallClose as NSString).length
+        }
+        return nil
+    }
+
+    private static func isRemaGloss(_ bodyHTML: String) -> Bool {
+        let text = stripHTML(bodyHTML).trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.range(of: remaOpeningPattern, options: .regularExpression) != nil
+    }
+
+    /// Wraps Rema's glosses — the Mapah — in `<rm>…</rm>` so `TextContentView.styledHebrew` can
+    /// set them in a different face from the Mechaber's own text, the way printed Shulchan Arukh
+    /// volumes distinguish the two.
+    ///
+    /// Sefaria marks each gloss as its own `<small>…</small>` block opening with the word "הגה",
+    /// and uses that same `<small>` tag for unrelated parenthetical matter (word explanations,
+    /// bare source citations) that must *not* be restyled — hence the opening-word test rather
+    /// than treating every `<small>` as Rema. Verified against the live API over 60 simanim
+    /// spanning all four sections: 114 of 235 `<small>` blocks opened with "הגה", and "הגה" never
+    /// appeared outside a `<small>` even once, so this catches every gloss with no false positives.
+    ///
+    /// The `<small>` boundary — not the first colon — is where a gloss actually ends: glosses
+    /// routinely contain internal colons ahead of their closing source citation (YD 1:1's
+    /// "…שאין הנשים שוחטות: (ב"י בשם האגור):"), and many end on the citation rather than a colon
+    /// at all, so cutting at the first colon would truncate Rema mid-gloss.
+    ///
+    /// **Must run before `processCommentaryMarkers`.** The opening-word test strips tags to read
+    /// the gloss's first word, which only works while any leading tags are still Sefaria's
+    /// contentless `<i data-commentator …></i>` markers — once those become `(א)` bracket text they
+    /// carry visible characters of their own and would mask the "הגה".
+    static func processRemaGlosses(_ html: String) -> String {
+        guard html.contains(smallOpen) else { return html }
+        let ns = html as NSString
+        var out = ""
+        var i = 0
+        while i < ns.length {
+            let open = ns.range(of: smallOpen, range: NSRange(location: i, length: ns.length - i))
+            if open.location == NSNotFound { break }
+            guard let closeLocation = matchingSmallEnd(ns, openIndex: open.location) else { break }
+            let bodyStart = open.location + (smallOpen as NSString).length
+            let body = ns.substring(with: NSRange(location: bodyStart, length: closeLocation - bodyStart))
+            out += ns.substring(with: NSRange(location: i, length: open.location - i))
+            if isRemaGloss(body) {
+                out += "<rm>\(body)</rm>"
+            } else {
+                // Not Rema, but a gloss nested inside it still might be — recurse rather than skip.
+                out += "\(smallOpen)\(processRemaGlosses(body))\(smallClose)"
+            }
+            i = closeLocation + (smallClose as NSString).length
+        }
+        return out + ns.substring(from: i)
     }
 
     // MARK: - SA Commentary Marker Processing

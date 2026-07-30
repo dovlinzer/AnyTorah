@@ -55,6 +55,23 @@ body {
 }
 
 /*
+ * Rema's glosses (the Mapah) inside the Shulchan Arukh main text — set in Noto Sans Hebrew against
+ * the Mechaber's own Frank Ruhl Libre, so a gloss is identifiable at a glance from the change in
+ * texture alone. (Printed volumes make this same distinction with Rashi script; a sans/serif
+ * contrast was chosen here instead, per the user, as the more readable equivalent on screen.)
+ * Detected and tagged server-side by processRemaGlosses/processedHebrewWithMarkers
+ * (lib/sefariaClient.ts). Noto Sans Hebrew has a noticeably larger apparent size than Frank Ruhl
+ * Libre at the same point size, so a gloss set at 1em visibly overpowers the Mechaber's text
+ * around it (confirmed on screen, not assumed). 0.83em is exactly one font-size step down at the
+ * main text's own scale — 20px base, 2px per step (fontSizePx, lib/fontSizeLevels.ts) — so the
+ * two faces read at matched weight, and printed editions set the Mapah smaller besides.
+ */
+.sa-rema {
+  font-family: var(--font-hebrew-sans);
+  font-size: 0.83em;
+}
+
+/*
  * Shulchan Arukh inline commentary-marker brackets — one look per panel slot (0/1/2), matched
  * between the main text's inline markers and the commentary panel's entry labels so a reader
  * can tell at a glance which bracket belongs to which commentator, independent of the letter

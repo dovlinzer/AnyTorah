@@ -711,6 +711,9 @@ export async function fetchChapter(
           heText = split.rest;
         }
       }
+      // Rema first — its opening-word test needs Sefaria's own contentless <i> markers still in
+      // place, not processCommentaryMarkers' visible <mk> brackets. See processRemaGlosses.
+      heText = processRemaGlosses(heText);
       heText = processCommentaryMarkers(heText, bookOrTractateIndex, selectedCommentaries, sharedCounters);
       segments.push(contentSegment(i, heText, enText, label));
     }
@@ -1373,6 +1376,79 @@ export async function loadCommentaryEntries(
   return entries;
 }
 
+// MARK: - Rema (the Mapah) glosses
+
+/**
+ * Matches a Rema gloss's opening word "הגה" — optionally behind a bracket/paren, and tolerating
+ * either gershayim spelling ("הג״ה"/"הג\"ה") alongside the far more common unpunctuated "הגה".
+ */
+const REMA_OPENING_RE = /^[\s[(]*הג["'׳״]?ה/;
+
+const SMALL_OPEN = "<small>";
+const SMALL_CLOSE = "</small>";
+
+/** Index of the `</small>` closing `html`'s `<small>` at `openIndex`, accounting for nesting. */
+function matchingSmallEnd(html: string, openIndex: number): number | null {
+  let depth = 1;
+  let i = openIndex + SMALL_OPEN.length;
+  while (i < html.length) {
+    const nextClose = html.indexOf(SMALL_CLOSE, i);
+    if (nextClose === -1) return null;
+    const nextOpen = html.indexOf(SMALL_OPEN, i);
+    if (nextOpen !== -1 && nextOpen < nextClose) {
+      depth++;
+      i = nextOpen + SMALL_OPEN.length;
+      continue;
+    }
+    depth--;
+    if (depth === 0) return nextClose;
+    i = nextClose + SMALL_CLOSE.length;
+  }
+  return null;
+}
+
+/**
+ * Wraps Rema's glosses — the Mapah — in `<rm>…</rm>` so they can be rendered in their own
+ * typeface, matching printed Shulchan Arukh volumes, where the Mechaber's text is set in square
+ * letters and Rema's glosses in Rashi script.
+ *
+ * Sefaria marks each gloss as its own `<small>…</small>` block opening with the word "הגה", and
+ * uses that same `<small>` tag for unrelated parenthetical matter (word explanations, bare source
+ * citations) that must *not* be restyled — hence the opening-word test rather than treating every
+ * `<small>` as Rema. Verified against the live API over 60 simanim spanning all four sections:
+ * 114 of 235 `<small>` blocks opened with "הגה", and "הגה" never appeared outside a `<small>` even
+ * once, so this catches every gloss with no false positives.
+ *
+ * The `<small>` boundary — not the first colon — is where a gloss actually ends: glosses routinely
+ * contain internal colons ahead of their closing source citation (YD 1:1's "…שאין הנשים שוחטות:
+ * (ב"י בשם האגור):"), and many end on the citation rather than a colon at all, so cutting at the
+ * first colon would truncate Rema mid-gloss.
+ *
+ * **Must run before processCommentaryMarkers.** The opening-word test strips tags to read the
+ * gloss's first word, which only works while any leading tags are still Sefaria's contentless
+ * `<i data-commentator …></i>` markers — once those become `<mk s="N">(א)</mk>` they carry visible
+ * text of their own and would mask the "הגה".
+ */
+export function processRemaGlosses(html: string): string {
+  if (!html.includes(SMALL_OPEN)) return html;
+  let out = "";
+  let i = 0;
+  while (i < html.length) {
+    const start = html.indexOf(SMALL_OPEN, i);
+    if (start === -1) break;
+    const end = matchingSmallEnd(html, start);
+    if (end === null) break;
+    const body = html.slice(start + SMALL_OPEN.length, end);
+    out += html.slice(i, start);
+    out += REMA_OPENING_RE.test(stripHTML(body).trim())
+      ? `<rm>${body}</rm>`
+      // Not Rema, but a gloss nested inside it still might be — recurse rather than skip.
+      : `${SMALL_OPEN}${processRemaGlosses(body)}${SMALL_CLOSE}`;
+    i = end + SMALL_CLOSE.length;
+  }
+  return out + html.slice(i);
+}
+
 // MARK: - SA Commentary Marker Processing
 //
 // saHebrewLetter and SA_SLOT_STYLES live in textModels.ts (not here) so the client-side
@@ -1498,25 +1574,36 @@ export function processedHebrew(html: string, showTrop: boolean = false): string
 const MARKER_TAG_RE = /<mk s="(\d)">(.*?)<\/mk>/g;
 
 /**
- * Like processedHebrew, but preserves processCommentaryMarkers' `<mk s="N">…</mk>` tags —
- * converting them into `<span class="sa-mark sa-mark-N">` — instead of stripping them along
- * with the rest of Sefaria's HTML. Used only for Shulchan Arukh's Hebrew main text, so the
- * inline commentary-marker brackets keep their per-slot identity for client-side styling
- * (distinct font/size per commentator — see globals.css). Everything else is plain-texted
- * exactly as processedHebrew does; the marker text is pulled out before stripping (via a
- * placeholder that survives both the tag-stripping regex and the cantillation-mark filter)
- * and spliced back in afterward as real markup, so callers must render the result with
- * dangerouslySetInnerHTML rather than as plain text.
+ * Like processedHebrew, but preserves two kinds of Shulchan Arukh markup instead of stripping
+ * them along with the rest of Sefaria's HTML:
+ * - processCommentaryMarkers' `<mk s="N">…</mk>` tags → `<span class="sa-mark sa-mark-N">`, so the
+ *   inline commentary-marker brackets keep their per-slot identity for client-side styling
+ *   (distinct font/size per commentator — see globals.css).
+ * - processRemaGlosses' `<rm>…</rm>` tags → `<span class="sa-rema">`, so Rema's glosses render in
+ *   their own typeface, the way printed volumes set them in Rashi script.
+ *
+ * Everything else is plain-texted exactly as processedHebrew does. Both kinds are pulled out
+ * before stripping (via placeholders that survive both the tag-stripping regex and the
+ * cantillation-mark filter) and spliced back in afterward as real markup, so callers must render
+ * the result with dangerouslySetInnerHTML rather than as plain text. `<rm>`'s open and close are
+ * placeheld separately rather than as one unit, since a gloss's own text routinely carries `<mk>`
+ * markers that still need their own substitution.
  */
 export function processedHebrewWithMarkers(html: string, showTrop: boolean = false): string {
   const markers: string[] = [];
-  const withPlaceholders = html.replace(MARKER_TAG_RE, (_m, slot: string, text: string) => {
-    const i = markers.length;
-    markers.push(`<span class="sa-mark sa-mark-${slot}">${text}</span>`);
-    return `\uE000MK${i}\uE000`;
-  });
+  const withPlaceholders = html
+    .replace(MARKER_TAG_RE, (_m, slot: string, text: string) => {
+      const i = markers.length;
+      markers.push(`<span class="sa-mark sa-mark-${slot}">${text}</span>`);
+      return `\uE000MK${i}\uE000`;
+    })
+    .replace(/<rm>/g, "\uE000RMO\uE000")
+    .replace(/<\/rm>/g, "\uE000RMC\uE000");
   const stripped = processedHebrew(withPlaceholders, showTrop);
-  return stripped.replace(/\uE000MK(\d+)\uE000/g, (_m, i: string) => markers[Number(i)] ?? "");
+  return stripped
+    .replace(/\uE000MK(\d+)\uE000/g, (_m, i: string) => markers[Number(i)] ?? "")
+    .replace(/\uE000RMO\uE000/g, '<span class="sa-rema">')
+    .replace(/\uE000RMC\uE000/g, "</span>");
 }
 
 const TUR_MARKER_TAG_RE = /<dm>(\d+)<\/dm>/g;

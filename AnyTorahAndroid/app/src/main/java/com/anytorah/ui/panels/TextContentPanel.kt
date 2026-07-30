@@ -305,21 +305,36 @@ private val notoSerifFamily  = FontFamily(Font(R.font.noto_serif_hebrew_regular)
 fun HebrewText(html: String, fontSize: Float = 18f, showTrop: Boolean = false,
                fontFamily: FontFamily = frankRuhlFamily) {
     val colors = LocalAnyTorahColors.current
-    if (html.contains("<rf>")) {
-        // Build AnnotatedString with smaller-size spans for <rf>…</rf> sequential markers.
+    if (html.contains("<rf>") || html.contains("<rm>")) {
+        // Build AnnotatedString with a span style per run: smaller size for <rf>…</rf> sequential
+        // markers, and the system Hebrew sans for <rm>…</rm> Rema glosses — a change in texture
+        // against the Mechaber's Frank Ruhl Libre, so a gloss is identifiable at a glance. (Printed
+        // volumes make the same distinction with Rashi script; a sans/serif contrast reads better
+        // on screen.) One step (2 sp, matching the app's own font-size scale) smaller, since the
+        // system face has a noticeably larger apparent size than Frank Ruhl and otherwise
+        // overpowers the text around it.
         // Normal spans go through processedHebrew; small (rf) marker spans are ASCII — strip only.
-        val rawSegments = SefariaTextClient.parseRashiSegments(html)
+        val rawSegments = SefariaTextClient.parseHebrewSpans(html)
         val annotated = buildAnnotatedString {
-            for ((text, isSmall) in rawSegments) {
-                if (isSmall) {
-                    pushStyle(SpanStyle(fontSize = (fontSize - 5f).coerceAtLeast(10f).sp))
-                    append(text)  // SA bracket markers are plain ASCII — no trop to strip
-                    pop()
-                } else {
-                    val processed = SefariaTextClient.processedHebrew(text, showTrop)
-                    pushStyle(SpanStyle(fontSize = fontSize.sp, fontFamily = fontFamily))
-                    append(processed)
-                    pop()
+            for ((text, span) in rawSegments) {
+                when (span) {
+                    SefariaTextClient.HebrewSpan.MARKER -> {
+                        pushStyle(SpanStyle(fontSize = (fontSize - 5f).coerceAtLeast(10f).sp))
+                        append(text)  // SA bracket markers are plain ASCII — no trop to strip
+                        pop()
+                    }
+                    SefariaTextClient.HebrewSpan.REMA -> {
+                        pushStyle(SpanStyle(
+                            fontSize = (fontSize - 2f).coerceAtLeast(10f).sp,
+                            fontFamily = FontFamily.SansSerif))
+                        append(SefariaTextClient.processedHebrew(text, showTrop))
+                        pop()
+                    }
+                    SefariaTextClient.HebrewSpan.NORMAL -> {
+                        pushStyle(SpanStyle(fontSize = fontSize.sp, fontFamily = fontFamily))
+                        append(SefariaTextClient.processedHebrew(text, showTrop))
+                        pop()
+                    }
                 }
             }
         }
