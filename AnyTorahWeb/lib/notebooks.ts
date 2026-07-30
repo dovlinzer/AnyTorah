@@ -143,15 +143,21 @@ function isTagNode(node: JSONContent): boolean {
 /** Walks a notebook doc for embedded Anchor nodes — used by cross-notebook search and by the
  *  reader→notebook scroll-sync (finding which anchor, if any, matches the current reading
  *  position). `nodeId` matches the DOM id AnchorNodeExtension's NodeView renders, so a caller can
- *  scrollIntoView it directly. */
-export function extractAnchors(doc: JSONContent): { anchor: TextAnchor; nodeId: string; label: string }[] {
-  const found: { anchor: TextAnchor; nodeId: string; label: string }[] = [];
+ *  scrollIntoView it directly. `quoteHe`/`quoteEn` (additive, Phase A's expand-in-place snapshot)
+ *  are surfaced here too so the Source Sheet Builder (Phase C) can reuse the same captured quote
+ *  AnchorPill already shows, rather than re-fetching anything. */
+export function extractAnchors(
+  doc: JSONContent,
+): { anchor: TextAnchor; nodeId: string; label: string; quoteHe?: string; quoteEn?: string }[] {
+  const found: { anchor: TextAnchor; nodeId: string; label: string; quoteHe?: string; quoteEn?: string }[] = [];
   function walk(node: JSONContent) {
     if (isAnchorNode(node)) {
       found.push({
         anchor: node.attrs!.anchor as TextAnchor,
         nodeId: node.attrs!.nodeId as string,
         label: node.attrs!.label as string,
+        quoteHe: (node.attrs!.quoteHe as string | null) ?? undefined,
+        quoteEn: (node.attrs!.quoteEn as string | null) ?? undefined,
       });
     }
     node.content?.forEach(walk);
@@ -283,6 +289,19 @@ function walkNotebookBlocks(doc: JSONContent, visit: (ctx: NotebookBlockContext)
   walk(doc);
 }
 
+/** Every block (paragraph/heading/etc.) in the doc, in document order — a flat list rather than a
+ *  visitor, so a caller can look at a block's *neighbors*, not just find one block and stop. Used
+ *  by getAnchorNotes below to expand a "highlighted section" across block boundaries: a
+ *  sectionColor mark is inline and block-scoped in the document model, so a user coloring text
+ *  that visually spans a heading + the paragraph(s) under it (or several paragraphs) actually
+ *  produces several sibling blocks each independently carrying part of that color — not one block
+ *  with a long colored run. */
+function collectAllBlocks(doc: JSONContent): NotebookBlockContext[] {
+  const blocks: NotebookBlockContext[] = [];
+  walkNotebookBlocks(doc, (ctx) => blocks.push(ctx));
+  return blocks;
+}
+
 /** The color-tier for a given anchor, by containment: the colorIndex of any sectionColor-marked
  *  text in the same block as the anchor, or null if the anchor's block has no colored text (or
  *  the anchor isn't found at all). If a block somehow carries more than one distinct color (an
@@ -299,17 +318,48 @@ export function getAnchorColor(doc: JSONContent, nodeId: string): number | null 
   return result;
 }
 
-/** The user-authored prose sharing an anchor's block, excluding the anchor's own label and any
- *  tag-chip labels in the same block — this is the "notes" text for a notebook-derived
- *  source-sheet entry (see the "include notes" design decision), distinct from the anchor's own
- *  captured quote (AnchorNodeExtension's quoteHe/quoteEn — the source, not the note about it). */
+/** The user-authored prose sharing an anchor's "highlighted section," excluding the anchor's own
+ *  label and any tag-chip labels — this is the "notes" text for a notebook-derived source-sheet
+ *  entry (see the "include notes" design decision), distinct from the anchor's own captured quote
+ *  (AnchorNodeExtension's quoteHe/quoteEn — the source, not the note about it).
+ *
+ *  When the anchor's own block has a `sectionColor`-marked range (the same one `getAnchorColor`
+ *  resolves the anchor's color-tier from), notes expand to *every contiguous block* carrying that
+ *  color — not just the one block the anchor happens to sit in. A `sectionColor` mark is inline
+ *  and block-scoped in the underlying document model, so a highlighted section that visually spans
+ *  a heading plus the paragraph(s) under it (or several paragraphs) is actually several sibling
+ *  blocks each independently carrying part of that color, not one block with one long colored run
+ *  — a real gap found live: a heading-only or single-short-run block was returned as "the notes"
+ *  instead of the full multi-paragraph highlighted section around it. Expansion walks outward from
+ *  the anchor's own block, in document order, stopping at the first block (in each direction) with
+ *  no run of that color — only the colored portions of each block are included, not any of that
+ *  block's other, uncolored prose. Without a color at all, notes fall back to the anchor's own
+ *  block's whole plain text, unchanged from before this expansion existed. */
 export function getAnchorNotes(doc: JSONContent, nodeId: string): string {
-  let result = "";
-  walkNotebookBlocks(doc, (ctx) => {
-    if (result) return;
-    if (ctx.anchors.some((a) => a.nodeId === nodeId)) result = ctx.plainText.trim();
-  });
-  return result;
+  const blocks = collectAllBlocks(doc);
+  const anchorIndex = blocks.findIndex((b) => b.anchors.some((a) => a.nodeId === nodeId));
+  if (anchorIndex === -1) return "";
+
+  const anchorBlock = blocks[anchorIndex];
+  if (anchorBlock.coloredRuns.length === 0) return anchorBlock.plainText.trim();
+
+  const colorIndex = anchorBlock.coloredRuns[0].colorIndex;
+  const coloredText = (ctx: NotebookBlockContext) =>
+    ctx.coloredRuns
+      .filter((r) => r.colorIndex === colorIndex)
+      .map((r) => r.text)
+      .join(" ");
+
+  const parts = [coloredText(anchorBlock)];
+  for (let i = anchorIndex - 1; i >= 0; i--) {
+    if (!blocks[i].coloredRuns.some((r) => r.colorIndex === colorIndex)) break;
+    parts.unshift(coloredText(blocks[i]));
+  }
+  for (let i = anchorIndex + 1; i < blocks.length; i++) {
+    if (!blocks[i].coloredRuns.some((r) => r.colorIndex === colorIndex)) break;
+    parts.push(coloredText(blocks[i]));
+  }
+  return parts.join(" ").trim();
 }
 
 /** Joins tag chips to the anchor(s) they were explicitly created to tag (TagNodeExtension's
@@ -319,10 +369,10 @@ export function getAnchorNotes(doc: JSONContent, nodeId: string): string {
  *  the Source Sheet Builder's tag+color query directly. */
 export function extractTaggedAnchors(
   doc: JSONContent,
-): { tag: { tagId: string; label: string }; anchor: { anchor: TextAnchor; nodeId: string; label: string } }[] {
+): { tag: { tagId: string; label: string }; anchor: ReturnType<typeof extractAnchors>[number] }[] {
   const tags = extractTags(doc);
   const anchorsById = new Map(extractAnchors(doc).map((a) => [a.nodeId, a] as const));
-  const result: { tag: { tagId: string; label: string }; anchor: { anchor: TextAnchor; nodeId: string; label: string } }[] = [];
+  const result: { tag: { tagId: string; label: string }; anchor: ReturnType<typeof extractAnchors>[number] }[] = [];
   for (const t of tags) {
     for (const nodeId of t.sourceNodeIds ?? []) {
       const anchor = anchorsById.get(nodeId);

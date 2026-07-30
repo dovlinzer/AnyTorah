@@ -407,3 +407,103 @@ body {
     display: inline-block;
   }
 }
+
+/* Source Sheet Builder (SourceSheetModal.tsx) — entry rows shared between the on-screen result
+ * list and the print-only view below, so both always render identically. */
+.source-sheet-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.source-sheet-entry-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.source-sheet-entry-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+.source-sheet-entry-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+.source-sheet-tag {
+  border-radius: 9999px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.7rem;
+  background: var(--border);
+}
+.source-sheet-quote {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  border-inline-start: 2px solid var(--border);
+  padding-inline-start: 0.5rem;
+}
+.source-sheet-quote-empty {
+  font-size: 0.8rem;
+  font-style: italic;
+  opacity: 0.5;
+  border: none;
+  padding-inline-start: 0;
+}
+.source-sheet-quote-caption {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.5;
+}
+.source-sheet-quote-line {
+  font-size: 0.85rem;
+}
+.source-sheet-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.source-sheet-notes-text {
+  font-size: 0.8rem;
+  font-style: italic;
+  opacity: 0.8;
+}
+
+/* Print-only source sheet — hidden on screen, isolated at print time by the @media print rule
+ * below regardless of where it sits in the DOM (SourceSheetModal.tsx renders it as a sibling of
+ * the on-screen modal, itself deep inside Reader.tsx's tree). No PDF library: window.print() is
+ * the entire export mechanism, per this feature's own design decision (nothing print/export-
+ * related exists anywhere else in the app). */
+.source-sheet-print-content {
+  display: none;
+}
+.source-sheet-print-summary {
+  font-size: 0.85rem;
+  opacity: 0.7;
+  margin-bottom: 1rem;
+}
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .source-sheet-print-content,
+  .source-sheet-print-content * {
+    visibility: visible;
+  }
+  .source-sheet-print-content {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    color: #000;
+    background: #fff;
+  }
+  .source-sheet-print-content .source-sheet-entry {
+    break-inside: avoid;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #ccc;
+  }
+}

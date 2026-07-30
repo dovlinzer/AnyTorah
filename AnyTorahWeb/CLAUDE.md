@@ -1006,17 +1006,152 @@ the two tag kinds would be visually identical despite behaving very differently 
 `npm run build`/`tsc --noEmit`/`npm run lint` all clean — same pre-existing lint baseline as every
 prior phase, no new items.
 
-## Notebook — Source Sheet Builder UI (Phase C) — designed, not built
+## Notebook — Source Sheet Builder UI (Phase C) — shipped
 
-The final phase of "source sheets": a UI that queries both Highlights (`colorIndex`/`tags` already
-on the record) and Notebook anchors (via Phase B's `extractTaggedAnchors`/`getAnchorColor`/
-`getAnchorNotes` above) by tag and/or color-tier — independently optional, so "everything yellow"
-(no tag) and "everything tagged lashon hara" (no color) both need to work, not just the
-combination — and renders a printable sheet. Also needs an "include notes" toggle (`Highlight.note`
-for highlight entries, `getAnchorNotes` for notebook entries) and to extend
-`NotebookSearchModal.tsx`'s existing tag/color filter machinery (change its single-select
-`colorFilter` to a `Set`-based multi-select, mirroring how `tagFilters` already works) rather than
-building new query logic from scratch. No code exists yet beyond the Phase A/B plumbing above.
+The final phase of "source sheets": a new `components/SourceSheetModal.tsx`, opened via a new 📄
+"Build a source sheet" header button (same button cluster as Highlights/Notebook search), that
+queries both Highlights (`colorIndex`/`tags` already on the record) and Notebook anchors (Phase
+B's `extractTaggedAnchors`/`getAnchorColor`/`getAnchorNotes`) by tag and/or color-tier —
+independently optional (tag-only, color-only, or both — OR-matching within each, AND across the
+two), an "include notes" toggle, and a printable view.
+
+**Deliberately did not touch `NotebookSearchModal.tsx`** despite the original plan's suggestion to
+extend its `colorFilter`/`tagFilters` machinery — the two modals serve different jobs (search-and-
+navigate vs. build-a-printable-sheet) and the sheet's own filter state (`tagFilters: Set<string>`,
+`colorFilters: Set<number>`) is small enough to duplicate the same interaction pattern
+(click-selects, Ctrl/Cmd-click-toggles-additive) without sharing code. `NotebookSearchModal.tsx`'s
+own `colorFilter` stays single-select, unchanged.
+
+**Unified entry construction:** `highlightEntries` maps `Highlight[]` directly (colorIndex/tags/
+note/quotes already on the record). `notebookEntries` walks **every anchor** in every notebook
+(`extractAnchors(doc)`), not just tagged ones, joining in tags separately from `extractTags(doc)`'s
+`sourceNodeIds` — each anchor gets whatever tags point at it (possibly none) plus its `colorIndex`
+(`getAnchorColor`) and `note` (`getAnchorNotes`, always computed — cheap enough — gated only at
+render by the "include notes" checkbox). `lib/notebooks.ts`'s `extractAnchors` gained `quoteHe`/
+`quoteEn` to its return shape (additive — Phase A's AnchorPill quote snapshot lives on the anchor
+node's attrs but was never surfaced by `extractAnchors` itself before this) so the sheet can reuse
+the same captured quote AnchorPill already shows, with no new capture logic.
+
+**Real bug found via user testing, fixed same session:** the first version built `notebookEntries`
+from `extractTaggedAnchors(doc)` (Phase B's tag→anchor join) instead of `extractAnchors(doc)` — so
+an anchor with a color but **no tag at all** (e.g. a yellow-highlighted notebook paragraph whose
+anchor was never explicitly tagged) never became a candidate entry in the first place, no matter
+what color filter was selected. This directly broke the locked "color-alone query" design decision
+for notebook-sourced entries (highlight-sourced entries were never affected — `Highlight` records
+carry their own `colorIndex` regardless of tags). Fixed by switching the source iteration to *every*
+anchor via `extractAnchors`, joining tags in as an additive lookup rather than as the primary
+iteration — an untagged anchor now simply gets `tags: []`, which a tag filter (when active) already
+excludes correctly on its own; no separate "has a tag or color" pre-filter needed, since the
+existing per-entry filter logic only shows anything once at least one filter is active anyway.
+`extractTaggedAnchors` itself is untouched and still exported from `lib/notebooks.ts` (a generally
+useful tag→anchor join, just no longer this component's own entry-discovery mechanism).
+
+**Ordering:** `compareAnchors` sorts by `TextAnchor`'s own structural fields (category → index →
+chapter → halakha → segmentIndex → paragraphIndex) via a fixed `CATEGORY_ORDER` array matching the
+app's real tab order — textual order, not creation timestamp, per the locked design decision.
+
+**Printable view — no PDF library, `window.print()` is the entire export mechanism** (confirmed
+zero print/export code existed anywhere in the app before this). A `.source-sheet-print-content`
+div, rendered as a sibling of the on-screen modal with the *same* filtered `results` and shared
+`EntryBody` renderer (so on-screen and print never drift), is `display: none` on screen and
+isolated at print time by a global `@media print` rule in `globals.css` — the standard
+"`visibility: hidden` on every `body *`, `visibility: visible` + `position: absolute` on just the
+target subtree" technique, which works regardless of how deep the modal sits in Reader.tsx's tree
+(no portal needed). Each entry sets its own `dir` per language line (Hebrew/English), not a
+sheet-wide default, per the locked design decision.
+
+**Navigation:** a highlight entry reuses Reader.tsx's existing `handleNavigateHighlight`. A
+notebook-anchor entry uses a new `navigateToNotebookAnchor(anchor)` (Reader.tsx) — unlike
+`navigateToNotebookScope` (which resets to the book's *first* section, built for scope-level
+search hits with no specific chapter in mind), this jumps to the anchor's own exact chapter/
+halakha and opens the notebook on the matching scope, so Notebook Phase 2's reverse-sync effect
+scroll+flashes the specific anchor for free once the panel is open at that chapter — reuses the
+existing mechanism rather than building anything new.
+
+**A real, previously-undiscovered bug found via live testing and fixed in the same session
+(`components/CommentaryPanel.tsx`):** `navigateToNotebookAnchor`'s "jump to a main-text anchor and
+open the notebook on 'main'" kept landing on "Rashi on {tractate}" instead — and this turned out
+to be a **pre-existing bug affecting plain manual navigation too**, not something new introduced
+by this feature. `CommentaryPanel`'s `useEffect` on `[poolInfo.contextKey]` resets `activeIndex`
+to 0 on every category change (a fresh book's commentary panel always opens on its first tab);
+this changes `activeType`'s *value* (a different default commentary in the new category), which
+fires the `useEffect` on `[activeType]` that calls `onActiveTypeChange` — and that handler
+(`Reader.tsx`) sets `notebookFocusSource` to `{source:"commentary", ...}` **directly, bypassing
+the `pendingNotebookFocusRef` mechanism** that the `[category, index]` reset effect already uses
+to protect an explicit "I want 'main'" request. Net effect: the documented design decision
+("resets to main only on a book/tractate change") had *never actually worked* whenever the target
+category has a commentary panel — which is every category. Confirmed live and reproduced with
+zero involvement from the Source Sheet feature: switching to the Bavli tab via the plain top-level
+tabs and opening the notebook panel showed "Rashi on Berakhot," not "Bavli, Berakhot." **Fix:** a
+new `isAutoResetRef` in `CommentaryPanel.tsx`, set `true` by the `[poolInfo.contextKey]` reset
+effect and consumed (checked-and-cleared) by the `[activeType]` effect — the automatic
+reset-to-tab-0 no longer fires `onActiveTypeChange` at all, so it can no longer clobber whatever
+the category/index change's own reset effect decided. Genuine user-driven tab clicks are
+unaffected (they don't go through the `[poolInfo.contextKey]` effect, so the ref is never set for
+them). Re-verified live after the fix: switching to Bavli and opening the notebook now correctly
+shows "Bavli, Berakhot."
+
+**Verified live in the browser** (seeded a highlight + a notebook with an explicitly-tagged anchor
+directly via `localStorage`, since this harness still can't reliably drive `window.prompt()`/
+ProseMirror text selection — same documented limitation as every prior Notebook phase): tag-only
+filter shows both a highlight and a notebook-anchor entry sharing the tag; color-only filter (blue,
+via a `sectionColor` mark in the same block as the anchor) correctly narrows to just the notebook
+entry; "include notes" reveals `Highlight.note` and the block-scoped `getAnchorNotes` extraction
+correctly on their respective entries; clicking a highlight entry and a notebook-anchor entry both
+navigate correctly (the latter verified only correct after the CommentaryPanel fix above); the
+print-only content mirrors the filtered on-screen results with `display: none` at rest.
+**Automation note, not a product bug:** a controlled checkbox's `checked` state can appear to
+toggle in a screenshot after using the browser tool's form-fill helper without React's `onChange`
+actually having fired (the DOM property was set directly) — confirmed by dispatching a real
+`.click()` instead, which behaved correctly; not something to worry about outside this kind of
+automated testing.
+
+`npm run build`/`tsc --noEmit`/`npm run lint` all clean — one new lint item
+(`react-hooks/set-state-in-effect` on `SourceSheetModal.tsx`'s notebook-loading effect), structurally
+identical to `NotebookSearchModal.tsx`'s own pre-existing instance of the same pattern, not a new
+class of issue.
+
+### Phase C follow-up round (same feature line, user feedback after live use)
+
+Three requests, all addressed in `SourceSheetModal.tsx` and `lib/notebooks.ts`:
+
+1. **`getAnchorNotes` color-scoping.** Previously always returned the whole block's (paragraph's)
+   plain text regardless of color. Now: when the anchor's block has a `sectionColor`-marked range,
+   notes are scoped to *just* that colored text (every run of that color in the block, before and
+   after the anchor — not the block's other, uncolored prose); without a color, it still falls
+   back to the whole block's plain text, unchanged from before. (Answering the "if there's no
+   highlighted section, is nothing designated as notes" question directly: no — an untagged,
+   uncolored anchor's notes still fall back to the whole paragraph's text, same as it always has.
+   Only the *with-a-color* case changed, to scope tighter than the whole paragraph.)
+2. **Notebook picker.** A new collapsible "Including N of M notebooks" checkbox list, open by
+   default (same discoverability lesson as `NotebookSearchModal`'s own picker — collapsed-by-
+   default was previously found to be easy to miss entirely), with All/None shortcuts. Excluded
+   notebooks' anchors are filtered out of `notebookEntries` before any tag/color matching runs.
+3. **Explicit AND/OR controls**, replacing the old implicit-always-OR/implicit-always-AND
+   behavior with visible, user-facing toggles:
+   - `tagMatchMode: "any" | "all"` — only shown once 2+ tags are selected (meaningless with
+     0 or 1). "any" (OR, the original default) or "all" (AND, new).
+   - Colors have **no** equivalent toggle — an entry only ever carries one color, so "match all
+     selected colors" could never be satisfied by anything; multi-color selection is always OR,
+     and the UI label now says so explicitly ("Color tier (any of)") rather than leaving it
+     unstated.
+   - `criteriaMatchMode: "and" | "or"` — how the tag-criterion and color-criterion combine,
+     shown only when *both* have at least one selection (a single active criterion needs no
+     combination rule). "and" (the original, only-ever behavior) is still the default; "or" is
+     new. Implemented via a tri-state `matchesTagFilter`/`matchesColorFilter` pair returning
+     `boolean | null` (`null` = "this criterion isn't active at all," distinct from `false` =
+     "active and not satisfied") so the combinator can tell "no constraint" apart from "constraint
+     unmet" when only one of the two filters is in play.
+   - The print header's summary line was upgraded to spell out the actual query (e.g. "Tags (all
+     of): chesed, mitzvot ben adam lechavero AND Colors (any of): Yellow, Blue") instead of just a
+     bare tag list.
+
+**Verification note:** per explicit user preference, this round was verified via `tsc --noEmit`/
+`npm run lint`/`npm run build` only (all clean, same accepted baseline as every prior phase) — no
+live browser click-through. The user prefers to click-test small, quickly-checkable tweaks
+themselves rather than have a full browser-automation pass run after every change; reserve that
+heavier verification for changes that are hard to reason about statically or are shipping for the
+first time.
 
 ## Daily learning dedication banner — shipped
 

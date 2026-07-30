@@ -43,6 +43,7 @@ import HighlightEditModal from "@/components/HighlightEditModal";
 import HighlightsListModal from "@/components/HighlightsListModal";
 import NotebookPanel, { type NotebookScopeOption } from "@/components/NotebookPanel";
 import NotebookSearchModal from "@/components/NotebookSearchModal";
+import SourceSheetModal from "@/components/SourceSheetModal";
 import { notebookScopeKey, formatNotebookScopeLabel, type NotebookScope } from "@/lib/notebooks";
 import AccountButton from "@/components/AccountButton";
 import { useAuth } from "@/components/AuthProvider";
@@ -1123,6 +1124,28 @@ export default function Reader() {
     setNotebookSearchOpen(false);
   }, [setCategory, setSelection, setNotebookFocusSource, setNotebookSearchSeed, setNotebookOpen, setNotebookSearchOpen]);
 
+  const [sourceSheetOpen, setSourceSheetOpen] = useState(false);
+
+  // Source Sheet entry → jump the reader to the anchor's own exact chapter/halakha (unlike
+  // navigateToNotebookScope, which resets to the book's first section for a scope-level search
+  // hit) and open the notebook on the matching scope — Notebook Phase 2's reverse-sync effect then
+  // scroll+flashes the specific anchor for free once the panel is open at that chapter.
+  const navigateToNotebookAnchor = useCallback((anchor: TextAnchor) => {
+    const desiredFocus: NotebookFocus =
+      anchor.source === "commentary" && anchor.commentaryType
+        ? { source: "commentary", commentaryType: anchor.commentaryType }
+        : { source: "main" };
+    pendingNotebookFocusRef.current = desiredFocus;
+    setNotebookFocusSource(desiredFocus);
+    setCategory(anchor.category);
+    setSelection((s) => ({
+      ...s,
+      [anchor.category]: { index: anchor.index, chapter: anchor.chapter, halakha: anchor.halakha },
+    }));
+    setNotebookOpen(true);
+    setSourceSheetOpen(false);
+  }, [setCategory, setSelection, setNotebookFocusSource, setNotebookOpen, setSourceSheetOpen]);
+
   const upsertHighlight = (
     anchor: TextAnchor,
     colorIndex: number,
@@ -1448,6 +1471,14 @@ export default function Reader() {
               className={pillButtonClass}
             >
               <HighlightSearchIcon size={hebrewMode ? 20 : 17} />
+            </button>
+            <button
+              onClick={() => setSourceSheetOpen(true)}
+              aria-label="Build a source sheet"
+              title="Build a source sheet"
+              className={pillButtonClass}
+            >
+              📄
             </button>
             <VerticalDivider />
             <AccountButton pillButtonClass={pillButtonClass} hebrewMode={hebrewMode} />
@@ -1941,6 +1972,18 @@ export default function Reader() {
             setNotebookSearchOpen(false);
           }}
           onClose={() => setNotebookSearchOpen(false)}
+        />
+      )}
+
+      {sourceSheetOpen && (
+        <SourceSheetModal
+          highlights={highlights}
+          onNavigateHighlight={(h) => {
+            handleNavigateHighlight(h);
+            setSourceSheetOpen(false);
+          }}
+          onNavigateNotebookAnchor={navigateToNotebookAnchor}
+          onClose={() => setSourceSheetOpen(false)}
         />
       )}
 
