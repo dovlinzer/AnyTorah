@@ -270,6 +270,8 @@ Most follow `"CommentatorName on MainRef"`. Exceptions:
 | Mishnah Berurah | `"Mishnah Berurah {siman}"` — siman number only (regex-extracted) |
 | Biur Halakha | `"Biur Halakha {siman}"` — same |
 | Magen Avraham | `"Magen Avraham {siman}"` — standalone title + siman number; NOT "on Shulchan Arukh…" (Sefaria doesn't recognize that form) |
+| Chelkat Mechokek | `"Chelkat Mechokek {siman}"` — standalone title + siman number, same as Magen Avraham. `"Chelkat Mechokek on Shulchan Arukh, Even HaEzer {siman}"` doesn't error — it silently resolves to siman 1 every time (confirmed against the live API), so this is a silent-wrong-content bug, not a fetch failure |
+| Beit Shmuel | `"Beit Shmuel {siman}"` — standalone title + siman number, same as Magen Avraham. Same silent-fallback-to-siman-1 bug as Chelkat Mechokek if given the "on {mainRef}" form |
 | Shakh | `"Siftei Kohen on ..."` + range `:1-100` appended |
 | Ra'ah | `"Chiddushei HaRa'ah on ..."` |
 | Shita Mekubbetzet on Nedarim | double-b: `"Shita Mekubbetzet on Nedarim"` (vs single-b elsewhere) |

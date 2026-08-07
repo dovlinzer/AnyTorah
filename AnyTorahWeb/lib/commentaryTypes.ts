@@ -672,6 +672,24 @@ function magenAvrahamRef(mainRef: string): string {
   return m ? `Magen Avraham ${m[1]}` : "Magen Avraham 1";
 }
 
+/**
+ * Chelkat Mechokek and Beit Shmuel (EH's two default commentaries) are, like Magen Avraham,
+ * standalone top-level Sefaria titles rather than "CommentatorName on {mainRef}" — confirmed
+ * directly against the API: "Beit Shmuel on Shulchan Arukh, Even HaEzer.5" silently resolves to
+ * "Beit Shmuel 1" (Sefaria falls back to the section's first entry instead of erroring on the
+ * unparseable "on ..." form), so every siman looked identical regardless of which was selected.
+ * Bare "Beit Shmuel 5" / "Chelkat Mechokek 5" resolve correctly to the real siman.
+ */
+function chelkatMechokekRef(mainRef: string): string {
+  const m = mainRef.match(/(\d+)$/);
+  return m ? `Chelkat Mechokek ${m[1]}` : "Chelkat Mechokek 1";
+}
+
+function beitShmuelRef(mainRef: string): string {
+  const m = mainRef.match(/(\d+)$/);
+  return m ? `Beit Shmuel ${m[1]}` : "Beit Shmuel 1";
+}
+
 function biurHalakhaRef(mainRef: string): string {
   const m = mainRef.match(/(\d+)$/);
   // Biur Halakha is depth-3 (Siman -> Seif -> Comment); bare siman ref returns only seif 1.
@@ -808,8 +826,8 @@ export function sefariaRef(type: CommentaryType, mainRef: string): string {
     case "biurHalakha": return biurHalakhaRef(mainRef);
     case "shakh": return `Siftei Kohen on ${mainRef}`;
     case "taz": return `Turei Zahav on ${mainRef}`;
-    case "chelkatMechokek": return `Chelkat Mechokek on ${mainRef}`;
-    case "beitShmuel": return `Beit Shmuel on ${mainRef}`;
+    case "chelkatMechokek": return chelkatMechokekRef(mainRef);
+    case "beitShmuel": return beitShmuelRef(mainRef);
     case "meiratEinayim": return `Me'irat Einayim on ${mainRef}`;
     case "pitcheiTeshuvah": return `Pitchei Teshuva on ${mainRef}`;
     case "baerHetev": return `Ba'er Hetev on ${mainRef}`;
