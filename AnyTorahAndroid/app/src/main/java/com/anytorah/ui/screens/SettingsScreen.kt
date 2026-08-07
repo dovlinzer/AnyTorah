@@ -18,6 +18,9 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -29,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.anytorah.models.SATextMode
 import com.anytorah.models.TextDisplayMode
 import com.anytorah.ui.theme.LocalAnyTorahColors
 import com.anytorah.viewmodels.TextReaderViewModel
@@ -241,6 +245,35 @@ fun SettingsScreen(
                     checkedThumbColor = colors.editorialColor,
                     checkedTrackColor = colors.editorialColor.copy(alpha = 0.4f)
                 )
+            )
+        }
+
+        HorizontalDivider(color = colors.dividerColor, modifier = Modifier.padding(vertical = 4.dp))
+
+        // Shulchan Arukh text edition — Sefaria has no single edition with both nikud and the
+        // inline commentary-marker tags our bracket system depends on (confirmed against the
+        // API), so this is a choice between two complete digitizations, not a rendering toggle.
+        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+            Text("Shulchan Arukh Text", color = colors.appForeground, fontSize = 15.sp)
+            Spacer(modifier = Modifier.height(6.dp))
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                SATextMode.entries.forEachIndexed { idx, mode ->
+                    SegmentedButton(
+                        selected = vm.saTextMode == mode,
+                        onClick = { vm.updateSaTextMode(mode) },
+                        shape = SegmentedButtonDefaults.itemShape(index = idx, count = SATextMode.entries.size),
+                        label = { Text(if (mode == SATextMode.NIKUD) "Nikud (Vocalized)" else "Commentary Markers") }
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                if (vm.saTextMode == SATextMode.NIKUD)
+                    "Full nikud, from Sefaria's vocalized Torat Emet edition. Sefaria has no single edition with both nikud and commentary markers, so the main text won't show inline (א)/(ב)/{א} brackets in this mode — the commentary panel below still works."
+                else
+                    "Shows inline commentary-marker brackets — (א)/(ב)/{א} — matching the selected commentaries below. No nikud in this mode.",
+                color = colors.secondaryText,
+                fontSize = 12.sp
             )
         }
 

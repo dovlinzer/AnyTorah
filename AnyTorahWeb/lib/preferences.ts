@@ -18,6 +18,7 @@ const FIXED_PREFERENCE_KEYS = [
   "anytorah:reverseNavigation",
   "anytorah:showDafImage",
   "anytorah:dafPosition",
+  "anytorah:saTextMode",
   "anytorah:narrowPanelWidth",
   "anytorah:commentaryWidth",
   "anytorah:notebookWidth",

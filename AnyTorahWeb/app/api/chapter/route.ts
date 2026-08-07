@@ -15,7 +15,7 @@ import {
   stripHTML,
 } from "@/lib/sefariaClient";
 import { displayName, type CommentaryType } from "@/lib/commentaryTypes";
-import type { TextCategory, TextSegment } from "@/lib/textModels";
+import type { TextCategory, TextSegment, SATextMode } from "@/lib/textModels";
 import { contentSegment } from "@/lib/textModels";
 import { rambamIntroductions } from "@/lib/rambamIntroductions";
 import { TextCatalog } from "@/lib/textCatalog";
@@ -65,6 +65,9 @@ export async function GET(request: NextRequest) {
   // Tosefta (mishnah) / Yerushalmi (talmud) subcategories — see AnyTorahWeb CLAUDE.md.
   const subcategoryParam = searchParams.get("subcategory");
   const halakhaParam = searchParams.get("halakha");
+  // Shulchan Arukh only — see SATextMode in lib/textModels.ts. Harmless (ignored by fetchChapter)
+  // for every other category.
+  const saTextMode: SATextMode = searchParams.get("saTextMode") === "nikud" ? "nikud" : "commentary";
 
   if (!categoryParam || !VALID_CATEGORIES.includes(categoryParam as TextCategory)) {
     return NextResponse.json({ error: "Missing or invalid category" }, { status: 400 });
@@ -123,7 +126,7 @@ export async function GET(request: NextRequest) {
         segments: plainText(segments, category),
       });
     }
-    const segments = await fetchChapter(category, index, chapter, selectedCommentaries);
+    const segments = await fetchChapter(category, index, chapter, selectedCommentaries, saTextMode);
     return NextResponse.json({ ref: buildRef(category, index, chapter), segments: plainText(segments, category) });
   } catch (error) {
     if (error instanceof SefariaNoTextError) {

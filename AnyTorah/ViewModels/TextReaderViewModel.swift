@@ -910,11 +910,13 @@ final class TextReaderViewModel {
                 let saCommentaries = layoutRaw == CommentaryLayout.bothPanels.rawValue
                     ? availableCommentaries(for: mainPanel) + availableCommentaries(for: rightPanel)
                     : availableCommentaries
+                let saTextModeRaw = UserDefaults.standard.string(forKey: "saTextMode") ?? SATextMode.commentary.rawValue
                 segments = try await SefariaTextClient.shared.fetchChapter(
                     category: .shulchanArukh,
                     bookOrTractateIndex: saSection,
                     chapter: saSiman,
-                    selectedCommentaries: saCommentaries)
+                    selectedCommentaries: saCommentaries,
+                    saTextMode: SATextMode(rawValue: saTextModeRaw) ?? .commentary)
             }
         } catch {
             self.error = error.localizedDescription

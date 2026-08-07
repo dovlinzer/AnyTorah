@@ -9,6 +9,7 @@ struct SettingsView: View {
     @AppStorage("commentaryLayout") private var commentaryLayoutRaw: String = CommentaryLayout.bottomPanel.rawValue
     @AppStorage("sidePanelContrast") private var sidePanelContrast: Bool = false
     @AppStorage("useRashiFont") private var useRashiFont: Bool = false
+    @AppStorage("saTextMode") private var saTextModeRaw: String = SATextMode.commentary.rawValue
 
     private var fontSizeName: String {
         switch Int(fontSizeLevel) {
@@ -131,6 +132,18 @@ struct SettingsView: View {
                         Toggle("Light commentary panel", isOn: $sidePanelContrast)
                     }
                     Toggle("Rashi script for Rashi commentary", isOn: $useRashiFont)
+                }
+                Section("Shulchan Arukh Text") {
+                    Picker("Edition", selection: $saTextModeRaw) {
+                        Text("Commentary Markers").tag(SATextMode.commentary.rawValue)
+                        Text("Nikud (Vocalized)").tag(SATextMode.nikud.rawValue)
+                    }
+                    .pickerStyle(.segmented)
+                    Text(saTextModeRaw == SATextMode.nikud.rawValue
+                         ? "Full nikud, from Sefaria's vocalized Torat Emet edition. Sefaria has no single edition with both nikud and commentary markers, so the main text won't show inline (א)/(ב)/{א} brackets in this mode — the commentary panel below still works."
+                         : "Shows inline commentary-marker brackets — (א)/(ב)/{א} — matching the selected commentaries below. No nikud in this mode.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .scrollContentBackground(.hidden)

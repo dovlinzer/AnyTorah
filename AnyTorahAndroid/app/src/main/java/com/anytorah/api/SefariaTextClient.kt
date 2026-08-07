@@ -4,6 +4,7 @@ import com.anytorah.models.CommentaryEntry
 import com.anytorah.models.CommentaryType
 import com.anytorah.models.MidrashWork
 import com.anytorah.models.MishnahTractate
+import com.anytorah.models.SATextMode
 import com.anytorah.models.SegmentLabelStyle
 import com.anytorah.models.TextCategory
 import com.anytorah.models.TextCatalog
@@ -56,9 +57,12 @@ object SefariaTextClient {
 
     // MARK: - URL building
 
-    private fun buildUrl(ref: String, lang: String): String {
+    private fun buildUrl(ref: String, lang: String, version: String? = null): String {
         val encoded = ref.replace(" ", "%20")
-        return "$BASE_URL/$encoded?context=0&lang=$lang"
+        val base = "$BASE_URL/$encoded?context=0&lang=$lang"
+        if (version == null) return base
+        val versionParam = if (lang == "he") "vhe" else "ven"
+        return "$base&$versionParam=${java.net.URLEncoder.encode(version, "UTF-8")}"
     }
 
     // MARK: - Retry
@@ -98,9 +102,9 @@ object SefariaTextClient {
     // MARK: - Single-language fetch
 
     /** Low-level single-language fetch. lang="he" → json["he"], lang="en" → json["text"]. */
-    private suspend fun fetchSingleLang(ref: String, lang: String): List<String> =
+    private suspend fun fetchSingleLang(ref: String, lang: String, version: String? = null): List<String> =
         withContext(Dispatchers.IO) {
-            val url = buildUrl(ref, lang)
+            val url = buildUrl(ref, lang, version)
             val request = Request.Builder()
                 .url(url)
                 .cacheControl(CacheControl.Builder().maxStale(24, TimeUnit.HOURS).build())
@@ -296,9 +300,10 @@ object SefariaTextClient {
         }
     }
 
-    /** Fetches a pre-built Sefaria ref string in the given language ("he" or "en"). */
-    suspend fun fetchRaw(ref: String, lang: String): List<String> =
-        fetchSingleLang(ref, lang)
+    /** Fetches a pre-built Sefaria ref string in the given language ("he" or "en"), optionally
+     *  from a specific named Sefaria version. */
+    suspend fun fetchRaw(ref: String, lang: String, version: String? = null): List<String> =
+        fetchSingleLang(ref, lang, version)
 
     suspend fun fetchCommentary(type: CommentaryType, mainRef: String): List<String> {
         val commentaryRef = type.sefariaRef(mainRef)
@@ -484,17 +489,39 @@ object SefariaTextClient {
         throw SefariaException.NoText
     }
 
+    /**
+     * Per-section Sefaria version title for Shulchan Arukh's vocalized (Torat Emet) edition —
+     * split across two physical volumes, confirmed directly against the API at multiple simanim
+     * spanning each section's full range (not assumed from one spot-check): Orach Chayim and
+     * Choshen Mishpat share one volume, Yoreh De'ah and Even HaEzer the other. Section index
+     * matches the 0=OC/1=YD/2=EH/3=CM convention used throughout this file.
+     */
+    private val saVocalizedVersion: Map<Int, String> = mapOf(
+        0 to "Torat Emet 363", // Orach Chayim
+        1 to "Torat Emet 357", // Yoreh De'ah
+        2 to "Torat Emet 357", // Even HaEzer
+        3 to "Torat Emet 363", // Choshen Mishpat
+    )
+
     suspend fun fetchChapter(
         category: TextCategory,
         bookOrTractateIndex: Int,
         chapter: Int,
-        selectedCommentaries: List<CommentaryType> = emptyList()
-    ): List<TextSegment> {
+        selectedCommentaries: List<CommentaryType> = emptyList(),
+        saTextMode: SATextMode = SATextMode.COMMENTARY
+    ): List<TextSegment> = coroutineScope {
         val r = ref(category, bookOrTractateIndex, chapter)
-        val (he, en) = fetchBoth(r)
+        val isSA = category == TextCategory.SHULCHAN_ARUKH
+        val useVocalizedSA = isSA && saTextMode == SATextMode.NIKUD
+        val (he, en) = if (useVocalizedSA) {
+            val heDef = async { fetchSingleLang(r, "he", saVocalizedVersion[bookOrTractateIndex]) }
+            val enDef = async { fetchSingleLang(r, "en") }
+            Pair(heDef.await(), enDef.await())
+        } else {
+            fetchBoth(r)
+        }
         val count = maxOf(he.size, en.size)
         val labelStyle = category.segmentLabelStyle
-        val isSA = category == TextCategory.SHULCHAN_ARUKH
 
         if (isSA) {
             // Sefaria bakes each siman's printed title (e.g. "הלכות ציצית ועטיפתו. ובו יז
@@ -502,7 +529,8 @@ object SefariaTextClient {
             // parallel sentence in the English translation — confirmed directly against the
             // API. Split it into its own unlabeled header segment (no seif number — it isn't
             // one) rather than running it together with seif 1's actual text and commentary
-            // markers.
+            // markers. The vocalized edition has no such block at all — splitSimanHeader simply
+            // finds no match and no-ops, so seif 1 just starts without a separate header line.
             val sharedCounters = mutableMapOf<String, Int>()
             val segments = mutableListOf<TextSegment>()
             for (i in 0 until count) {
@@ -518,27 +546,33 @@ object SefariaTextClient {
                 }
                 // Rema first — its opening-word test needs Sefaria's own contentless <i> markers
                 // still in place, not the visible bracket text processCommentaryMarkers leaves
-                // behind. See processRemaGlosses.
+                // behind. See processRemaGlosses. Runs in both text modes — Rema's glosses exist
+                // independently of which SA edition is fetched.
                 heText = processRemaGlosses(heText)
-                heText = processCommentaryMarkers(
-                    heText, section = bookOrTractateIndex,
-                    selectedCommentaries = selectedCommentaries,
-                    counters = sharedCounters)
+                // The vocalized edition carries no <i data-commentator> tags at all (confirmed
+                // against the API) — processCommentaryMarkers would simply find nothing to
+                // replace, so it's skipped outright rather than run for no effect.
+                if (!useVocalizedSA) {
+                    heText = processCommentaryMarkers(
+                        heText, section = bookOrTractateIndex,
+                        selectedCommentaries = selectedCommentaries,
+                        counters = sharedCounters)
+                }
                 segments.add(TextSegment.content(index = segments.size, he = heText, en = enText, label = label))
             }
-            return segments
+            return@coroutineScope segments
         }
 
         if (category == TextCategory.TUR) {
             val engineSegments = TurParagraphEngine.buildTurSegments(he, en) {
                 fetchTurCommentaryEntries(CommentaryType.BEIT_YOSEF, r)
             }
-            return engineSegments.map {
+            return@coroutineScope engineSegments.map {
                 TextSegment.content(index = it.index, he = it.he, en = it.en, label = it.label)
             }
         }
 
-        return (0 until count).map { i ->
+        return@coroutineScope (0 until count).map { i ->
             val label = segmentLabel(labelStyle, i + 1)
             val heText = if (i < he.size) he[i] else ""
             val enText = if (i < en.size) en[i] else ""
@@ -659,10 +693,30 @@ object SefariaTextClient {
     /**
      * Matches a Rema gloss's opening word "הגה" — optionally behind a bracket/paren, and
      * tolerating either gershayim spelling alongside the far more common unpunctuated "הגה".
+     * Tested against nikud-stripped text (see [isRemaGloss]) — the vocalized SA edition (see
+     * SATextMode) interleaves vowel points between the consonants ("הַגָּה"), which would
+     * otherwise break the literal match.
+     *
+     * The trailing `(?![א-ת])` is load-bearing, not decorative: without it this also matches
+     * "הגהות" ("Hagahot", e.g. the citation title "Hagahot Maimoniyot") as if it were the word
+     * "הגה" — a real bug found live (OC 2:6's own citation "(הגהות מיימוני...)" was wrongly
+     * styled as Rema). Requiring "הגה" not continue into another Hebrew letter makes it a whole
+     * word rather than a prefix match.
      */
-    private val remaOpeningRegex = Regex("""^[\s\[(]*הג["'׳״]?ה""")
+    private val remaOpeningRegex = Regex("""^[\s\[(]*הג["'׳״]?ה(?![א-ת])""")
+
+    /**
+     * Punctuation Sefaria's vocalized (Torat Emet) edition leaves between two sibling `<small>`
+     * tags that are really one continuous gloss (see [absorbGlossRun]) — confirmed by scanning
+     * ~100 simanim across all four sections: plain space (the overwhelming majority), period,
+     * comma, and (found by direct inspection, rarer) semicolon.
+     */
+    private val remaGapCharacters = setOf(' ', '\t', '\n', '.', ',', ';', ':')
     private const val SMALL_OPEN = "<small>"
     private const val SMALL_CLOSE = "</small>"
+
+    /** Strips Hebrew nikud (vowel points) and cantillation marks (U+0591–U+05C7). */
+    private fun String.strippingNikud(): String = filter { c -> c.code < 0x0591 || c.code > 0x05C7 }
 
     /**
      * Index of the `</small>` closing the `<small>` at [openIndex], accounting for nesting.
@@ -688,7 +742,24 @@ object SefariaTextClient {
     }
 
     private fun isRemaGloss(bodyHtml: String): Boolean =
-        remaOpeningRegex.containsMatchIn(stripHTML(bodyHtml).trim())
+        remaOpeningRegex.containsMatchIn(stripHTML(bodyHtml).strippingNikud().trim())
+
+    /**
+     * Extends a confirmed Rema-gloss opening forward across any immediately-following sibling
+     * `<small>` tags separated only by whitespace/simple punctuation — see ​[processRemaGlosses]'s
+     * doc comment for why this is needed. Returns the close index of the last absorbed sibling
+     * (== [firstEnd] itself if nothing follows).
+     */
+    private fun absorbGlossRun(html: String, firstEnd: Int): Int {
+        var runEnd = firstEnd
+        while (true) {
+            var p = runEnd + SMALL_CLOSE.length
+            while (p < html.length && html[p] in remaGapCharacters) p++
+            if (!html.startsWith(SMALL_OPEN, p)) return runEnd
+            val nextEnd = matchingSmallEnd(html, p) ?: return runEnd
+            runEnd = nextEnd
+        }
+    }
 
     /**
      * Wraps Rema's glosses — the Mapah — in `<rm>…</rm>` so [parseHebrewSpans] can set them in a
@@ -711,6 +782,16 @@ object SefariaTextClient {
      * gloss's first word, which only works while any leading tags are still Sefaria's contentless
      * `<i data-commentator …></i>` markers — once those become `(א)` bracket text they carry
      * visible characters of their own and would mask the "הגה".
+     *
+     * **The vocalized edition fragments one printed gloss across many sibling `<small>` tags**,
+     * unlike the default edition's single contiguous block per gloss — confirmed directly against
+     * the API (e.g. OC 1:1, 2:6, 3:11): only the *first* sibling opens with "הגה"; the rest are
+     * the same gloss's own continuation sentences and source citations, which don't themselves
+     * start with "הגה" and would otherwise be left unstyled. [absorbGlossRun] extends a confirmed
+     * opening forward across any immediately-following sibling `<small>` tags — real
+     * (non-whitespace, non-punctuation) Mechaber text between two `<small>` tags always signals
+     * the gloss has ended (confirmed in every case checked, e.g. OC 2's own "וְיִבְדֹּק נְקָבָיו:"
+     * sits plainly between two small runs there and is correctly excluded).
      */
     fun processRemaGlosses(html: String): String {
         if (!html.contains(SMALL_OPEN)) return html
@@ -723,7 +804,10 @@ object SefariaTextClient {
             val body = html.substring(open + SMALL_OPEN.length, close)
             out.append(html, i, open)
             if (isRemaGloss(body)) {
-                out.append("<rm>").append(body).append("</rm>")
+                val runEnd = absorbGlossRun(html, close)
+                out.append("<rm>").append(html, open, runEnd + SMALL_CLOSE.length).append("</rm>")
+                i = runEnd + SMALL_CLOSE.length
+                continue
             } else {
                 // Not Rema, but a gloss nested inside it still might be — recurse rather than skip.
                 out.append(SMALL_OPEN).append(processRemaGlosses(body)).append(SMALL_CLOSE)

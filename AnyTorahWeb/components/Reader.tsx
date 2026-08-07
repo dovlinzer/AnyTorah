@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { TextDisplayMode, TextSegment } from "@/lib/textModels";
+import type { TextDisplayMode, TextSegment, SATextMode } from "@/lib/textModels";
 import type { CommentaryType } from "@/lib/commentaryTypes";
 import { getPoolInfo, computeEffectiveSlots, fetchCategoryFor, type ReaderCategory } from "@/lib/commentaryPools";
 import {
@@ -223,6 +223,30 @@ function storeShowDafImage(show: boolean) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(SHOW_DAF_IMAGE_KEY, show ? "1" : "0");
+    schedulePreferencesSync();
+  } catch {
+    // localStorage unavailable — toggle just won't persist.
+  }
+}
+
+// Shulchan Arukh main-text edition — see SATextMode in lib/textModels.ts for why this is an
+// either/or choice rather than a rendering option: Sefaria has no edition with both nikud and
+// the inline commentary-marker tags, so "nikud" trades away the main-text brackets.
+const SA_TEXT_MODE_KEY = "anytorah:saTextMode";
+
+function loadSATextMode(): SATextMode {
+  if (typeof window === "undefined") return "commentary";
+  try {
+    return window.localStorage.getItem(SA_TEXT_MODE_KEY) === "nikud" ? "nikud" : "commentary";
+  } catch {
+    return "commentary";
+  }
+}
+
+function storeSATextMode(mode: SATextMode) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SA_TEXT_MODE_KEY, mode);
     schedulePreferencesSync();
   } catch {
     // localStorage unavailable — toggle just won't persist.
@@ -746,6 +770,13 @@ export default function Reader() {
   const [talmudPages, setTalmudPages] = useState<TalmudPages | null>(null);
   const [showDafImage, setShowDafImageState] = useState(false);
   useEffect(() => setShowDafImageState(loadShowDafImage()), []);
+
+  const [saTextMode, setSaTextModeState] = useState<SATextMode>("commentary");
+  useEffect(() => setSaTextModeState(loadSATextMode()), []);
+  const setSaTextMode = (mode: SATextMode) => {
+    setSaTextModeState(mode);
+    storeSATextMode(mode);
+  };
   const setShowDafImage = (show: boolean) => {
     setShowDafImageState(show);
     storeShowDafImage(show);
@@ -850,6 +881,7 @@ export default function Reader() {
   const halakhaValue = halakha ?? 1;
   const subcategoryQuery = subcategory ? `&subcategory=${subcategory}` : "";
   const halakhaQuery = subcategory === "yerushalmi" ? `&halakha=${halakhaValue}` : "";
+  const saTextModeQuery = category === "shulchanArukh" && saTextMode === "nikud" ? "&saTextMode=nikud" : "";
 
   useEffect(() => {
     const controller = new AbortController();
@@ -857,7 +889,7 @@ export default function Reader() {
     setError(null);
     const commentariesQuery = commentariesKey ? `&commentaries=${commentariesKey}` : "";
     fetch(
-      `/api/chapter?category=${fetchCategory}&index=${index}&chapter=${chapter}${commentariesQuery}${subcategoryQuery}${halakhaQuery}`,
+      `/api/chapter?category=${fetchCategory}&index=${index}&chapter=${chapter}${commentariesQuery}${subcategoryQuery}${halakhaQuery}${saTextModeQuery}`,
       { signal: controller.signal },
     )
       .then(async (res) => {
@@ -878,7 +910,7 @@ export default function Reader() {
       .finally(() => setLoading(false));
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchCategory, index, chapter, commentariesKey, subcategoryQuery, halakhaQuery]);
+  }, [fetchCategory, index, chapter, commentariesKey, subcategoryQuery, halakhaQuery, saTextModeQuery]);
 
   // Talmud amud a/b jump — scroll-only (both amudim are always loaded together). Resets to
   // "a" on every new daf/tractate/category, matching the expectation that a daf opens at 2a —
@@ -1610,6 +1642,32 @@ export default function Reader() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {category === "shulchanArukh" && <VerticalDivider />}
+        {category === "shulchanArukh" && (
+          <div
+            dir={hebrewMode ? "rtl" : "ltr"}
+            className="flex shrink-0 items-center gap-1 rounded-full border border-border px-1 py-1 text-sm"
+            title={
+              hebrewMode
+                ? "לספריא אין מהדורה אחת עם גם ניקוד וגם סימוני מפרשים — יש לבחור"
+                : "Sefaria has no single edition with both nikud and commentary markers — pick one"
+            }
+          >
+            {(["commentary", "nikud"] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setSaTextMode(mode)}
+                className="rounded-full px-2.5 py-1 transition-colors"
+                style={saTextMode === mode ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+              >
+                {hebrewMode
+                  ? mode === "commentary" ? "סימוני מפרשים" : "ניקוד"
+                  : mode === "commentary" ? "Markers" : "Nikud"}
+              </button>
+            ))}
           </div>
         )}
 

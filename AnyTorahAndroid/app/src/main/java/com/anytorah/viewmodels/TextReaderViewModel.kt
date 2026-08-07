@@ -23,6 +23,7 @@ import com.anytorah.models.MishnahSubcategory
 import com.anytorah.models.torahVerseCount
 import com.anytorah.models.MishnahTractate
 import com.anytorah.models.SASimanNames
+import com.anytorah.models.SATextMode
 import com.anytorah.models.TalmudSubcategory
 import com.anytorah.models.TalmudTractate
 import com.anytorah.models.TextCatalog
@@ -121,6 +122,16 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
     fun updateUseRashiFont(value: Boolean) {
         useRashiFont = value
         prefs.edit().putBoolean("useRashiFont", value).apply()
+    }
+
+    /** Shulchan Arukh main-text edition — commentary markers (default) or vocalized nikud.
+     *  See SATextMode in models/TextModels.kt. */
+    var saTextMode by mutableStateOf(SATextMode.fromRaw(prefs.getString("saTextMode", null)))
+        private set
+
+    fun updateSaTextMode(value: SATextMode) {
+        saTextMode = value
+        prefs.edit().putString("saTextMode", value.raw).apply()
     }
 
     // MARK: - Home screen — last selected category persistence
@@ -793,7 +804,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                         val r = SefariaTextClient.ref(TextCategory.SHULCHAN_ARUKH, saSection, saSiman)
                         currentRef = r
                         segments = SefariaTextClient.fetchChapter(TextCategory.SHULCHAN_ARUKH, saSection, saSiman,
-                            selectedCommentaries = availableCommentaries)
+                            selectedCommentaries = availableCommentaries, saTextMode = saTextMode)
                     }
                     TextCategory.MIDRASH -> {
                         midrashScrollToIndex = null

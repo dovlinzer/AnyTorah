@@ -15,6 +15,7 @@ import {
   type SegmentLabelStyle,
   type TextSegment,
   type CommentaryEntry,
+  type SATextMode,
   contentSegment,
   amudBMarkerSegment,
   saHebrewLetter,
@@ -24,6 +25,7 @@ import {
   TextCatalog,
   type MishnahTractate,
 } from "./textCatalog";
+import { stripNikud } from "./hebrewUtils";
 
 // MARK: - Errors
 
@@ -246,8 +248,9 @@ export function ref(
   }
 }
 
-function buildURL(refStr: string, lang: string = "he"): string {
+function buildURL(refStr: string, lang: string = "he", version?: string): string {
   const params = new URLSearchParams({ context: "0", lang });
+  if (version) params.set(lang === "he" ? "vhe" : "ven", version);
   return `https://www.sefaria.org/api/texts/${encodeURIComponent(refStr)}?${params.toString()}`;
 }
 
@@ -268,8 +271,8 @@ function segmentLabel(style: SegmentLabelStyle, number: number): string | null {
 
 // MARK: - Low-level fetch
 
-async function fetchSingleLang(refStr: string, lang: string): Promise<string[]> {
-  const url = buildURL(refStr, lang);
+async function fetchSingleLang(refStr: string, lang: string, version?: string): Promise<string[]> {
+  const url = buildURL(refStr, lang, version);
   let res: Response;
   try {
     res = await fetchWithRetry(url);
@@ -294,9 +297,9 @@ async function fetchSingleLang(refStr: string, lang: string): Promise<string[]> 
   return segs;
 }
 
-/** Fetches a single language's text segments. */
-export async function fetchRaw(refStr: string, language: string): Promise<string[]> {
-  return fetchSingleLang(refStr, language);
+/** Fetches a single language's text segments, optionally from a specific named Sefaria version. */
+export async function fetchRaw(refStr: string, language: string, version?: string): Promise<string[]> {
+  return fetchSingleLang(refStr, language, version);
 }
 
 /** Fetches Hebrew and English segments in parallel with explicit lang parameters. */
@@ -674,14 +677,39 @@ function splitSimanHeader(rawHeHtml: string): { header: string; rest: string } |
   return { header: m[1], rest: rawHeHtml.slice(m[0].length) };
 }
 
+/**
+ * Per-section Sefaria version title for Shulchan Arukh's vocalized (Torat Emet) edition — split
+ * across two physical volumes, confirmed directly against the API at multiple simanim spanning
+ * each section's full range (not assumed from one spot-check): Orach Chayim and Choshen Mishpat
+ * share one volume, Yoreh De'ah and Even HaEzer the other. Section index matches SA_SLOT_STYLES'
+ * own 0=OC/1=YD/2=EH/3=CM convention used throughout this file.
+ */
+const SA_VOCALIZED_VERSION: Record<number, string> = {
+  0: "Torat Emet 363", // Orach Chayim
+  1: "Torat Emet 357", // Yoreh De'ah
+  2: "Torat Emet 357", // Even HaEzer
+  3: "Torat Emet 363", // Choshen Mishpat
+};
+
 export async function fetchChapter(
   category: TextCategory,
   bookOrTractateIndex: number,
   chapter: number,
   selectedCommentaries: CommentaryType[] = [],
+  saTextMode: SATextMode = "commentary",
 ): Promise<TextSegment[]> {
   const r = ref(category, bookOrTractateIndex, chapter);
-  const { hebrew: he, english: en } = await fetchBoth(r);
+  const isSA = category === "shulchanArukh";
+  const useVocalizedSA = isSA && saTextMode === "nikud";
+  const { hebrew: he, english: en } = useVocalizedSA
+    ? await (async () => {
+        const [heSegs, enSegs] = await Promise.all([
+          fetchRaw(r, "he", SA_VOCALIZED_VERSION[bookOrTractateIndex]),
+          fetchRaw(r, "en"),
+        ]);
+        return { hebrew: heSegs, english: enSegs };
+      })()
+    : await fetchBoth(r);
   const count = Math.max(he.length, en.length);
   const labelStyle: SegmentLabelStyle =
     category === "tanakh" ? "verse"
@@ -689,7 +717,6 @@ export async function fetchChapter(
     : category === "rambam" ? "halakha"
     : category === "shulchanArukh" ? "sif"
     : "none";
-  const isSA = category === "shulchanArukh";
 
   if (isSA) {
     // Use a loop so shared counters thread across seifim, ensuring sequential markers
@@ -700,6 +727,8 @@ export async function fetchChapter(
       const label = segmentLabel(labelStyle, i + 1);
       let heText = he[i] ?? "";
       const enText = en[i] ?? "";
+      // The vocalized edition has no leading <b>...</b> siman-title block — splitSimanHeader
+      // simply finds no match and no-ops, so seif 1 just starts without a separate header line.
       if (i === 0) {
         const split = splitSimanHeader(heText);
         if (split) {
@@ -712,9 +741,15 @@ export async function fetchChapter(
         }
       }
       // Rema first — its opening-word test needs Sefaria's own contentless <i> markers still in
-      // place, not processCommentaryMarkers' visible <mk> brackets. See processRemaGlosses.
+      // place, not processCommentaryMarkers' visible <mk> brackets. See processRemaGlosses. Runs
+      // in both text modes — Rema's glosses exist independently of which SA edition is fetched.
       heText = processRemaGlosses(heText);
-      heText = processCommentaryMarkers(heText, bookOrTractateIndex, selectedCommentaries, sharedCounters);
+      // The vocalized edition carries no <i data-commentator> tags at all (confirmed against the
+      // API) — processCommentaryMarkers would simply find nothing to replace, so it's skipped
+      // outright rather than run for no effect.
+      if (!useVocalizedSA) {
+        heText = processCommentaryMarkers(heText, bookOrTractateIndex, selectedCommentaries, sharedCounters);
+      }
       segments.push(contentSegment(i, heText, enText, label));
     }
     return segments;
@@ -1381,8 +1416,23 @@ export async function loadCommentaryEntries(
 /**
  * Matches a Rema gloss's opening word "הגה" — optionally behind a bracket/paren, and tolerating
  * either gershayim spelling ("הג״ה"/"הג\"ה") alongside the far more common unpunctuated "הגה".
+ * Tested against nikud-stripped text (see processRemaGlosses) — a vocalized edition interleaves
+ * vowel points between the consonants ("הַגָּה"), which would otherwise break the literal match.
+ *
+ * The trailing `(?![א-ת])` is load-bearing, not decorative: without it this also matches
+ * "הגהות" ("Hagahot", e.g. the citation title "Hagahot Maimoniyot") as if it were the word
+ * "הגה" — a real bug found live (OC 2:6's own citation "(הגהות מיימוני...)" was wrongly styled
+ * as Rema). Requiring that "הגה" not continue into another Hebrew letter makes it a whole word.
  */
-const REMA_OPENING_RE = /^[\s[(]*הג["'׳״]?ה/;
+const REMA_OPENING_RE = /^[\s[(]*הג["'׳״]?ה(?![א-ת])/;
+
+/**
+ * Punctuation Sefaria's vocalized (Torat Emet) edition leaves between two sibling `<small>` tags
+ * that are really one continuous gloss (see absorbGlossRun below) — confirmed by scanning ~100
+ * simanim across all four sections: plain space (the overwhelming majority), period+space,
+ * comma+space, and (found by direct inspection, rarer) semicolon+space.
+ */
+const REMA_GAP_RE = /^[\s.,;:]*/;
 
 const SMALL_OPEN = "<small>";
 const SMALL_CLOSE = "</small>";
@@ -1428,7 +1478,34 @@ function matchingSmallEnd(html: string, openIndex: number): number | null {
  * gloss's first word, which only works while any leading tags are still Sefaria's contentless
  * `<i data-commentator …></i>` markers — once those become `<mk s="N">(א)</mk>` they carry visible
  * text of their own and would mask the "הגה".
+ *
+ * Works on both the default (unvocalized) SA edition and the vocalized Torat Emet edition (see
+ * SATextMode in textModels.ts) — the `<small>`-tagged glosses exist independently of which
+ * edition is fetched, confirmed directly against the API for both.
+ *
+ * **The vocalized edition fragments one printed gloss across many sibling `<small>` tags**,
+ * unlike the default edition's single contiguous block per gloss — confirmed directly against
+ * the API (e.g. OC 1:1, 2:6, 3:11): only the *first* sibling opens with "הגה"; the rest are the
+ * same gloss's own continuation sentences and source citations, which don't themselves start
+ * with "הגה" and would otherwise be left unstyled. `absorbGlossRun` extends a confirmed opening
+ * forward across any immediately-following sibling `<small>` tags — real (non-whitespace,
+ * non-punctuation) Mechaber text between two `<small>` tags always signals the gloss has ended
+ * (confirmed in every case checked, e.g. OC 2's "וְיִבְדֹּק נְקָבָיו:" sits plainly between two
+ * small runs and is correctly excluded from the run it sits inside).
  */
+function absorbGlossRun(html: string, firstEnd: number): number {
+  let runEnd = firstEnd;
+  for (;;) {
+    const gapStart = runEnd + SMALL_CLOSE.length;
+    const gapMatch = REMA_GAP_RE.exec(html.slice(gapStart));
+    const nextStart = gapStart + (gapMatch?.[0].length ?? 0);
+    if (!html.startsWith(SMALL_OPEN, nextStart)) return runEnd;
+    const nextEnd = matchingSmallEnd(html, nextStart);
+    if (nextEnd === null) return runEnd;
+    runEnd = nextEnd;
+  }
+}
+
 export function processRemaGlosses(html: string): string {
   if (!html.includes(SMALL_OPEN)) return html;
   let out = "";
@@ -1440,11 +1517,15 @@ export function processRemaGlosses(html: string): string {
     if (end === null) break;
     const body = html.slice(start + SMALL_OPEN.length, end);
     out += html.slice(i, start);
-    out += REMA_OPENING_RE.test(stripHTML(body).trim())
-      ? `<rm>${body}</rm>`
+    if (REMA_OPENING_RE.test(stripNikud(stripHTML(body)).trim())) {
+      const runEnd = absorbGlossRun(html, end);
+      out += `<rm>${html.slice(start, runEnd + SMALL_CLOSE.length)}</rm>`;
+      i = runEnd + SMALL_CLOSE.length;
+    } else {
       // Not Rema, but a gloss nested inside it still might be — recurse rather than skip.
-      : `${SMALL_OPEN}${processRemaGlosses(body)}${SMALL_CLOSE}`;
-    i = end + SMALL_CLOSE.length;
+      out += `${SMALL_OPEN}${processRemaGlosses(body)}${SMALL_CLOSE}`;
+      i = end + SMALL_CLOSE.length;
+    }
   }
   return out + html.slice(i);
 }

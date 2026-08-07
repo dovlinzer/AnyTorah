@@ -283,6 +283,22 @@ export type MidrashNavigationMode = "byVerse" | "native";
 
 export type TextDisplayMode = "source" | "translation" | "both";
 
+/**
+ * Shulchan Arukh main-text edition. Sefaria has no single edition carrying both nikud and the
+ * inline commentary-marker tags (`data-commentator`) our bracket system depends on — confirmed
+ * directly against the API, not assumed — so this is a user choice between two different
+ * complete digitizations, not a rendering option on one shared text:
+ * - "commentary": the current default edition — carries every inline marker (Mishnah Berurah
+ *   labels, Shakh/Taz/etc. sequential letters) but no nikud.
+ * - "nikud": the vocalized Torat Emet edition — no inline markers at all (splitSimanHeader's
+ *   leading-<b> siman-title block is also absent from it), but full nikud.
+ * Rema's `<small>`-tagged glosses exist in both editions independently of this choice, so the
+ * Rema-font distinction (processRemaGlosses) applies either way.
+ * A future phase may blend the two (splicing marker positions into the vocalized text via word
+ * alignment, run as a durable, correctable batch job) — this is the interim, simpler either/or.
+ */
+export type SATextMode = "commentary" | "nikud";
+
 // MARK: - Text Segment
 
 /** One displayable unit of text — a verse, mishnah, Gemara sentence, or a divider marker. */
