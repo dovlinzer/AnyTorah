@@ -1052,8 +1052,8 @@ enum CommentaryType: String, CaseIterable, Identifiable {
         case .biurHalakha:       return biurHalakhaRef(from: mainRef)
         case .shakh:             return "Siftei Kohen on \(mainRef)"
         case .taz:               return "Turei Zahav on \(mainRef)"
-        case .chelkatMechokek:   return "Chelkat Mechokek on \(mainRef)"
-        case .beitShmuel:        return "Beit Shmuel on \(mainRef)"
+        case .chelkatMechokek:   return chelkatMechokekRef(from: mainRef)
+        case .beitShmuel:        return beitShmuelRef(from: mainRef)
         case .meiratEinayim:     return "Me'irat Einayim on \(mainRef)"
         case .pitcheiTeshuvah:   return "Pitchei Teshuva on \(mainRef)"
         case .baerHetev:        return "Ba'er Hetev on \(mainRef)"
@@ -1109,6 +1109,28 @@ enum CommentaryType: String, CaseIterable, Identifiable {
             return "Magen Avraham \(mainRef[range])"
         }
         return "Magen Avraham 1"
+    }
+
+    /// Chelkat Mechokek and Beit Shmuel (EH's two default commentaries) are, like Magen Avraham,
+    /// standalone top-level Sefaria titles rather than "CommentatorName on {mainRef}" — confirmed
+    /// directly against the API: "Beit Shmuel on Shulchan Arukh, Even HaEzer.5" silently resolves
+    /// to "Beit Shmuel 1" (Sefaria falls back to the section's first entry instead of erroring on
+    /// the unparseable "on ..." form), so every siman looked identical regardless of which was
+    /// selected. Bare "Beit Shmuel 5" / "Chelkat Mechokek 5" resolve correctly to the real siman.
+    private func chelkatMechokekRef(from mainRef: String) -> String {
+        let pattern = #"(\d+)$"#
+        if let range = mainRef.range(of: pattern, options: .regularExpression) {
+            return "Chelkat Mechokek \(mainRef[range])"
+        }
+        return "Chelkat Mechokek 1"
+    }
+
+    private func beitShmuelRef(from mainRef: String) -> String {
+        let pattern = #"(\d+)$"#
+        if let range = mainRef.range(of: pattern, options: .regularExpression) {
+            return "Beit Shmuel \(mainRef[range])"
+        }
+        return "Beit Shmuel 1"
     }
 
     /// Extracts the trailing chapter/number from a ref like "Genesis 5" → "5".

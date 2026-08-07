@@ -804,8 +804,8 @@ enum class CommentaryType(val id: String, val displayName: String) {
             BIUR_HALAKHA -> biurHalakhaRef(mainRef)
             SHAKH -> "Siftei Kohen on $mainRef"
             TAZ -> "Turei Zahav on $mainRef"
-            CHELKAT_MECHOKEK -> "Chelkat Mechokek on $mainRef"
-            BEIT_SHMUEL -> "Beit Shmuel on $mainRef"
+            CHELKAT_MECHOKEK -> chelkatMechokekRef(mainRef)
+            BEIT_SHMUEL -> beitShmuelRef(mainRef)
             MEIRAT_EINAYIM -> "Me’irat Einayim on $mainRef"
             PITCHEI_TESHUVAH -> "Pitchei Teshuva on $mainRef"
             BAER_HETEV -> "Ba’er Hetev on $mainRef"
@@ -871,6 +871,22 @@ enum class CommentaryType(val id: String, val displayName: String) {
         // "Shulchan Arukh, Orach Chayim 12" → "Magen Avraham 12"
         val num = Regex("""\d+$""").find(mainRef)?.value ?: "1"
         return "Magen Avraham $num"
+    }
+
+    // Chelkat Mechokek and Beit Shmuel (EH's two default commentaries) are, like Magen Avraham,
+    // standalone top-level Sefaria titles rather than "CommentatorName on $mainRef" — confirmed
+    // directly against the API: "Beit Shmuel on Shulchan Arukh, Even HaEzer.5" silently resolves
+    // to "Beit Shmuel 1" (Sefaria falls back to the section's first entry instead of erroring on
+    // the unparseable "on ..." form), so every siman looked identical regardless of which was
+    // selected. Bare "Beit Shmuel 5" / "Chelkat Mechokek 5" resolve correctly to the real siman.
+    private fun chelkatMechokekRef(mainRef: String): String {
+        val num = Regex("""\d+$""").find(mainRef)?.value ?: "1"
+        return "Chelkat Mechokek $num"
+    }
+
+    private fun beitShmuelRef(mainRef: String): String {
+        val num = Regex("""\d+$""").find(mainRef)?.value ?: "1"
+        return "Beit Shmuel $num"
     }
 
     private fun extractBookName(mainRef: String): String =
