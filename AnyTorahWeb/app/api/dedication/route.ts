@@ -12,31 +12,6 @@ function formatDate(d: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
-function parseDate(s: string): Date {
-  const [y, m, d] = s.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d));
-}
-
-// Sunday-start week, matching Calendar.current's default weekOfYear comparison in the US locale
-// native runs under. Not worth a full ISO-week implementation for a cosmetic banner.
-function startOfWeek(d: Date): number {
-  const copy = new Date(d);
-  copy.setUTCDate(copy.getUTCDate() - copy.getUTCDay());
-  return copy.getTime();
-}
-
-function isActiveToday(d: Dedication, today: Date): boolean {
-  const dedDate = parseDate(d.date);
-  if (d.period === "week") return startOfWeek(dedDate) === startOfWeek(today);
-  if (d.period === "month")
-    return dedDate.getUTCFullYear() === today.getUTCFullYear() && dedDate.getUTCMonth() === today.getUTCMonth();
-  return (
-    dedDate.getUTCFullYear() === today.getUTCFullYear() &&
-    dedDate.getUTCMonth() === today.getUTCMonth() &&
-    dedDate.getUTCDate() === today.getUTCDate()
-  );
-}
-
 function periodPriority(period: string): number {
   switch (period) {
     case "today":
@@ -50,6 +25,7 @@ function periodPriority(period: string): number {
 
 interface Row {
   date: string;
+  end_date: string | null;
   dedicated_by: string;
   honoree_name: string | null;
   period: string | null;
@@ -63,6 +39,7 @@ function decode(row: Row): Dedication | null {
   if (!row.date || !row.dedicated_by) return null;
   return {
     date: row.date,
+    endDate: row.end_date ?? row.date,
     dedicatedBy: row.dedicated_by,
     honoreeName: row.honoree_name ?? "",
     period: (row.period as Dedication["period"]) ?? "today",
@@ -73,18 +50,20 @@ function decode(row: Row): Dedication | null {
   };
 }
 
+// "Active" means today falls in [date, end_date] — checked directly by the query filters below
+// rather than fetched broadly and filtered client-side. When more than one dedication is active
+// at once (an admin-acknowledged overlap — see dedication-form.html's approval-time warning),
+// picks by `period`'s display tier (today > week > month), then most-recently-created.
 export async function GET() {
-  const today = new Date();
-  const startDate = new Date(today);
-  startDate.setUTCDate(startDate.getUTCDate() - 31);
+  const todayStr = formatDate(new Date());
 
   const url =
     `${SUPABASE_URL}/rest/v1/dedications` +
-    `?date=gte.${formatDate(startDate)}` +
-    `&date=lte.${formatDate(today)}` +
+    `?date=lte.${todayStr}` +
+    `&end_date=gte.${todayStr}` +
     `&status=eq.approved` +
     `&for_anytorah_web=eq.true` +
-    `&select=date,dedicated_by,honoree_name,period,preposition,occasion,display_text,photo_url` +
+    `&select=date,end_date,dedicated_by,honoree_name,period,preposition,occasion,display_text,photo_url` +
     `&order=date.desc,id.desc` +
     `&limit=10`;
 
@@ -102,7 +81,7 @@ export async function GET() {
 
   const picked = rows
     .map(decode)
-    .filter((d): d is Dedication => d !== null && isActiveToday(d, today))
+    .filter((d): d is Dedication => d !== null)
     .sort((a, b) => periodPriority(b.period) - periodPriority(a.period))[0];
 
   return NextResponse.json({ dedication: picked ?? null });

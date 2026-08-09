@@ -560,10 +560,28 @@ Stops automatically on daf/tractate change via `.onChange`.
 
 Shown once per day on app launch when an active row exists. Data source: public Supabase table
 `dedications` (project `zewdazoijdpakugfvnzt`, readable with the anon key already embedded in
-`DedicationService.swift`/`.kt`) — columns `date`, `dedicated_by`, `honoree_name`, `period`
-(`"today"`/`"week"`/`"month"`), `preposition`, `occasion`, `display_text` (optional override),
-`photo_url`, `status` (`"approved"`).
+`DedicationService.swift`/`.kt`) — columns `date`, `end_date`, `dedicated_by`, `honoree_name`,
+`period` (`"today"`/`"week"`/`"month"`), `preposition`, `occasion`, `display_text` (optional
+override), `photo_url`, `status` (`"approved"`).
 
+- **Date range (`date` → `end_date`)**: `end_date` (added via
+  `AnyDaf/dedication-date-range-migration.sql` — run manually in the Supabase SQL editor, same
+  reason as the app-targeting migration below) is the actual source of truth for whether a
+  dedication is active — a plain `date <= today <= end_date` range, letting a dedication cover
+  any arbitrary span, not just a calendar week/month. `period` no longer determines the active
+  window — it now controls **only the display wording** ("Today's Learning" / "This Week's
+  Learning" / "This Month's Learning"). `DedicationService.fetch()` filters this directly in the
+  Supabase query (`date=lte.<today>&end_date=gte.<today>`) rather than fetching a lookback window
+  and filtering client-side — the old `isActiveToday` calendar-window computation
+  (`Calendar.current`'s `weekOfYear`/`month` granularity) is gone entirely. `end_date` is
+  `NOT NULL` in the DB (defaults to `date` for a single day), asserted `>= date` by a check
+  constraint.
+- **Conflict handling**: multiple dedications can be simultaneously active (overlapping ranges).
+  `AnyDaf/dedication-form.html` warns the admin at approval time (either via "Publish immediately"
+  on submit, or the "Approve" button in the pending queue) if the row overlaps another
+  already-approved row sharing an app flag — a `confirm()` dialog, not a hard block. If more than
+  one ends up active regardless, `fetch()` picks deterministically: `period`'s display tier
+  (today > week > month), then most recently created — unchanged from before this feature.
 - **App targeting**: three independent boolean columns — `for_anytorah`, `for_anydaf`,
   `for_anytorah_web` — replacing an older single `app` text column (`"anytorah"`/`"anydaf"`/`"both"`)
   that couldn't target AnyTorah Web independently of native AnyTorah. `DedicationService.swift`/`.kt`
@@ -574,11 +592,15 @@ Shown once per day on app launch when an active row exists. Data source: public 
   `app` column is left in place, unused, after the migration.
 - **Admin submission form**: `AnyDaf/dedication-form.html` — a standalone HTML/JS tool (not part
   of any app build) shared across all three apps, with three independent checkboxes (AnyDaf /
-  AnyTorah / AnyTorah Web) instead of the old three-way radio group.
-- **Known quirk (not a bug):** the `date` column has no timezone, and `isActiveToday` compares in
-  UTC (effectively local via `Calendar.current` — but the stored `date` itself has no offset). A
-  `period: "today"` dedication can roll out of its window before local midnight for users west of
-  UTC. AnyTorahWeb has the same quirk — see its own `CLAUDE.md`.
+  AnyTorah / AnyTorah Web) instead of the old three-way radio group, plus a Start date/End date
+  pair (with an "Auto-fill end date from this" convenience button driven by the Period selector —
+  Sunday-start week, last day of the calendar month; the admin can always type any End date
+  directly instead).
+- **Known quirk (not a bug):** the `date`/`end_date` columns have no timezone, and the active-range
+  query compares against local "today" (`Calendar.current`/`LocalDate.now()` — effectively local
+  time — against columns with no stored offset). A dedication can roll into or out of its window
+  up to a day early/late depending on the user's timezone relative to UTC. AnyTorahWeb has the
+  same quirk — see its own `CLAUDE.md`.
 
 ---
 

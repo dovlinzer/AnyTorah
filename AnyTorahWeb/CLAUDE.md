@@ -1163,9 +1163,24 @@ the storage bucket needs the anon-key auth header, a plain `<img>` src can't do 
 native's "only mark today as checked when a dedication was actually found" quirk).
 
 - Data source: public Supabase table `dedications` (project `zewdazoijdpakugfvnzt`, readable with
-  the anon key already in `DedicationService.swift`) — columns `date`, `dedicated_by`,
+  the anon key already in `DedicationService.swift`) — columns `date`, `end_date`, `dedicated_by`,
   `honoree_name`, `period` (`"today"`/`"week"`/`"month"`), `preposition`, `occasion`,
   `display_text` (optional override), `photo_url`, `status` (`"approved"`).
+- **Date range (`date` → `end_date`)**: `end_date` (added via
+  `AnyDaf/dedication-date-range-migration.sql` — run manually in the Supabase SQL editor, same
+  reason as the app-targeting migration below) is the actual source of truth for whether a
+  dedication is active — `app/api/dedication/route.ts`'s query filters directly on
+  `date=lte.<today>&end_date=gte.<today>` rather than fetching a lookback window and filtering
+  client-side; the old `isActiveToday`/`startOfWeek` calendar-window helpers are gone from this
+  route entirely. `period` no longer determines the active window — it now controls only the
+  display wording ("Today's Learning" / "This Week's Learning" / "This Month's Learning"), so a
+  dedication can cover any arbitrary date span regardless of what wording it uses.
+- **Conflict handling**: multiple dedications can be simultaneously active (overlapping ranges).
+  `AnyDaf/dedication-form.html` warns the admin at approval time if the row being approved
+  overlaps another already-approved row sharing an app flag (`confirm()` dialog, not a hard
+  block). If more than one ends up active regardless, the route picks deterministically:
+  `period`'s display tier (today > week > month), then most recently created — unchanged from
+  before this feature.
 - **App targeting**: three independent boolean columns — `for_anytorah`, `for_anytorah_web`,
   `for_anydaf` — replacing an older single `app` text column (`"anytorah"`/`"anydaf"`/`"both"`)
   that AnyTorah Web used to just inherit from (`app=in.(anytorah,both)`), with no way to target
@@ -1175,9 +1190,10 @@ native's "only mark today as checked when a dedication was actually found" quirk
   column is left in place, unused, after the migration. Web's route filters
   `for_anytorah_web=eq.true`; the admin submission form (`AnyDaf/dedication-form.html`) now has
   three independent checkboxes instead of one three-way radio group.
-- **Known quirk (matches native, not a bug):** the `date` column has no timezone, and the
-  "is this active today" check compares in UTC. A `period: "today"` dedication can roll out of
-  its window before local midnight for users west of UTC — same behavior as native.
+- **Known quirk (matches native, not a bug):** the `date`/`end_date` columns have no timezone,
+  and the "is this active today" check compares against this route's server-side (effectively
+  UTC, via `Date.getUTC*`) notion of today. A dedication can roll into or out of its window up to
+  a day early/late relative to a given user's local timezone — same behavior as native.
 
 ## Yomi buttons — shipped
 

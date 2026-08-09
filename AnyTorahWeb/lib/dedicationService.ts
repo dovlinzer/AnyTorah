@@ -4,6 +4,7 @@
 
 export interface Dedication {
   date: string; // yyyy-MM-dd
+  endDate: string; // yyyy-MM-dd, inclusive; equals `date` for a single-day dedication
   dedicatedBy: string;
   honoreeName: string;
   period: "today" | "week" | "month";
