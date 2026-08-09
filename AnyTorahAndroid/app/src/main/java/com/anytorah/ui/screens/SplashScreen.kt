@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,6 +32,10 @@ import com.anytorah.R
 import com.anytorah.ui.theme.DeepBlue
 import com.anytorah.ui.theme.EditorialAmber
 import kotlinx.coroutines.delay
+
+// yct_splash.mp4 is cropped to the YCT logo's own proportions (836x514) so the
+// rounded box matches the logo's shape instead of leaving empty space above/below it.
+private const val LogoAspectRatio: Float = 836f / 514f
 
 @Composable
 fun SplashScreen(onFinished: () -> Unit) {
@@ -80,7 +86,8 @@ fun SplashScreen(onFinished: () -> Unit) {
                     }
                 },
                 modifier = Modifier
-                    .size(200.dp)
+                    .width(200.dp)
+                    .height(200.dp / LogoAspectRatio)
                     .clip(RoundedCornerShape(14.dp))
             )
         }

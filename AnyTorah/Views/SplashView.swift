@@ -37,6 +37,10 @@ struct SplashView: View {
     private let bg = Color(red: 0.106, green: 0.227, blue: 0.541)
     private let fg = Color.white
 
+    // yct_splash.mp4 is cropped to the YCT logo's own proportions (836x514) so the
+    // rounded box matches the logo's shape instead of leaving empty space above/below it.
+    private let logoAspectRatio: CGFloat = 836.0 / 514.0
+
     var body: some View {
         ZStack {
             bg.ignoresSafeArea()
@@ -66,7 +70,7 @@ struct SplashView: View {
                     Spacer()
 
                     YCTLogoAnimated()
-                        .frame(width: 260, height: 260)
+                        .frame(width: 260, height: 260 / logoAspectRatio)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
 
                     Spacer().frame(height: geo.size.height * 0.12)
