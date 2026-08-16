@@ -12,6 +12,11 @@
 // as env vars instead, and .env.local won't exist there, so the load is best-effort.
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
+// createClient() always spins up a Realtime client (unused here — this script only ever does
+// plain REST delete/insert calls), which on Node <22 throws at construction time because there's
+// no native `WebSocket` global yet. Rather than requiring Node 22 just to run a one-off upload
+// script, hand it the `ws` package explicitly via the `transport` option.
+import WebSocket from "ws";
 
 const ENV_LOCAL = new URL("../../.env.local", import.meta.url).pathname;
 if (existsSync(ENV_LOCAL)) {
@@ -27,7 +32,10 @@ if (!url || !key) {
   console.error("Missing NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY");
   process.exit(1);
 }
-const supabase = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+const supabase = createClient(url, key, {
+  auth: { autoRefreshToken: false, persistSession: false },
+  realtime: { transport: WebSocket },
+});
 
 const OUT_DIR = new URL("./output/", import.meta.url).pathname;
 const files = readdirSync(OUT_DIR).filter((f) => f.endsWith(".json"));
