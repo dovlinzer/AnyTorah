@@ -1,0 +1,14 @@
+{
+  "name": "mercava-scraper",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "scrape": "node scrape.mjs",
+    "consolidate": "node consolidate.mjs",
+    "upload": "node upload.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.47.0",
+    "@supabase/supabase-js": "^2.110.8"
+  }
+}

@@ -1,0 +1,69 @@
+name: Refresh Mercava daf ids
+
+# Re-scrapes themercava.com/app's own internal page ids (scripts/mercava/, see that directory's
+# comments for how — there's no public API or predictable formula for these, they're plain
+# incrementing primary keys collected by walking the site's own metanav "next page" links) and
+# upserts them into the `mercava_daf_ids` Supabase table the running app reads live
+# (lib/mercava.ts). Believed stable, but "believed stable" isn't "guaranteed" — this exists so a
+# changed id gets caught and corrected automatically instead of silently linking to the wrong daf
+# indefinitely.
+#
+# Runs monthly, and can be triggered by hand from the Actions tab (workflow_dispatch) after adding
+# a tractate to scripts/mercava/tractates.mjs or suspecting a specific id has drifted.
+#
+# Needs two repo secrets, matching AnyTorahWeb's own .env.local: NEXT_PUBLIC_SUPABASE_URL,
+# SUPABASE_SERVICE_ROLE_KEY (service-role — this writes past RLS, which only grants public read).
+on:
+  schedule:
+    - cron: "0 7 1 * *" # 07:00 UTC on the 1st of each month
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install scraper deps
+        working-directory: scripts/mercava
+        run: npm install
+
+      - name: Install Playwright's Chromium
+        working-directory: scripts/mercava
+        run: npx playwright install --with-deps chromium
+
+      - name: Full re-scrape (clears prior output so every tractate is re-verified, not skipped)
+        working-directory: scripts/mercava
+        run: |
+          rm -rf output
+          node scrape.mjs
+
+      - name: Consolidate into lib/data/mercavaDafIds.json (kept as a diffable record)
+        working-directory: scripts/mercava
+        run: node consolidate.mjs
+
+      - name: Upload to Supabase (the table the app actually reads)
+        working-directory: scripts/mercava
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node upload.mjs
+
+      - name: Open a PR if the recorded JSON changed
+        uses: peter-evans/create-pull-request@v6
+        with:
+          add-paths: lib/data/mercavaDafIds.json
+          commit-message: "Refresh Mercava daf ids"
+          title: "Refresh Mercava daf ids"
+          body: >
+            Automated monthly re-scrape of themercava.com/app's internal page ids
+            (.github/workflows/refresh-mercava-ids.yml). The live app already reflects any
+            changes — they were pushed straight to the `mercava_daf_ids` Supabase table in the
+            step above — this PR is only the human-reviewable record of what changed and why.
+          branch: refresh-mercava-ids
+          delete-branch: true

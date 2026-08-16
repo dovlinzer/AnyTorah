@@ -1293,3 +1293,123 @@ affects other tractates too, not just the two confirmed.
 Verified against the live Sefaria API (not just synthetic input) for both confirmed dafim, and
 against synthetic edge cases (marker with no preceding `<br>` at all; marker already at the very
 start of its segment) to confirm no double line breaks and no spurious leading blank line.
+
+## Mercava integration (`components/Reader.tsx`, `lib/mercava.ts`, `scripts/mercava/`, built
+2026-08-15/16)
+
+A "Mercava" button on the Talmud reader toolbar (`category === "talmud"` only) opens the current
+daf/amud on themercava.com/app — a third-party site that color-highlights a Gemara's logical
+structure (Statement/Proof/Attack/Defense/Question/Answer). No public API or predictable id
+formula exists for Mercava's own internal pages (confirmed live — plain incrementing primary
+keys, unrelated to tractate/daf), so this needed its own id table, collected by a one-time-per-run
+scraper and now served live from Supabase.
+
+- **`mercava_daf_ids` (Supabase table, `supabase/migrations/005_mercava_daf_ids.sql`)** — the
+  live source of truth `lib/mercava.ts`'s `useMercavaUrl` hook reads (`tractate`, `daf_amud` e.g.
+  `"3a"`, `mercava_id`), **not** a build-time-baked JSON file — deliberately, per explicit user
+  direction: a refreshed id should reach users immediately, no redeploy required. RLS: public
+  read only (non-sensitive reference data); writes go through the service-role key from
+  `scripts/mercava/upload.mjs` alone. **Like this repo's other migrations, PostgREST has no DDL
+  access — this file has to be run by hand once in the Supabase SQL editor before anything reads
+  from or writes to this table.** Until that's done, `useMercavaUrl` gets a real Postgres error
+  back, logs it, and returns null for everything — fails safe (the button and its neighbors just
+  don't render), not a crash.
+  - `useMercavaUrl(tractateSefariaName, daf, amud)` fetches the whole table once per page load
+    (a few thousand rows, not a per-daf query) and caches it module-wide, so only the first
+    Talmud page any given session visits pays the network cost.
+- **`scripts/mercava/` (standalone Node/Playwright package, not part of the shipped app)**:
+  - `tractates.mjs` — the 37 real-Gemara Bavli tractates (textCatalog.ts's `talmudSedarim` minus
+    the 3 mishnahOnly ones: Kinnim, Tamid, Middot), each with Mercava's own exact spelling
+    (`mercavaName`) where it differs from this repo's naming (Berakhot→Brachot, Sukkah→Succah,
+    Beitzah→Betzah, Taanit→Ta'anit, Chagigah→Hagigah, Menachot→Menahot, Chullin→Hullin,
+    Keritot→Keretot, Meilah→Me'ilah, Pesachim→Pesahim, Zevachim→Zevahim). **The last two were
+    originally wrong** (this repo's own spelling, not Mercava's) — a real bug, not scrape
+    flakiness, and it looked exactly like flakiness: three consecutive full-corpus/targeted runs
+    failed identically on a "waiting for locator" timeout for just those two tractates, because
+    the picker text being searched for genuinely never existed on the page. Root cause found by
+    manually walking Mercava's own tractate grid in a browser and reading the labels directly,
+    not by further blind retries.
+  - `scrape.mjs` — one seed id per tractate via a real UI click (hamburger → Talmud tab → climb
+    to the Seder grid if needed → tractate name → its first tile, found by a coordinate-based DOM
+    scan rather than Playwright's locator API, which proved unreliable against this app's custom
+    rendering), then walks the tractate to its end via plain `fetch()` calls following each
+    `metanav/frameless` response's own `nextPageId` field — every response already includes it,
+    so no id-formula guessing or per-tile clicking was needed once this was discovered (confirmed
+    both simpler and more accurate: Eruvin's ids have a single silent 1-unit deviation from the
+    otherwise-regular "+4 per amud" pattern that a sampling/interpolation approach could easily
+    have missed). Viewport pinned to 800×450 — Mercava renders a different, non-working layout
+    (no hamburger icon at the expected coordinate) at wider/desktop viewports. Skips a tractate
+    whose `output/{name}.json` already exists, so re-running only fills gaps.
+  - `consolidate.mjs` — merges `output/*.json` into `lib/data/mercavaDafIds.json`, kept committed
+    as a human-diffable record of the last scrape (5,246 amudim across all 37 tractates as of
+    2026-08-16) — **the running app does not import this file**; it's a record only, not a
+    runtime dependency, now that the app reads Supabase directly.
+  - `upload.mjs` — the actual write path into `mercava_daf_ids`: per-tractate delete-then-insert
+    (only tractates present in `output/` this run are touched, so a tractate that fails to scrape
+    in a given pass keeps its last-known-good Supabase rows rather than being wiped). Reads
+    `NEXT_PUBLIC_SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` from the main app's `.env.local` by
+    default (falls through to plain env vars in CI, where `.env.local` doesn't exist).
+  - `output/` and `node_modules/` are gitignored (`scripts/mercava/.gitignore`) — regenerable,
+    not worth committing; `lib/data/mercavaDafIds.json` is the one committed artifact.
+- **`.github/workflows/refresh-mercava-ids.yml`** — monthly (`workflow_dispatch` also available
+  for an on-demand run), does a full re-scrape from scratch (clears `output/` first, so every
+  tractate is re-verified rather than only filling gaps — catches an id that changed, not just
+  one that was never collected), consolidates, uploads to Supabase directly (the app reflects it
+  immediately), then opens a PR touching only `lib/data/mercavaDafIds.json` as a human-reviewable
+  record of what changed — **needs `NEXT_PUBLIC_SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` added
+  as repo secrets before it can run**, mirroring `.env.local`. Exists because Mercava's ids are
+  believed stable (plain DB primary keys) but not guaranteed to be, and the alternative — trusting
+  a one-time scrape forever — was judged not durable enough per explicit user request.
+- **Popup window, not a plain link** (`mercavaWindowRef`, `openOrFocusMercava` in Reader.tsx) —
+  raised directly by the user after an initial new-tab-link version shipped: side-by-side viewing
+  matters, and a plain link's daf goes stale the moment you navigate in the reader without a
+  fresh click. The popup is tracked in a ref and its `.location.href` is silently retargeted
+  (both on the next click and via a `useEffect` keyed on `mercavaUrl`) whenever the daf changes —
+  a window you already opened can be renavigated without a fresh user gesture, even cross-origin,
+  so this doesn't trip popup-blocker restrictions the way an unprompted `window.open()` per
+  navigation would. Clicking "Mercava" again when the popup is buried also calls `.focus()`,
+  bringing it forward — no separate "bring to front" control needed. An in-app iframe panel was
+  considered and rejected per explicit user direction: Mercava's own header/sign-in/menu chrome
+  would render inside this app's UI and compete for space with the existing
+  text/commentary/daf-image/notebook columns.
+  - **Popup placement**: docked to the right edge of the screen at full height (`mercavaPopupWidth()`,
+    capped at 560px / 42% of screen width) rather than centered — there's no web API for a real
+    "always on top" window, and a page can't resize/move the browser window it's running in (only
+    one it opened itself), so genuine side-by-side still needs the main window to occupy roughly
+    the screen's left complement.
+  - **"Side by side" button** (`openSideBySide`, right next to "Mercava") automates that last
+    step: reopens the reader itself (`window.location.href`) in a new window sized/positioned to
+    exactly fill that left complement, so a user gets true side-by-side in two clicks (this, then
+    Mercava) with no manual drag/resize ever needed. Deliberately does **not** also auto-open
+    Mercava from the original window's context — the new window is a real separate `window.open`
+    navigation (its own fresh React instance), so `mercavaWindowRef` from the original window
+    would belong to the wrong instance and auto-sync would silently stop working the moment the
+    user starts navigating dafs in the new window instead. Clicking "Mercava" from inside the new
+    window keeps ownership correct.
+
+## Daf-image zoom/pan (`components/DafImagePanel.tsx`, built 2026-08-16)
+
+The scanned Vilna Shas page view gained interactive zoom (mouse wheel or a slider, 1×–4×) and
+pan (pointer-drag once zoomed past 1×, mouse or touch) — previously a plain full-width `<img>`
+with no way to get a closer look at a specific section. Implementation notes:
+
+- The viewport is a fixed-aspect-ratio box (`naturalSize`, set from the image's own
+  `naturalWidth`/`naturalHeight` on load; a `3/4` placeholder before that resolves) rather than
+  letting the image flow to natural height and rely on the parent column's own scroll — this also
+  means at 1× the whole page is always fully visible with no scrolling needed at all, an
+  incidental improvement over the old behavior for a tall page.
+- Zoom is implemented as `translate(tx, ty) scale(s)` with `transform-origin: 0 0`, where
+  `(tx, ty)` is the on-screen pixel position of the image's own top-left corner — this
+  parameterization makes both the zoom-to-cursor math and the pan clamping straightforward
+  (clamp bounds: `tx ∈ [w(1-s), 0]`, `ty ∈ [h(1-s), 0]`, keeping the scaled image from ever
+  revealing empty space at an edge).
+- `zoomTo(nextScale, anchorX, anchorY)` solves for the new `(tx, ty)` that keeps whatever content
+  was under `(anchorX, anchorY)` fixed on screen — wheel zoom anchors to the cursor position;
+  the slider anchors to the viewport's own center (it has no cursor-over-image position to use).
+- Pan uses the Pointer Events API (not separate mouse/touch handlers) so a single code path
+  covers both mouse-drag and single-finger touch-drag; multi-touch pinch-zoom was not built (not
+  requested — "either through a slider or through a mouse" — and the wheel/slider pair already
+  covers the ask).
+- The former "click anywhere on the image to open full size" behavior was replaced with a small
+  explicit "Full size" link below the zoom controls — keeping the click-to-navigate behavior on
+  the image itself would have fought with click-and-drag-to-pan.

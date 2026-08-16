@@ -1,0 +1,4 @@
+node_modules/
+# Per-tractate scrape output — redundant with the consolidated ../../lib/data/mercavaDafIds.json
+# and fully regenerable via `node scrape.mjs`, not worth committing.
+output/

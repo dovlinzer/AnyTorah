@@ -26,6 +26,7 @@ import { FONT_SIZE_MIN, FONT_SIZE_MAX, fontSizePx, fontSizeLineHeight, fontSizeS
 import BookmarkEditModal from "@/components/BookmarkEditModal";
 import BookmarkListModal from "@/components/BookmarkListModal";
 import { loadTalmudPages, hasPages as hasTalmudPages, type TalmudPages } from "@/lib/talmudPages";
+import { useMercavaUrl } from "@/lib/mercava";
 import {
   saveBookmarks,
   loadAndReconcileBookmarks,
@@ -206,6 +207,13 @@ function storeReverseNavigation(on: boolean) {
   } catch {
     // localStorage unavailable — toggle just won't persist.
   }
+}
+
+// Shared by the Mercava popup and the "Side by side" pop-out button so the two windows they open
+// tile exactly against each other with no gap or overlap — capped at 560px so the popup stays a
+// sane width on very wide/ultrawide screens rather than ballooning to 42% of it.
+function mercavaPopupWidth(): number {
+  return Math.min(560, Math.round(window.screen.availWidth * 0.42));
 }
 
 const SHOW_DAF_IMAGE_KEY = "anytorah:showDafImage";
@@ -917,6 +925,53 @@ export default function Reader() {
   // except when stepBackward() below crosses a daf boundary, where it should land on the
   // *previous* daf's amud b instead; skipAmudResetRef lets that one case suppress this reset.
   const [talmudAmud, setTalmudAmud] = useState<"a" | "b">(() => getStartAmud(category, index, chapter));
+  const mercavaUrl = useMercavaUrl(category === "talmud" ? talmudTractateName ?? null : null, chapter, talmudAmud);
+  // Popup window (not a plain new-tab link) so it can be parked side by side with this reader,
+  // and — the actual point of keeping this reference around — so subsequent daf navigation can
+  // silently retarget it to the new daf via `.location.href` instead of requiring the user to
+  // click "Mercava" again every time. A window you already opened can be navigated without a
+  // fresh user gesture, even cross-origin, so this doesn't hit popup-blocker restrictions the way
+  // a bare `window.open()` on every navigation would.
+  const mercavaWindowRef = useRef<Window | null>(null);
+  const openOrFocusMercava = useCallback(() => {
+    if (!mercavaUrl) return;
+    if (mercavaWindowRef.current && !mercavaWindowRef.current.closed) {
+      mercavaWindowRef.current.location.href = mercavaUrl;
+      mercavaWindowRef.current.focus();
+      return;
+    }
+    // Dock the popup to the right edge of the screen (full height) rather than centering it, so
+    // it lands somewhere that doesn't sit directly on top of a full-width main window. There's no
+    // web API for a real "always on top" window, and a page can't resize/move the browser window
+    // it's running in (only a window it opened itself) — so true side-by-side still needs the main
+    // window to occupy roughly the left `mercavaPopupWidth()`-complement of the screen, which the
+    // "Side by side" button below sets up in one click. Because navigation after the first open
+    // only ever reassigns `.location.href` (never re-opens/re-positions), the popup keeps whatever
+    // spot it's given here across every subsequent daf change.
+    const popupWidth = mercavaPopupWidth();
+    const left = window.screen.availWidth - popupWidth;
+    mercavaWindowRef.current = window.open(
+      mercavaUrl,
+      "anytorah-mercava",
+      `width=${popupWidth},height=${window.screen.availHeight},left=${left},top=0`,
+    );
+  }, [mercavaUrl]);
+  useEffect(() => {
+    if (mercavaUrl && mercavaWindowRef.current && !mercavaWindowRef.current.closed) {
+      mercavaWindowRef.current.location.href = mercavaUrl;
+    }
+  }, [mercavaUrl]);
+  // Re-opens *this* page in a new window sized/positioned to exactly fill the screen's left
+  // complement of the Mercava popup's own right-docked width — so a user who wants true
+  // side-by-side viewing doesn't have to eyeball a manual drag/resize first. This intentionally
+  // doesn't also auto-open Mercava from here: the new window runs its own separate React instance
+  // (a real `window.open` navigation, not a DOM move), so `mercavaWindowRef` above would belong to
+  // the wrong instance if popped from here — clicking "Mercava" from inside the new window instead
+  // keeps the popup's auto-sync tied to whichever window the user actually keeps navigating in.
+  const openSideBySide = useCallback(() => {
+    const leftWidth = window.screen.availWidth - mercavaPopupWidth();
+    window.open(window.location.href, "anytorah-main", `width=${leftWidth},height=${window.screen.availHeight},left=0,top=0`);
+  }, []);
   const textContainerRef = useRef<HTMLDivElement>(null);
   const amudBRef = useRef<HTMLDivElement>(null);
   const skipAmudResetRef = useRef(false);
@@ -1643,6 +1698,50 @@ export default function Reader() {
               </div>
             )}
           </div>
+        )}
+
+        {/* Opens this exact daf/amud on Mercava (themercava.com/app) in a real popup window
+            (not a plain new-tab link) — Mercava has no public reverse-lookup for its own internal
+            page ids, so the id table this reads (lib/mercava.ts, the `mercava_daf_ids` Supabase
+            table) was collected by scripts/mercava, walking Mercava's own metanav API rather than
+            guessing a formula. A popup window (mercavaWindowRef above) is docked to the right edge
+            of the screen, and — the actual reason it's a tracked popup rather than target="_blank"
+            — the effect above silently retargets it to whatever daf you navigate to here, so it
+            stays in sync without needing to click this again. "Side by side" (openSideBySide,
+            right before this) pops this reader itself into a new window sized/positioned to
+            exactly fill the screen's left complement of the Mercava popup's own width, so the two
+            tile together without the user having to eyeball a manual drag first. Considered an
+            in-app iframe panel instead; rejected per explicit user direction, since Mercava's own
+            header/sign-in/menu chrome would render inside this app's UI and it would compete for
+            space with the existing text/commentary/daf-image/notebook columns. */}
+        {category === "talmud" &&
+          (yomiButtons.length > 0 || dafImageAvailable) &&
+          mercavaUrl && <VerticalDivider />}
+        {category === "talmud" && mercavaUrl && (
+          <button
+            onClick={openSideBySide}
+            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+            title={
+              hebrewMode
+                ? "פותח את הדף הזה בחלון חדש בגודל ומיקום מתאימים לצפייה זה לצד זה עם מרכבה"
+                : "Reopens this reader in a new window sized and positioned so Mercava can sit alongside it"
+            }
+          >
+            {hebrewMode ? "לצד לצד" : "Side by side"}
+          </button>
+        )}
+        {category === "talmud" && mercavaUrl && (
+          <button
+            onClick={openOrFocusMercava}
+            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+            title={
+              hebrewMode
+                ? "פתח דף זה באתר מרכבה בחלון נפרד — יישאר מסונכרן בזמן שאתה מנווט כאן"
+                : "Open this daf on Mercava in a separate window — stays in sync as you navigate here"
+            }
+          >
+            {hebrewMode ? "מרכבה" : "Mercava"}
+          </button>
         )}
 
         {category === "shulchanArukh" && <VerticalDivider />}
