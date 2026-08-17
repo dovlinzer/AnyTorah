@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { TextDisplayMode, TextSegment, SATextMode } from "@/lib/textModels";
 import type { CommentaryType } from "@/lib/commentaryTypes";
 import { getPoolInfo, computeEffectiveSlots, fetchCategoryFor, type ReaderCategory } from "@/lib/commentaryPools";
@@ -711,15 +711,15 @@ function readInitialPositionFromURL(): {
 }
 
 export default function Reader() {
-  const [category, setCategory] = useState<ReaderCategory>(() => readInitialPositionFromURL()?.category ?? "tanakh");
-  const [selection, setSelection] = useState<Selection>(() => {
-    const pos = readInitialPositionFromURL();
-    if (!pos) return INITIAL_SELECTION;
-    return {
-      ...INITIAL_SELECTION,
-      [pos.category]: { index: pos.index, chapter: pos.chapter, ...(pos.halakha != null ? { halakha: pos.halakha } : {}) },
-    };
-  });
+  // Captured once, synchronously, during this component's very first render call — a plain
+  // `useRef` initializer, not `useState`, specifically because a ref's value is never compared
+  // during hydration (only rendered DOM/JSX output is), so it's safe for this to differ between
+  // the server's render (no `window`, always null) and the client's (the real URL). See the
+  // position-restore layout effect below for why the actual category/selection/talmudAmud state
+  // deliberately does NOT read this at initializer time anymore.
+  const initialPositionRef = useRef(readInitialPositionFromURL());
+  const [category, setCategory] = useState<ReaderCategory>("tanakh");
+  const [selection, setSelection] = useState<Selection>(INITIAL_SELECTION);
   // Tosefta and Yerushalmi are their own top-level tabs (peers of Mishnah/Talmud, not toggles
   // within them), each with independent selection state in `selection` above — Yerushalmi's
   // tractate list is filtered from Mishnah's (see getCategoryGroups), not Talmud's Bavli list.
@@ -1003,9 +1003,7 @@ export default function Reader() {
   // "a" on every new daf/tractate/category, matching the expectation that a daf opens at 2a —
   // except when stepBackward() below crosses a daf boundary, where it should land on the
   // *previous* daf's amud b instead; skipAmudResetRef lets that one case suppress this reset.
-  const [talmudAmud, setTalmudAmud] = useState<"a" | "b">(
-    () => readInitialPositionFromURL()?.amud ?? getStartAmud(category, index, chapter),
-  );
+  const [talmudAmud, setTalmudAmud] = useState<"a" | "b">(() => getStartAmud(category, index, chapter));
   const mercavaUrl = useMercavaUrl(category === "talmud" ? talmudTractateName ?? null : null, chapter, talmudAmud);
   // Popup window (not a plain new-tab link) so it can be parked side by side with this reader,
   // and — the actual point of keeping this reference around — so subsequent daf navigation can
@@ -1014,12 +1012,16 @@ export default function Reader() {
   // fresh user gesture, even cross-origin, so this doesn't hit popup-blocker restrictions the way
   // a bare `window.open()` on every navigation would.
   const mercavaWindowRef = useRef<Window | null>(null);
-  const openOrFocusMercava = useCallback(() => {
-    if (!mercavaUrl) return;
+  // Opens the Mercava popup if it isn't already open (or retargets it to the current daf if it
+  // is), returning the window so a caller can focus it. Shared by openOrFocusMercava and
+  // openSideBySide below — factored out after a real bug: openSideBySide used to only ever
+  // *refocus* an existing mercavaWindowRef, so if the user hit "side by side" without having
+  // opened Mercava first, no Mercava window existed at all and only the AnyTorah window opened.
+  const openOrRetargetMercava = useCallback((): Window | null => {
+    if (!mercavaUrl) return null;
     if (mercavaWindowRef.current && !mercavaWindowRef.current.closed) {
       mercavaWindowRef.current.location.href = mercavaUrl;
-      mercavaWindowRef.current.focus();
-      return;
+      return mercavaWindowRef.current;
     }
     // Dock the popup to the right edge of the screen (full height) rather than centering it, so
     // it lands somewhere that doesn't sit directly on top of a full-width main window. There's no
@@ -1036,7 +1038,11 @@ export default function Reader() {
       "anytorah-mercava",
       `width=${popupWidth},height=${window.screen.availHeight},left=${left},top=0`,
     );
+    return mercavaWindowRef.current;
   }, [mercavaUrl]);
+  const openOrFocusMercava = useCallback(() => {
+    openOrRetargetMercava()?.focus();
+  }, [openOrRetargetMercava]);
   useEffect(() => {
     if (mercavaUrl && mercavaWindowRef.current && !mercavaWindowRef.current.closed) {
       mercavaWindowRef.current.location.href = mercavaUrl;
@@ -1050,47 +1056,80 @@ export default function Reader() {
   // the wrong instance if popped from here — clicking "Mercava" from inside the new window instead
   // keeps the popup's auto-sync tied to whichever window the user actually keeps navigating in.
   //
-  // Two real bugs fixed here, both reported directly after trying this on-device: (1) the target
+  // Three real bugs fixed here, all reported directly after trying this on-device: (1) the target
   // URL used to be plain `window.location.href` — since this app has no URL-based routing at all
   // (position lives in React state, never the address bar), that always opened the bare root URL,
   // landing the new window on the Tanakh/Bereishit default instead of wherever the user actually
   // was. Now the current position (category/index/chapter/halakha/amud) is encoded into the new
   // window's URL as a query string, read back out by readInitialPositionFromURL above — a one-off
-  // hand-off mechanism, not a general permalink feature. (2) Opening (and thus focusing) this new
-  // window pushes any already-open Mercava popup behind it, defeating the whole point of "side by
-  // side" — refocusing the popup last, if one is open, brings it back in front so both windows end
-  // up visible together instead of Mercava getting buried under the window that was just opened.
+  // hand-off mechanism, not a general permalink feature. (2) This used to only ever *refocus* an
+  // already-open Mercava popup, never open one — so clicking "side by side" before ever clicking
+  // "Mercava" opened only the AnyTorah window, with no Mercava window at all. Now it calls the same
+  // openOrRetargetMercava the standalone Mercava button uses, so side-by-side is self-sufficient.
+  // (3) Opening (and thus focusing) the AnyTorah window pushes any already-open Mercava popup
+  // behind it, defeating the whole point of "side by side" — a plain synchronous `.focus()` call
+  // right after `window.open()` reliably lost that race (the browser processes the just-opened
+  // window's own focus after this function returns, so the synchronous focus() ran first and was
+  // then overridden). Deferring the refocus with a `setTimeout` lets it run after that, so Mercava
+  // reliably ends up on top.
   const openSideBySide = useCallback(() => {
+    const mercavaWin = openOrRetargetMercava();
+
     const params = new URLSearchParams({ category, index: String(index), chapter: String(chapter) });
     if (halakha != null) params.set("halakha", String(halakha));
     if (category === "talmud") params.set("amud", talmudAmud);
     const url = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
     const leftWidth = window.screen.availWidth - mercavaPopupWidth();
     window.open(url, "anytorah-main", `width=${leftWidth},height=${window.screen.availHeight},left=0,top=0`);
-    if (mercavaWindowRef.current && !mercavaWindowRef.current.closed) {
-      mercavaWindowRef.current.focus();
+
+    if (mercavaWin && !mercavaWin.closed) {
+      setTimeout(() => {
+        if (!mercavaWin.closed) mercavaWin.focus();
+      }, 150);
     }
-  }, [category, index, chapter, halakha, talmudAmud]);
+  }, [openOrRetargetMercava, category, index, chapter, halakha, talmudAmud]);
   const textContainerRef = useRef<HTMLDivElement>(null);
   const amudBRef = useRef<HTMLDivElement>(null);
   // One-shot escape hatch for stepReading's daf-boundary-crossing case just below: it needs the
   // *next* run of the reset effect (only that one) suppressed so a step back across a daf boundary
   // can land on the previous daf's amud "b" instead of the effect immediately resetting it to "a".
   const skipAmudResetRef = useRef(false);
-  // Captured once, at mount, so the effect below can separately tell "we're still sitting on the
-  // position a URL hand-off (readInitialPositionFromURL, see talmudAmud's own initializer above)
-  // set talmudAmud for directly" apart from "the user has actually navigated somewhere new" — a
-  // real bug hit while testing the "Side by side" hand-off: the popped-out window landed on the
-  // right daf but always reset to amud "a" regardless of which amud the original window was
-  // showing. A one-shot flag (like skipAmudResetRef above) was tried first for this too and looked
-  // right in isolation, but doesn't survive React StrictMode's dev-only double-invoke of a fresh
-  // effect (mount → cleanup → mount again): the first invocation consumed the flag correctly, and
-  // the second saw it already cleared and reset anyway. Comparing against the captured initial
-  // position instead is idempotent across repeated invocations with the same deps, so it survives
-  // that double-invoke naturally, while a genuine later navigation (deps actually change) still
-  // resets normally.
-  const initialPositionRef = useRef(readInitialPositionFromURL());
-
+  // Applies a URL-encoded position hand-off (see readInitialPositionFromURL/initialPositionRef
+  // above) once, after mount, instead of in the state initializers directly. It used to live in
+  // the initializers, which made the very first *client* render differ from the server-rendered
+  // one — the server has no `window` to read a query string from, so it always rendered the
+  // Tanakh/Bereishit default, while a real position hand-off produced a completely different tree
+  // (different category tab, different commentary set, etc.) on the client, tripping a hard React
+  // hydration-mismatch error (and a full client-side remount to recover) on every "Side by side"
+  // pop-out — a real bug found while testing this. Restoring the position here instead means the
+  // server and the client's first render/hydration always agree (the plain default), and this
+  // effect's state updates are then just an ordinary post-hydration update, no mismatch.
+  // `useLayoutEffect` (not `useEffect`) so the restored position is in place before the browser
+  // paints, avoiding a visible flash of the wrong daf in the newly-opened window.
+  useLayoutEffect(() => {
+    const pos = initialPositionRef.current;
+    if (!pos) return;
+    skipAmudResetRef.current = true;
+    setCategory(pos.category);
+    setSelection((s) => ({
+      ...s,
+      [pos.category]: { index: pos.index, chapter: pos.chapter, ...(pos.halakha != null ? { halakha: pos.halakha } : {}) },
+    }));
+    setTalmudAmud(pos.amud);
+  }, []);
+  // Below: resets talmudAmud to "a" on every new daf/tractate/category, matching the expectation
+  // that a daf opens at 2a — except when (a) stepBackward() crosses a daf boundary, where it
+  // should land on the *previous* daf's amud b instead (skipAmudResetRef above suppresses that one
+  // case), or (b) the position-restore effect above just set category/index/chapter to match a URL
+  // hand-off, where the explicit amud it also just set must not be immediately stomped back to "a"
+  // (skipAmudResetRef covers this too; the `initial` comparison below is a second, redundant guard
+  // for the same case — a real bug hit here before while this same logic lived directly in
+  // talmudAmud's initializer: a one-shot *consumable* flag alone doesn't survive React StrictMode's
+  // dev-only double-invoke of a fresh effect, mount → cleanup → mount again, since the first
+  // invocation consumes the flag and the second sees it already cleared. Comparing against the
+  // captured initial position is idempotent across repeated invocations with the same deps, so it
+  // survives that double-invoke naturally, while a genuine later navigation — deps actually change
+  // to something that doesn't match the initial hand-off — still resets normally).
   useEffect(() => {
     if (skipAmudResetRef.current) {
       skipAmudResetRef.current = false;
