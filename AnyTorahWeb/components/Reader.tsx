@@ -216,6 +216,17 @@ function mercavaPopupWidth(): number {
   return Math.min(560, Math.round(window.screen.availWidth * 0.42));
 }
 
+// Full window-features list for both the Mercava popup and the "side by side" pop-out, not just
+// width/height/left/top. Chrome recognizes the explicit `popup=1` flag (and otherwise infers
+// "real window, not a tab" reasonably well from size/position alone); Safari has no equivalent
+// flag, and whether it opens a genuinely separate positioned window rather than a new tab is
+// ultimately governed by the user's own Safari > Settings > Tabs > "Open pages in tabs instead
+// of in new windows" preference — a page can't force this if that's set to "Always" — but the
+// full "no browser chrome" feature list here is still the strongest signal a page can give it.
+function popupFeatures(opts: { width: number; height: number; left: number; top: number }): string {
+  return `width=${opts.width},height=${opts.height},left=${opts.left},top=${opts.top},popup=1,toolbar=no,location=no,menubar=no,status=no,resizable=yes,scrollbars=yes`;
+}
+
 const SHOW_DAF_IMAGE_KEY = "anytorah:showDafImage";
 
 function loadShowDafImage(): boolean {
@@ -1036,7 +1047,7 @@ export default function Reader() {
     mercavaWindowRef.current = window.open(
       mercavaUrl,
       "anytorah-mercava",
-      `width=${popupWidth},height=${window.screen.availHeight},left=${left},top=0`,
+      popupFeatures({ width: popupWidth, height: window.screen.availHeight, left, top: 0 }),
     );
     return mercavaWindowRef.current;
   }, [mercavaUrl]);
@@ -1056,32 +1067,48 @@ export default function Reader() {
   // the wrong instance if popped from here — clicking "Mercava" from inside the new window instead
   // keeps the popup's auto-sync tied to whichever window the user actually keeps navigating in.
   //
-  // Three real bugs fixed here, all reported directly after trying this on-device: (1) the target
-  // URL used to be plain `window.location.href` — since this app has no URL-based routing at all
-  // (position lives in React state, never the address bar), that always opened the bare root URL,
-  // landing the new window on the Tanakh/Bereishit default instead of wherever the user actually
-  // was. Now the current position (category/index/chapter/halakha/amud) is encoded into the new
-  // window's URL as a query string, read back out by readInitialPositionFromURL above — a one-off
-  // hand-off mechanism, not a general permalink feature. (2) This used to only ever *refocus* an
-  // already-open Mercava popup, never open one — so clicking "side by side" before ever clicking
-  // "Mercava" opened only the AnyTorah window, with no Mercava window at all. Now it calls the same
-  // openOrRetargetMercava the standalone Mercava button uses, so side-by-side is self-sufficient.
-  // (3) Opening (and thus focusing) the AnyTorah window pushes any already-open Mercava popup
-  // behind it, defeating the whole point of "side by side" — a plain synchronous `.focus()` call
-  // right after `window.open()` reliably lost that race (the browser processes the just-opened
-  // window's own focus after this function returns, so the synchronous focus() ran first and was
-  // then overridden). Deferring the refocus with a `setTimeout` lets it run after that, so Mercava
+  // Four real bugs fixed here, all reported directly after trying this on real devices/browsers,
+  // not just in dev-time testing: (1) the target URL used to be plain `window.location.href` —
+  // since this app has no URL-based routing at all (position lives in React state, never the
+  // address bar), that always opened the bare root URL, landing the new window on the
+  // Tanakh/Bereishit default instead of wherever the user actually was. Now the current position
+  // (category/index/chapter/halakha/amud) is encoded into the new window's URL as a query string,
+  // read back out by readInitialPositionFromURL above — a one-off hand-off mechanism, not a
+  // general permalink feature. (2) This used to only ever *refocus* an already-open Mercava
+  // popup, never open one — so clicking "side by side" before ever clicking "Mercava" opened only
+  // the AnyTorah window, with no Mercava window at all. (3) Real Chrome and Safari both allow only
+  // ONE brand-new popup per click — a second `window.open()` call in the same handler is silently
+  // blocked, returning null. Fixing (2) by unconditionally calling openOrRetargetMercava() *before*
+  // opening the AnyTorah window ran straight into this: Mercava (called first) opened, and the
+  // AnyTorah window (called second) silently didn't — the exact opposite of what a user actually
+  // needs from this button, since the AnyTorah window is the one only this button can produce.
+  // Opening AnyTorah *first* fixes that: it's now the guaranteed-successful popup, and Mercava
+  // becomes best-effort second. This isn't a regression for the case that matters most in
+  // practice, either — if Mercava is *already* open, openOrRetargetMercava never calls
+  // `window.open()` at all (see its own comment above); it just reassigns `.location.href` on a
+  // window reference this code already holds, which is a plain navigation, not a new popup, so
+  // it's completely unaffected by the one-popup-per-click limit and always succeeds. Only the
+  // genuinely-cold-start case (neither window open yet) can still lose Mercava to this limit, and
+  // even then the user can just click "Mercava" once more (in either window) to get it. (4)
+  // Opening (and thus focusing) the AnyTorah window pushes any already-open Mercava popup behind
+  // it, defeating the whole point of "side by side" — a plain synchronous `.focus()` call right
+  // after `window.open()` reliably lost that race (the browser processes the just-opened window's
+  // own focus after this function returns, so the synchronous focus() ran first and was then
+  // overridden). Deferring the refocus with a `setTimeout` lets it run after that, so Mercava
   // reliably ends up on top.
   const openSideBySide = useCallback(() => {
-    const mercavaWin = openOrRetargetMercava();
-
     const params = new URLSearchParams({ category, index: String(index), chapter: String(chapter) });
     if (halakha != null) params.set("halakha", String(halakha));
     if (category === "talmud") params.set("amud", talmudAmud);
     const url = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
     const leftWidth = window.screen.availWidth - mercavaPopupWidth();
-    window.open(url, "anytorah-main", `width=${leftWidth},height=${window.screen.availHeight},left=0,top=0`);
+    window.open(
+      url,
+      "anytorah-main",
+      popupFeatures({ width: leftWidth, height: window.screen.availHeight, left: 0, top: 0 }),
+    );
 
+    const mercavaWin = openOrRetargetMercava();
     if (mercavaWin && !mercavaWin.closed) {
       setTimeout(() => {
         if (!mercavaWin.closed) mercavaWin.focus();
