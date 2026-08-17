@@ -1295,7 +1295,8 @@ against synthetic edge cases (marker with no preceding `<br>` at all; marker alr
 start of its segment) to confirm no double line breaks and no spurious leading blank line.
 
 ## Mercava integration (`components/Reader.tsx`, `lib/mercava.ts`, `scripts/mercava/`, built
-2026-08-15/16)
+2026-08-15/16, side-by-side/focus work 2026-08-17 — **see "KNOWN BROKEN, paused 2026-08-17" below
+before touching the popup/focus code**)
 
 A "Mercava" button on the Talmud reader toolbar (`category === "talmud"` only) opens the current
 daf/amud on themercava.com/app — a third-party site that color-highlights a Gemara's logical
@@ -1360,15 +1361,14 @@ scraper and now served live from Supabase.
   as repo secrets before it can run**, mirroring `.env.local`. Exists because Mercava's ids are
   believed stable (plain DB primary keys) but not guaranteed to be, and the alternative — trusting
   a one-time scrape forever — was judged not durable enough per explicit user request.
-- **Popup window, not a plain link** (`mercavaWindowRef`, `openOrFocusMercava` in Reader.tsx) —
-  raised directly by the user after an initial new-tab-link version shipped: side-by-side viewing
-  matters, and a plain link's daf goes stale the moment you navigate in the reader without a
-  fresh click. The popup is tracked in a ref and its `.location.href` is silently retargeted
-  (both on the next click and via a `useEffect` keyed on `mercavaUrl`) whenever the daf changes —
-  a window you already opened can be renavigated without a fresh user gesture, even cross-origin,
-  so this doesn't trip popup-blocker restrictions the way an unprompted `window.open()` per
-  navigation would. Clicking "Mercava" again when the popup is buried also calls `.focus()`,
-  bringing it forward — no separate "bring to front" control needed. An in-app iframe panel was
+- **Popup window, not a plain link** (`mercavaWindowRef`, `openOrRetargetMercava`/
+  `openOrFocusMercava` in Reader.tsx) — raised directly by the user after an initial
+  new-tab-link version shipped: side-by-side viewing matters, and a plain link's daf goes stale
+  the moment you navigate in the reader without a fresh click. The popup is tracked in a ref and
+  its `.location.href` is silently retargeted (both on the next click and via a `useEffect` keyed
+  on `mercavaUrl`) whenever the daf changes — a window you already opened can be renavigated
+  without a fresh user gesture, even cross-origin, so this doesn't trip popup-blocker restrictions
+  the way an unprompted `window.open()` per navigation would. An in-app iframe panel was
   considered and rejected per explicit user direction: Mercava's own header/sign-in/menu chrome
   would render inside this app's UI and compete for space with the existing
   text/commentary/daf-image/notebook columns.
@@ -1376,16 +1376,112 @@ scraper and now served live from Supabase.
     capped at 560px / 42% of screen width) rather than centered — there's no web API for a real
     "always on top" window, and a page can't resize/move the browser window it's running in (only
     one it opened itself), so genuine side-by-side still needs the main window to occupy roughly
-    the screen's left complement.
-  - **"Side by side" button** (`openSideBySide`, right next to "Mercava") automates that last
-    step: reopens the reader itself (`window.location.href`) in a new window sized/positioned to
-    exactly fill that left complement, so a user gets true side-by-side in two clicks (this, then
-    Mercava) with no manual drag/resize ever needed. Deliberately does **not** also auto-open
-    Mercava from the original window's context — the new window is a real separate `window.open`
-    navigation (its own fresh React instance), so `mercavaWindowRef` from the original window
-    would belong to the wrong instance and auto-sync would silently stop working the moment the
-    user starts navigating dafs in the new window instead. Clicking "Mercava" from inside the new
-    window keeps ownership correct.
+    the screen's left complement. `popupFeatures()` builds the full window-features string for
+    both this popup and the side-by-side one below (`toolbar=no,location=no,menubar=no,status=no,
+    resizable=yes,scrollbars=yes`, plus Chrome's explicit `popup=1`) rather than just
+    width/height/left/top — added 2026-08-17 after Safari was reported opening Mercava as a
+    full-window tab instead of a positioned popup. **Not confirmed fixed** — Safari's own Settings
+    → Tabs → "Open pages in tabs instead of in new windows" preference can override this
+    regardless of what the page requests, and it's unknown whether that's actually what the user
+    hit. See "KNOWN BROKEN" below.
+  - **Combined "Mercava" pill** (built 2026-08-17, replacing two separate text buttons): a plain
+    "Mercava"/"מרכבה" label followed by two icon-only buttons — `PopoutWindowIcon`
+    (`openOrFocusMercava`, opens/focuses just the Mercava popup) and `SideBySideIcon`
+    (`openSideBySide`) — wrapped in a `dir`-aware container so the icon order mirrors correctly in
+    Hebrew (RTL). Per explicit feedback that "Side by side" as a separate text button read as
+    unclear about what it was relative to.
+  - **`openSideBySide` position hand-off** (built 2026-08-17): this app has no URL-based routing
+    for ordinary browsing (position lives in plain React state, never the address bar) — but
+    `openSideBySide` needs to open a *second* window at the exact position the first is showing,
+    not the Tanakh/Bereishit default it used to fall back to (`window.location.href` used to be
+    the target, which is meaningless for a position that lives only in React state). It now
+    encodes category/index/chapter/halakha/amud as a query string on the new window's URL,
+    decoded back out client-side by `readInitialPositionFromURL()` — a one-off hand-off mechanism,
+    not a general permalink feature.
+    - **Real hydration bug found and fixed**: reading that URL directly in the
+      category/selection/talmudAmud `useState` initializers made the server's render (no `window`
+      to read a query string from, always the plain default) diverge from the client's first
+      render for any hand-off URL — React threw a hard hydration-mismatch error and did a full
+      client-side remount on every "side by side" pop-out. Fixed by restoring the position in a
+      `useLayoutEffect` (deps `[]`, runs once after mount) instead of the initializers, so server
+      and client always agree on the very first render and the restore is just an ordinary
+      post-hydration state update. `useLayoutEffect` specifically (not `useEffect`) so the
+      restored position lands before the browser paints, avoiding a visible flash of the wrong
+      daf in the newly-opened window. The pre-existing `talmudAmud` reset effect (resets to "a" on
+      every new daf/tractate) needed a matching fix — comparing current state against a captured
+      `initialPositionRef` rather than a one-shot consumable flag, since a plain flag doesn't
+      survive React StrictMode's dev-only double-invoke of a fresh effect (confirmed via console
+      logging: the first invocation correctly consumed the flag, the StrictMode-simulated second
+      invocation saw it already cleared and reset anyway).
+
+## KNOWN BROKEN, paused 2026-08-17 — side-by-side / Mercava-focus still not working on real devices
+
+Despite several rounds of fixes this session (each individually reasoned through and verified as
+far as this environment's own tools allow — see the caveat below), the user's own testing on real
+Chrome and Safari still shows: **"side-by-side only opens the AnyTorah window, and even if I have
+separately opened a Mercava window, it remains in the background and does not come forward."**
+Paused here per explicit user direction rather than continuing to iterate blind. Before trying
+anything new, re-confirm which symptoms still reproduce — dev-tool testing in this environment has
+already proven unreliable for this specific feature (see the caveat below), so don't assume any
+prior "verified" claim below still holds without a fresh real-device check.
+
+What was tried, in order, this session (all still in the code as of commit `e897ca5`):
+1. `openSideBySide` originally never opened Mercava at all (only ever refocused an *already*-open
+   popup) — fixed by having both buttons share one `openOrRetargetMercava` helper.
+2. A synchronous `.focus()` call right after `window.open()` was found (via reasoning, not a
+   confirmed real-browser repro) to likely lose the race against the browser's own
+   default-focus-the-new-window behavior — deferred the refocus with `setTimeout(..., 150)`.
+3. Reasoned that real Chrome/Safari allow only **one** brand-new popup per click, and that opening
+   Mercava first (step 1's fix) meant the *second* `window.open()` call — the AnyTorah window —
+   was the one silently getting blocked. Reordered `openSideBySide` to open the AnyTorah window
+   first, Mercava second (best-effort). **This reasoning was never confirmed against a real
+   browser** — the one piece of evidence for it (repeated `GET /` lines in the local dev server
+   log after clicking) is also fully explained by this session's own repeated manual test
+   navigations to the same URL, so it's weaker evidence than it looked like at the time.
+4. Widened the popup `features` string (see the `popupFeatures()` bullet above) since the user
+   separately reported Mercava opening as a full-window Safari tab rather than a positioned popup.
+
+**The user's real-device retest after (3) and (4) still shows the AnyTorah window not opening
+from side-by-side, and — separately — an already-open Mercava window not coming forward even when
+side-by-side only needs to *retarget* it (no new `window.open()` call at all in that case, so
+step 3's one-popup-per-click theory shouldn't even apply there).** That second point is the
+strongest signal that step 3's diagnosis, however individually well-reasoned, isn't the whole
+story — something is still wrong specifically with the *refocus* mechanism (step 2's `setTimeout`
+fix), independent of the open-a-second-popup question.
+
+**Environment caveat — why "verified" above should be read skeptically**: this session's own
+browser-automation tool (`mcp__Claude_Browser__*`) showed two distinct, unexplained flakiness
+patterns specifically around multi-window/`window.open` testing: (a) `read_page`'s accessibility
+tree intermittently came back empty immediately after installing a `window.open` monkey-patch, for
+no visible reason (page screenshots taken at the same moment showed the page fully rendered); (b)
+a monkey-patched `window.open` was repeatedly found already gone (reads back as `undefined`)
+between one `javascript_tool` call that installed it and the very next one, with nothing in
+between that should have caused a full page reload. Neither was ever root-caused. Every claim of
+"verified" for this feature this session used a *mocked* `window.open` (to sidestep this tool's
+inability to reliably drive or observe real popup windows) — which validates this app's own call
+order/URLs/logic, but says nothing about real popup-blocker or focus-stealing behavior, which is
+exactly where the user's reports say the actual remaining bugs live.
+
+**Hypotheses not yet tested, for whoever picks this up next:**
+- The deferred `setTimeout(..., 150)` refocus may itself be the core problem: modern browsers
+  increasingly require `.focus()` to run *synchronously* within the original user-gesture call
+  stack to be honored at all (the same "user activation" mechanism that gates `window.open()`
+  itself) — a call deferred even 150ms via `setTimeout` may have already lost that activation and
+  be silently ignored. If so, no delay value fixes it — the mechanism needs rethinking (e.g.
+  focusing synchronously and accepting it may sometimes lose the race against the new window's own
+  initial focus, or something structurally different like the newly-opened AnyTorah window's own
+  script posting a message back asking the opener to refocus Mercava, run from *that* window's own
+  load — unexplored).
+- Get real evidence before changing anything further: add temporary `console.log`/network-visible
+  logging around both `window.open()` calls' return values and the deferred `.focus()` call, then
+  have the *user* reproduce on their own real Chrome/Safari and report back what actually happened
+  — this is the same technique that actually resolved the Supabase pagination bug and the
+  StrictMode amud-reset bug earlier in this session; reasoning about browser policy without a real
+  repro is what produced the still-broken state this note describes.
+- Double-check whether Safari's Settings → Tabs → "Open pages in tabs instead of in new windows"
+  is set to "Always" on the user's machine — if so, no `features` string can produce a real
+  positioned popup there, and that part of the report may not be fixable from application code at
+  all, only worth telling the user about directly.
 
 ## Daf-image zoom/pan (`components/DafImagePanel.tsx`, built 2026-08-16)
 
