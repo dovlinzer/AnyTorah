@@ -577,6 +577,48 @@ function HighlightSearchIcon({ size = 17 }: { size?: number }) {
   );
 }
 
+/** Classic "opens in a new window" glyph (box + escaping arrow) — the Mercava popup button. */
+function PopoutWindowIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ display: "inline-block", verticalAlign: "-2px" }}
+      aria-hidden="true"
+    >
+      <path d="M10 4H5.5A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V14" />
+      <path d="M14 4h6v6" />
+      <path d="M20 4 11 13" />
+    </svg>
+  );
+}
+
+/** Two side-by-side rounded columns — the "position windows side by side" button. */
+function SideBySideIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinejoin="round"
+      style={{ display: "inline-block", verticalAlign: "-2px" }}
+      aria-hidden="true"
+    >
+      <rect x="2.5" y="4" width="8" height="16" rx="1.3" />
+      <rect x="13.5" y="4" width="8" height="16" rx="1.3" />
+    </svg>
+  );
+}
+
 /** Jumps to today's Daf/Mishnah/Rambam Yomi, 929 chapter, or weekly Parsha — one per relevant
  *  category tab, matching native's TextSelectorView (see AnyTorah/CLAUDE.md's "Yomi" section). */
 function YomiButton({ label, onClick }: { label: string; onClick: () => void }) {
@@ -638,9 +680,46 @@ const INITIAL_SELECTION: Selection = {
   shulchanArukh: { index: 0, chapter: 1 },
 };
 
+// Reads a position (category/index/chapter/halakha/amud) encoded in the URL's query string by
+// openSideBySide (Reader body, near the Mercava buttons) — this app has no URL-based routing for
+// ordinary browsing (position lives in plain React state, never the address bar), so this query
+// string exists solely to hand a position from one window to a newly popped-out one, not as a
+// general permalink feature. Returns null for a normal load (no query string, or anything
+// malformed), which falls through to the usual Tanakh/Bereishit default.
+function readInitialPositionFromURL(): {
+  category: ReaderCategory;
+  index: number;
+  chapter: number;
+  halakha?: number;
+  amud: "a" | "b";
+} | null {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  const category = params.get("category");
+  if (!category || !(category in INITIAL_SELECTION)) return null;
+  const index = Number(params.get("index"));
+  const chapter = Number(params.get("chapter"));
+  if (!Number.isFinite(index) || !Number.isFinite(chapter)) return null;
+  const halakhaRaw = params.get("halakha") != null ? Number(params.get("halakha")) : undefined;
+  return {
+    category: category as ReaderCategory,
+    index,
+    chapter,
+    halakha: halakhaRaw != null && Number.isFinite(halakhaRaw) ? halakhaRaw : undefined,
+    amud: params.get("amud") === "b" ? "b" : "a",
+  };
+}
+
 export default function Reader() {
-  const [category, setCategory] = useState<ReaderCategory>("tanakh");
-  const [selection, setSelection] = useState<Selection>(INITIAL_SELECTION);
+  const [category, setCategory] = useState<ReaderCategory>(() => readInitialPositionFromURL()?.category ?? "tanakh");
+  const [selection, setSelection] = useState<Selection>(() => {
+    const pos = readInitialPositionFromURL();
+    if (!pos) return INITIAL_SELECTION;
+    return {
+      ...INITIAL_SELECTION,
+      [pos.category]: { index: pos.index, chapter: pos.chapter, ...(pos.halakha != null ? { halakha: pos.halakha } : {}) },
+    };
+  });
   // Tosefta and Yerushalmi are their own top-level tabs (peers of Mishnah/Talmud, not toggles
   // within them), each with independent selection state in `selection` above — Yerushalmi's
   // tractate list is filtered from Mishnah's (see getCategoryGroups), not Talmud's Bavli list.
@@ -924,7 +1003,9 @@ export default function Reader() {
   // "a" on every new daf/tractate/category, matching the expectation that a daf opens at 2a —
   // except when stepBackward() below crosses a daf boundary, where it should land on the
   // *previous* daf's amud b instead; skipAmudResetRef lets that one case suppress this reset.
-  const [talmudAmud, setTalmudAmud] = useState<"a" | "b">(() => getStartAmud(category, index, chapter));
+  const [talmudAmud, setTalmudAmud] = useState<"a" | "b">(
+    () => readInitialPositionFromURL()?.amud ?? getStartAmud(category, index, chapter),
+  );
   const mercavaUrl = useMercavaUrl(category === "talmud" ? talmudTractateName ?? null : null, chapter, talmudAmud);
   // Popup window (not a plain new-tab link) so it can be parked side by side with this reader,
   // and — the actual point of keeping this reference around — so subsequent daf navigation can
@@ -968,17 +1049,55 @@ export default function Reader() {
   // (a real `window.open` navigation, not a DOM move), so `mercavaWindowRef` above would belong to
   // the wrong instance if popped from here — clicking "Mercava" from inside the new window instead
   // keeps the popup's auto-sync tied to whichever window the user actually keeps navigating in.
+  //
+  // Two real bugs fixed here, both reported directly after trying this on-device: (1) the target
+  // URL used to be plain `window.location.href` — since this app has no URL-based routing at all
+  // (position lives in React state, never the address bar), that always opened the bare root URL,
+  // landing the new window on the Tanakh/Bereishit default instead of wherever the user actually
+  // was. Now the current position (category/index/chapter/halakha/amud) is encoded into the new
+  // window's URL as a query string, read back out by readInitialPositionFromURL above — a one-off
+  // hand-off mechanism, not a general permalink feature. (2) Opening (and thus focusing) this new
+  // window pushes any already-open Mercava popup behind it, defeating the whole point of "side by
+  // side" — refocusing the popup last, if one is open, brings it back in front so both windows end
+  // up visible together instead of Mercava getting buried under the window that was just opened.
   const openSideBySide = useCallback(() => {
+    const params = new URLSearchParams({ category, index: String(index), chapter: String(chapter) });
+    if (halakha != null) params.set("halakha", String(halakha));
+    if (category === "talmud") params.set("amud", talmudAmud);
+    const url = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
     const leftWidth = window.screen.availWidth - mercavaPopupWidth();
-    window.open(window.location.href, "anytorah-main", `width=${leftWidth},height=${window.screen.availHeight},left=0,top=0`);
-  }, []);
+    window.open(url, "anytorah-main", `width=${leftWidth},height=${window.screen.availHeight},left=0,top=0`);
+    if (mercavaWindowRef.current && !mercavaWindowRef.current.closed) {
+      mercavaWindowRef.current.focus();
+    }
+  }, [category, index, chapter, halakha, talmudAmud]);
   const textContainerRef = useRef<HTMLDivElement>(null);
   const amudBRef = useRef<HTMLDivElement>(null);
+  // One-shot escape hatch for stepReading's daf-boundary-crossing case just below: it needs the
+  // *next* run of the reset effect (only that one) suppressed so a step back across a daf boundary
+  // can land on the previous daf's amud "b" instead of the effect immediately resetting it to "a".
   const skipAmudResetRef = useRef(false);
+  // Captured once, at mount, so the effect below can separately tell "we're still sitting on the
+  // position a URL hand-off (readInitialPositionFromURL, see talmudAmud's own initializer above)
+  // set talmudAmud for directly" apart from "the user has actually navigated somewhere new" — a
+  // real bug hit while testing the "Side by side" hand-off: the popped-out window landed on the
+  // right daf but always reset to amud "a" regardless of which amud the original window was
+  // showing. A one-shot flag (like skipAmudResetRef above) was tried first for this too and looked
+  // right in isolation, but doesn't survive React StrictMode's dev-only double-invoke of a fresh
+  // effect (mount → cleanup → mount again): the first invocation consumed the flag correctly, and
+  // the second saw it already cleared and reset anyway. Comparing against the captured initial
+  // position instead is idempotent across repeated invocations with the same deps, so it survives
+  // that double-invoke naturally, while a genuine later navigation (deps actually change) still
+  // resets normally.
+  const initialPositionRef = useRef(readInitialPositionFromURL());
 
   useEffect(() => {
     if (skipAmudResetRef.current) {
       skipAmudResetRef.current = false;
+      return;
+    }
+    const initial = initialPositionRef.current;
+    if (initial && initial.category === category && initial.index === index && initial.chapter === chapter) {
       return;
     }
     setTalmudAmud(getStartAmud(category, index, chapter));
@@ -1707,41 +1826,55 @@ export default function Reader() {
             guessing a formula. A popup window (mercavaWindowRef above) is docked to the right edge
             of the screen, and — the actual reason it's a tracked popup rather than target="_blank"
             — the effect above silently retargets it to whatever daf you navigate to here, so it
-            stays in sync without needing to click this again. "Side by side" (openSideBySide,
-            right before this) pops this reader itself into a new window sized/positioned to
-            exactly fill the screen's left complement of the Mercava popup's own width, so the two
-            tile together without the user having to eyeball a manual drag first. Considered an
-            in-app iframe panel instead; rejected per explicit user direction, since Mercava's own
-            header/sign-in/menu chrome would render inside this app's UI and it would compete for
-            space with the existing text/commentary/daf-image/notebook columns. */}
+            stays in sync without needing to click this again. The second button (openSideBySide)
+            pops this reader itself into a new window sized/positioned to exactly fill the screen's
+            left complement of the Mercava popup's own width, so the two tile together without the
+            user having to eyeball a manual drag first. Considered an in-app iframe panel instead;
+            rejected per explicit user direction, since Mercava's own header/sign-in/menu chrome
+            would render inside this app's UI and it would compete for space with the existing
+            text/commentary/daf-image/notebook columns.
+
+            Both actions share one labeled pill (icon-only buttons, "Mercava" as a plain prefix
+            rather than a third button) rather than two separate text buttons — per explicit
+            follow-up feedback that "Side by side" alone read as unclear about what it was relative
+            to. `dir` on the pill keeps the popup-icon button adjacent to the label in both
+            directions (immediately after it in the DOM, which visually lands to the label's *right*
+            in LTR and *left* in RTL — i.e. "after Mercava" in both reading directions, not just
+            English's), with the side-by-side icon one step further out in both. */}
         {category === "talmud" &&
           (yomiButtons.length > 0 || dafImageAvailable) &&
           mercavaUrl && <VerticalDivider />}
         {category === "talmud" && mercavaUrl && (
-          <button
-            onClick={openSideBySide}
-            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
-            title={
-              hebrewMode
-                ? "פותח את הדף הזה בחלון חדש בגודל ומיקום מתאימים לצפייה זה לצד זה עם מרכבה"
-                : "Reopens this reader in a new window sized and positioned so Mercava can sit alongside it"
-            }
+          <div
+            dir={hebrewMode ? "rtl" : "ltr"}
+            className="flex shrink-0 items-center gap-1 rounded-full border border-border px-1 py-1 text-sm"
           >
-            {hebrewMode ? "לצד לצד" : "Side by side"}
-          </button>
-        )}
-        {category === "talmud" && mercavaUrl && (
-          <button
-            onClick={openOrFocusMercava}
-            className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
-            title={
-              hebrewMode
-                ? "פתח דף זה באתר מרכבה בחלון נפרד — יישאר מסונכרן בזמן שאתה מנווט כאן"
-                : "Open this daf on Mercava in a separate window — stays in sync as you navigate here"
-            }
-          >
-            {hebrewMode ? "מרכבה" : "Mercava"}
-          </button>
+            <span className="pl-2 pr-1 text-xs opacity-60">{hebrewMode ? "מרכבה" : "Mercava"}</span>
+            <button
+              onClick={openOrFocusMercava}
+              aria-label={hebrewMode ? "פתח את מרכבה בחלון נפרד" : "Open Mercava in a separate window"}
+              className="rounded-full p-1.5 transition-colors hover:bg-[var(--accent)]/15"
+              title={
+                hebrewMode
+                  ? "פתח דף זה באתר מרכבה בחלון נפרד — יישאר מסונכרן בזמן שאתה מנווט כאן"
+                  : "Open this daf on Mercava in a separate window — stays in sync as you navigate here"
+              }
+            >
+              <PopoutWindowIcon />
+            </button>
+            <button
+              onClick={openSideBySide}
+              aria-label={hebrewMode ? "סדר את החלונות זה לצד זה" : "Position windows side by side"}
+              className="rounded-full p-1.5 transition-colors hover:bg-[var(--accent)]/15"
+              title={
+                hebrewMode
+                  ? "פותח את הדף הזה בחלון חדש בגודל ומיקום מתאימים לצפייה זה לצד זה עם מרכבה"
+                  : "Reopens this reader in a new window sized and positioned so Mercava can sit alongside it"
+              }
+            >
+              <SideBySideIcon />
+            </button>
+          </div>
         )}
 
         {category === "shulchanArukh" && <VerticalDivider />}

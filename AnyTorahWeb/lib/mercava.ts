@@ -18,28 +18,55 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 type TractateAmudMap = Record<string, number>;
+type Row = { tractate: string; daf_amud: string; mercava_id: number };
 
 let cache: Record<string, TractateAmudMap> | null = null;
 let inflight: Promise<Record<string, TractateAmudMap>> | null = null;
 
+// PostgREST caps an unpaginated select at 1000 rows regardless of table size — a real bug hit
+// here, not a theoretical one: with 5,246 rows in (tractate, daf_amud) primary-key order, the
+// first unpaginated page ends partway through Bava Metzia, so Berakhot — the very first tractate
+// in the app's own list — silently never loaded at all. Same class of bug already documented in
+// AnyYCTorah's content-index scripts; the fix there is the fix here too: page with `.range()`
+// until a page comes back short.
+async function fetchAllRows(): Promise<Row[]> {
+  const supabase = createClient();
+  const rows: Row[] = [];
+  const PAGE_SIZE = 1000;
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("mercava_daf_ids")
+      .select("tractate, daf_amud, mercava_id")
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) throw error;
+    rows.push(...((data as Row[] | null) ?? []));
+    if (!data || data.length < PAGE_SIZE) break;
+  }
+  return rows;
+}
+
 function loadAll(): Promise<Record<string, TractateAmudMap>> {
   if (cache) return Promise.resolve(cache);
   if (!inflight) {
-    inflight = (async () => {
-      const { data, error } = await createClient()
-        .from("mercava_daf_ids")
-        .select("tractate, daf_amud, mercava_id");
-      const map: Record<string, TractateAmudMap> = {};
-      if (error) {
-        console.error("mercava_daf_ids fetch failed:", error.message);
-      } else {
-        for (const row of data ?? []) {
+    inflight = fetchAllRows()
+      .then((rows) => {
+        const map: Record<string, TractateAmudMap> = {};
+        for (const row of rows) {
           (map[row.tractate] ??= {})[row.daf_amud] = row.mercava_id;
         }
-      }
-      cache = map;
-      return map;
-    })();
+        cache = map;
+        return map;
+      })
+      .catch((error) => {
+        // Deliberately does NOT set `cache` here — caching a failed fetch as "loaded, empty"
+        // would permanently hide the Mercava button for the rest of that page's JS lifetime (a
+        // real bug hit in practice: loading the app before the table existed/was populated
+        // poisoned `cache` to {} forever, with no retry, even after the data showed up
+        // server-side). Clearing `inflight` lets the next mount's effect try again instead.
+        console.error("mercava_daf_ids fetch failed:", error?.message ?? error);
+        inflight = null;
+        return {};
+      });
   }
   return inflight;
 }
