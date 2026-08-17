@@ -5,8 +5,8 @@ import {
   extractColoredRuns,
   extractPlainText,
   extractTags,
-  formatNotebookScopeLabel,
   loadNotebooks,
+  notebookSubtitle,
   type Notebook,
 } from "@/lib/notebooks";
 import { HIGHLIGHT_CATEGORY_COUNT, loadHighlightCategoryLabels } from "@/lib/highlightCategories";
@@ -73,7 +73,7 @@ export default function NotebookSearchModal({
   };
   // Empty = every notebook included — tracking exclusions (rather than a positive selection set)
   // means newly-loaded notebooks default to "included" without needing to pre-populate anything.
-  const [excludedScopeKeys, setExcludedScopeKeys] = useState<Set<string>>(new Set());
+  const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
   // Open by default — a collapsed-by-default picker turned out to be easy to miss entirely
   // during live testing; collapsing is still available to save space once someone has many
   // notebooks, but discoverability wins by default.
@@ -110,7 +110,7 @@ export default function NotebookSearchModal({
   const q = query.trim().toLowerCase();
   const hasActiveFilter = !!q || tagFilters.size > 0 || colorFilter !== null;
   const results = indexed
-    .filter((entry) => !excludedScopeKeys.has(entry.notebook.scopeKey))
+    .filter((entry) => !excludedIds.has(entry.notebook.id))
     .filter((entry) => tagFilters.size === 0 || entry.tags.some((t) => tagFilters.has(t)))
     .filter((entry) => colorFilter === null || entry.coloredRuns.some((r) => r.colorIndex === colorFilter))
     .filter((entry) => {
@@ -134,7 +134,7 @@ export default function NotebookSearchModal({
       });
   }, [includeHighlights, highlights, colorFilter, tagFilters, query]);
 
-  const includedCount = notebooks.length - excludedScopeKeys.size;
+  const includedCount = notebooks.length - excludedIds.size;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
@@ -221,32 +221,32 @@ export default function NotebookSearchModal({
             {notebookPickerOpen && (
               <div className="flex max-h-32 flex-col gap-1 overflow-y-auto rounded border border-border p-1.5">
                 <div className="flex gap-2 border-b border-border pb-1 text-[10px]">
-                  <button type="button" onClick={() => setExcludedScopeKeys(new Set())} className="opacity-60 hover:opacity-100">
+                  <button type="button" onClick={() => setExcludedIds(new Set())} className="opacity-60 hover:opacity-100">
                     All
                   </button>
                   <button
                     type="button"
-                    onClick={() => setExcludedScopeKeys(new Set(notebooks.map((n) => n.scopeKey)))}
+                    onClick={() => setExcludedIds(new Set(notebooks.map((n) => n.id)))}
                     className="opacity-60 hover:opacity-100"
                   >
                     None
                   </button>
                 </div>
                 {notebooks.map((n) => (
-                  <label key={n.scopeKey} className="flex items-center gap-1.5 text-xs">
+                  <label key={n.id} className="flex items-center gap-1.5 text-xs">
                     <input
                       type="checkbox"
-                      checked={!excludedScopeKeys.has(n.scopeKey)}
+                      checked={!excludedIds.has(n.id)}
                       onChange={(e) =>
-                        setExcludedScopeKeys((prev) => {
+                        setExcludedIds((prev) => {
                           const next = new Set(prev);
-                          if (e.target.checked) next.delete(n.scopeKey);
-                          else next.add(n.scopeKey);
+                          if (e.target.checked) next.delete(n.id);
+                          else next.add(n.id);
                           return next;
                         })
                       }
                     />
-                    {formatNotebookScopeLabel(n.scope)}
+                    {n.name}
                   </label>
                 ))}
               </div>
@@ -272,12 +272,15 @@ export default function NotebookSearchModal({
                 const snippet = q ? buildSnippet(text, query) : (colorSnippet ?? text.slice(0, SNIPPET_RADIUS * 2)).trim();
                 return (
                   <button
-                    key={notebook.scopeKey}
+                    key={notebook.id}
                     onClick={() => onNavigate(notebook, query)}
                     className="flex w-full flex-col items-start gap-1 rounded px-2 py-2 text-left hover:bg-[var(--border)]"
                   >
-                    <div className="text-xs font-medium" style={{ color: "var(--accent)" }}>
-                      {formatNotebookScopeLabel(notebook.scope)}
+                    <div className="flex w-full items-baseline gap-1.5">
+                      <span className="text-xs font-medium" style={{ color: "var(--accent)" }}>
+                        {notebook.name}
+                      </span>
+                      <span className="text-[10px] opacity-50">{notebookSubtitle(notebook.scope)}</span>
                     </div>
                     {snippet && (
                       <div className={colorSnippet && !q ? `highlight-text highlight-text-${colorFilter}` : "text-sm"}>

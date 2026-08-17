@@ -42,10 +42,11 @@ import { anchorKey, stripAnchorHTML, buildSegmentLabel, type TextAnchor } from "
 import HighlightMark from "@/components/HighlightMark";
 import HighlightEditModal from "@/components/HighlightEditModal";
 import HighlightsListModal from "@/components/HighlightsListModal";
-import NotebookPanel, { type NotebookScopeOption } from "@/components/NotebookPanel";
+import NotebookPanel from "@/components/NotebookPanel";
+import NotebookPickerModal from "@/components/NotebookPickerModal";
 import NotebookSearchModal from "@/components/NotebookSearchModal";
 import SourceSheetModal from "@/components/SourceSheetModal";
-import { notebookScopeKey, formatNotebookScopeLabel, type NotebookScope } from "@/lib/notebooks";
+import { createNotebook, loadAndReconcileNotebooks, type Notebook, type NotebookScope } from "@/lib/notebooks";
 import AccountButton from "@/components/AccountButton";
 import { useAuth } from "@/components/AuthProvider";
 import { schedulePreferencesSync, reconcilePreferences } from "@/lib/preferences";
@@ -285,6 +286,15 @@ const NOTEBOOK_WIDTH_DEFAULT = 380;
 const PANEL_WIDTH_MIN = 260;
 const PANEL_WIDTH_MAX = 800;
 
+// Notebook "pop out" — floats the panel in a draggable/resizable window instead of docking it
+// in-flow. Position/size are independent of notebookWidth (the docked width), since a floated
+// window also has a height and screen coordinates the docked layout has no concept of.
+const NOTEBOOK_FLOATING_KEY = "anytorah:notebookFloating";
+const NOTEBOOK_FLOAT_RECT_KEY = "anytorah:notebookFloatRect";
+const NOTEBOOK_FLOAT_HEIGHT_DEFAULT = 560;
+const NOTEBOOK_FLOAT_HEIGHT_MIN = 240;
+const NOTEBOOK_FLOAT_HEIGHT_MAX = 1000;
+
 type DafPosition = "left" | "middle";
 
 function loadDafPosition(): DafPosition {
@@ -327,6 +337,71 @@ function storeWidth(key: string, px: number) {
   }
 }
 
+type NotebookFloatRect = { x: number; y: number; width: number; height: number };
+
+function loadNotebookFloating(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(NOTEBOOK_FLOATING_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function storeNotebookFloating(on: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(NOTEBOOK_FLOATING_KEY, on ? "1" : "0");
+    schedulePreferencesSync();
+  } catch {
+    // localStorage unavailable — toggle just won't persist.
+  }
+}
+
+/** Default float position hugs the top-right of the viewport, clear of the header toolbar. */
+function defaultNotebookFloatRect(): NotebookFloatRect {
+  const width = NOTEBOOK_WIDTH_DEFAULT;
+  const height = NOTEBOOK_FLOAT_HEIGHT_DEFAULT;
+  if (typeof window === "undefined") return { x: 80, y: 80, width, height };
+  return { x: clamp(window.innerWidth - width - 32, 16, window.innerWidth - width - 16), y: 88, width, height };
+}
+
+function loadNotebookFloatRect(): NotebookFloatRect {
+  const fallback = defaultNotebookFloatRect();
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(NOTEBOOK_FLOAT_RECT_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as Partial<NotebookFloatRect>;
+    if (
+      typeof parsed.x === "number" &&
+      typeof parsed.y === "number" &&
+      typeof parsed.width === "number" &&
+      typeof parsed.height === "number"
+    ) {
+      return {
+        x: parsed.x,
+        y: parsed.y,
+        width: clamp(parsed.width, PANEL_WIDTH_MIN, PANEL_WIDTH_MAX),
+        height: clamp(parsed.height, NOTEBOOK_FLOAT_HEIGHT_MIN, NOTEBOOK_FLOAT_HEIGHT_MAX),
+      };
+    }
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function storeNotebookFloatRect(rect: NotebookFloatRect) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(NOTEBOOK_FLOAT_RECT_KEY, JSON.stringify(rect));
+    schedulePreferencesSync();
+  } catch {
+    // localStorage unavailable — position/size just won't persist.
+  }
+}
+
 /** Draggable vertical divider between two panels; reports the raw pointer-X delta per move. */
 function ResizeHandle({ onDrag }: { onDrag: (deltaX: number) => void }) {
   const draggingRef = useRef(false);
@@ -361,6 +436,94 @@ function ResizeHandle({ onDrag }: { onDrag: (deltaX: number) => void }) {
       className="mx-1 w-1.5 shrink-0 cursor-col-resize self-stretch rounded transition-colors hover:bg-[var(--accent)]"
       style={{ background: "var(--border)" }}
     />
+  );
+}
+
+/** Floating, draggable, resizable wrapper used when the notebook is popped out of the docked
+ *  layout. Position/size are lifted to the caller (same controlled pattern as notebookWidth)
+ *  rather than owned locally, so Reader.tsx can persist them the same way it persists panel
+ *  widths — one localStorage write per drag tick, matching adjustNotebookWidth's own convention.
+ *  Drag/resize math is computed from the pointer's total delta since mousedown against a
+ *  snapshotted starting rect, not accumulated per-move like ResizeHandle — safer for 2D dragging,
+ *  where small per-tick rounding could otherwise drift the window off the cursor over time. */
+function FloatingNotebookWindow({
+  rect,
+  onRectChange,
+  children,
+}: {
+  rect: NotebookFloatRect;
+  onRectChange: (rect: NotebookFloatRect) => void;
+  children: React.ReactNode;
+}) {
+  const dragRef = useRef<{ mode: "move" | "resize"; startX: number; startY: number; startRect: NotebookFloatRect } | null>(null);
+
+  useEffect(() => {
+    function handleMove(e: MouseEvent) {
+      const drag = dragRef.current;
+      if (!drag) return;
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+      if (drag.mode === "move") {
+        // Keep at least a corner's worth of the title bar reachable on every edge, so a window
+        // dragged mostly off-screen can always be dragged back.
+        onRectChange({
+          ...drag.startRect,
+          x: clamp(drag.startRect.x + dx, 80 - drag.startRect.width, window.innerWidth - 80),
+          y: clamp(drag.startRect.y + dy, 0, window.innerHeight - 40),
+        });
+      } else {
+        onRectChange({
+          ...drag.startRect,
+          width: clamp(drag.startRect.width + dx, PANEL_WIDTH_MIN, PANEL_WIDTH_MAX),
+          height: clamp(drag.startRect.height + dy, NOTEBOOK_FLOAT_HEIGHT_MIN, NOTEBOOK_FLOAT_HEIGHT_MAX),
+        });
+      }
+    }
+    function handleUp() {
+      dragRef.current = null;
+    }
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [onRectChange]);
+
+  return (
+    <div
+      style={{ position: "fixed", left: rect.x, top: rect.y, width: rect.width, height: rect.height, zIndex: 40 }}
+      className="flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl"
+    >
+      <div
+        onMouseDown={(e) => {
+          e.preventDefault();
+          dragRef.current = { mode: "move", startX: e.clientX, startY: e.clientY, startRect: rect };
+        }}
+        role="separator"
+        aria-label="Drag to move notebook window"
+        className="flex shrink-0 cursor-move items-center justify-center gap-1 border-b border-border bg-[var(--muted)] py-1 text-muted-foreground select-none"
+      >
+        <span aria-hidden className="text-[10px] tracking-[0.2em]">
+          ⋮⋮⋮⋮⋮⋮
+        </span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+      <div
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dragRef.current = { mode: "resize", startX: e.clientX, startY: e.clientY, startRect: rect };
+        }}
+        role="separator"
+        aria-label="Drag to resize notebook window"
+        className="absolute bottom-0.5 right-0.5 h-3.5 w-3.5 cursor-nwse-resize opacity-50 hover:opacity-100"
+        style={{
+          backgroundImage:
+            "repeating-linear-gradient(135deg, var(--border) 0px, var(--border) 1.5px, transparent 1.5px, transparent 4px)",
+        }}
+      />
+    </div>
   );
 }
 
@@ -895,11 +1058,15 @@ export default function Reader() {
   const [narrowWidth, setNarrowWidthState] = useState(NARROW_WIDTH_DEFAULT);
   const [commentaryWidth, setCommentaryWidthState] = useState(COMMENTARY_WIDTH_DEFAULT);
   const [notebookWidth, setNotebookWidthState] = useState(NOTEBOOK_WIDTH_DEFAULT);
+  const [notebookFloating, setNotebookFloatingState] = useState(false);
+  const [notebookFloatRect, setNotebookFloatRectState] = useState<NotebookFloatRect>(defaultNotebookFloatRect);
   useEffect(() => {
     setDafPositionState(loadDafPosition());
     setNarrowWidthState(loadStoredWidth(NARROW_WIDTH_KEY, NARROW_WIDTH_DEFAULT));
     setCommentaryWidthState(loadStoredWidth(COMMENTARY_WIDTH_KEY, COMMENTARY_WIDTH_DEFAULT));
     setNotebookWidthState(loadStoredWidth(NOTEBOOK_WIDTH_KEY, NOTEBOOK_WIDTH_DEFAULT));
+    setNotebookFloatingState(loadNotebookFloating());
+    setNotebookFloatRectState(loadNotebookFloatRect());
   }, []);
   const setDafPosition = (pos: DafPosition) => {
     setDafPositionState(pos);
@@ -925,6 +1092,30 @@ export default function Reader() {
       storeWidth(NOTEBOOK_WIDTH_KEY, next);
       return next;
     });
+  };
+  const toggleNotebookFloating = () => {
+    setNotebookFloatingState((prev) => {
+      const next = !prev;
+      storeNotebookFloating(next);
+      // Re-clamp into the current viewport on pop-out — the stored rect may date from a wider
+      // browser window and could otherwise open mostly or entirely off-screen.
+      if (next) {
+        setNotebookFloatRectState((rect) => {
+          const clamped: NotebookFloatRect = {
+            ...rect,
+            x: clamp(rect.x, 0, Math.max(0, window.innerWidth - rect.width)),
+            y: clamp(rect.y, 0, Math.max(0, window.innerHeight - 40)),
+          };
+          storeNotebookFloatRect(clamped);
+          return clamped;
+        });
+      }
+      return next;
+    });
+  };
+  const handleNotebookFloatRectChange = (rect: NotebookFloatRect) => {
+    setNotebookFloatRectState(rect);
+    storeNotebookFloatRect(rect);
   };
 
   const handleIndexChange = (id: number) => {
@@ -1303,53 +1494,59 @@ export default function Reader() {
     [category, index, chapter, halakha],
   );
 
-  // Notebook — a long-form rich-text document per book/commentary (not per-chapter, unlike
-  // Highlights), with embedded anchor pills that jump the reader here. Side panel, not a modal,
-  // so the user can click a paragraph in the reader while the notebook stays open (see
-  // HighlightMark's onInsertToNotebook / CommentaryPanel's mirror of it).
-  const [notebookOpen, setNotebookOpen] = useState(false);
-  // Reverse sync — the panel's scope auto-follows wherever the reader currently is (main text vs.
-  // whichever commentary tab is active), rather than a browsing-session-long manual pin. Set
-  // directly by three things: CommentaryPanel's onActiveTypeChange (an explicit tab switch), the
-  // panel's own scope dropdown, and cross-notebook search navigation. Reset to "main" only on a
-  // book/tractate change — a commentary focus from a previous book isn't meaningful once
-  // category/index moves on, but switching *chapters* within the same book deliberately does NOT
-  // reset it, so stepping through chapters while reading a specific commentary's notes keeps
-  // following that same commentary instead of snapping back on every step.
-  type NotebookFocus = { source: "main" } | { source: "commentary"; commentaryType: CommentaryType };
-  const [notebookFocusSource, setNotebookFocusSource] = useState<NotebookFocus>({ source: "main" });
-  // Cross-notebook search navigation (navigateToNotebookScope below) changes category/index and
-  // wants a specific focus (possibly "commentary") to survive the reset this effect would
-  // otherwise apply — it stashes the desired value here just before triggering the change, and
-  // this effect consumes (and clears) it instead of defaulting to "main" when present.
-  const pendingNotebookFocusRef = useRef<NotebookFocus | null>(null);
+  // Notebooks — user-named, long-form rich-text documents (any number, at most loosely tied to a
+  // book/commentary), with embedded anchor pills that jump the reader here. Side panel, not a
+  // modal, so the user can click a paragraph in the reader while the notebook stays open (see
+  // HighlightMark's onInsertToNotebook / CommentaryPanel's mirror of it). See lib/notebooks.ts's
+  // module comment for the full "identity vs. scope" story — pinnedNotebookId is the single source
+  // of truth for which notebook (if any) is open, and it never changes on its own as the reader
+  // navigates elsewhere; only an explicit switch (the 📓 header button's picker below, or the
+  // panel's own switch dropdown) changes it.
+  const [notebooks, setNotebooks] = useState<Notebook[]>([]);
   useEffect(() => {
-    setNotebookFocusSource(pendingNotebookFocusRef.current ?? { source: "main" });
-    pendingNotebookFocusRef.current = null;
-  }, [category, index]);
+    loadAndReconcileNotebooks().then(setNotebooks);
+  }, [user?.id]);
+  const [pinnedNotebookId, setPinnedNotebookId] = useState<string | null>(null);
+  const notebookOpen = pinnedNotebookId !== null;
+  const [notebookPickerOpen, setNotebookPickerOpen] = useState(false);
 
-  const notebookScope: NotebookScope = useMemo(
+  // "Reading focus" — purely a hint for NotebookPickerModal's quick-create options and both
+  // pickers' prominence ranking (rankNotebooksByProminence): which scope to default a *new*
+  // notebook to, and which existing notebooks to rank first. Never triggers opening or switching a
+  // notebook on its own. Set by CommentaryPanel's onActiveTypeChange, which fires on mount and
+  // whenever its own activeType value actually changes — but NOT on a book/tractate change where
+  // the same commentary type remains active (e.g. Rashi stays Rashi across a Bereshit→Bamidbar
+  // switch): React bails out of re-running an effect whose dependency's value didn't change, so no
+  // fresh notification arrives in that case even though the book did change under it.
+  //
+  // Real bug fixed here (reported live): this used to unconditionally reset to "main" on every
+  // [category, index] change, on the theory that "a commentary focus from a previous book isn't
+  // meaningful once category/index moves on." That's true when the commentary genuinely isn't
+  // available in the new book, but false — and was firing anyway — when it stayed the same
+  // commentary across the switch, since CommentaryPanel had no reason to re-notify. Net effect: a
+  // book/chapter switch while reading a specific commentary silently dropped back to "main" and the
+  // picker only ever offered the book-level option, not the commentary one, unless the user
+  // happened to re-click a commentary tab immediately beforehand. Fixed by only resetting when the
+  // current focus's commentaryType is no longer among the new book's effectiveSlots at all —
+  // otherwise the existing focus (however it got set) is left alone. React runs a child's effects
+  // before its parent's in the same commit, so if CommentaryPanel's own effect *does* fire this
+  // render (a genuine fallback to a different commentary), this effect's functional updater sees
+  // that fresher value first and correctly finds it already valid.
+  type ReadingFocus = { source: "main" } | { source: "commentary"; commentaryType: CommentaryType };
+  const [readingFocus, setReadingFocus] = useState<ReadingFocus>({ source: "main" });
+  useEffect(() => {
+    setReadingFocus((prev) =>
+      prev.source === "commentary" && !effectiveSlots.includes(prev.commentaryType) ? { source: "main" } : prev,
+    );
+  }, [category, index, effectiveSlots]);
+
+  const currentReaderScope: NotebookScope = useMemo(
     () =>
-      notebookFocusSource.source === "commentary"
-        ? { category, index, source: "commentary", commentaryType: notebookFocusSource.commentaryType }
+      readingFocus.source === "commentary"
+        ? { category, index, source: "commentary", commentaryType: readingFocus.commentaryType }
         : { category, index, source: "main" },
-    [category, index, notebookFocusSource],
+    [category, index, readingFocus],
   );
-
-  const notebookScopeOptions: NotebookScopeOption[] = useMemo(() => {
-    // Labels reuse formatNotebookScopeLabel (lib/notebooks.ts) so the dropdown, the panel's own
-    // header line, and the cross-notebook search modal all describe the same scope identically —
-    // book/tractate name for main text (e.g. "Bavli, Gittin"), "Commentary on Book" for a
-    // commentary slot, both fully localized to Hebrew when hebrewMode is on.
-    return [
-      { source: "main", label: formatNotebookScopeLabel({ category, index, source: "main" }, hebrewMode) },
-      ...effectiveSlots.map((c) => ({
-        source: "commentary" as const,
-        commentaryType: c,
-        label: formatNotebookScopeLabel({ category, index, source: "commentary", commentaryType: c }, hebrewMode),
-      })),
-    ];
-  }, [category, index, hebrewMode, effectiveSlots]);
 
   const notebookInsertRef = useRef<((anchor: TextAnchor, quoteHe?: string, quoteEn?: string) => void) | null>(null);
   const [notebookSearchOpen, setNotebookSearchOpen] = useState(false);
@@ -1368,55 +1565,43 @@ export default function Reader() {
     [],
   );
 
-  // Cross-notebook search result → open the panel on that exact scope. Chapter/halakha reset to
-  // the book's first section (same as picking a new book from any of the book pickers) since a
-  // Notebook is scoped to a whole book/commentary, not a chapter — there's no single "right"
-  // chapter to land on for a hit that might reference several.
-  const navigateToNotebookScope = useCallback((scope: NotebookScope, seedSearchTerm: string) => {
-    const desiredFocus: NotebookFocus =
-      scope.source === "commentary" && scope.commentaryType
-        ? { source: "commentary", commentaryType: scope.commentaryType }
-        : { source: "main" };
-    // Stash for the [category, index] reset effect above, and also apply directly — the effect
-    // only fires when category/index actually change (e.g. searching within the already-open
-    // book's own notebook wouldn't change either).
-    pendingNotebookFocusRef.current = desiredFocus;
-    setNotebookFocusSource(desiredFocus);
-    setCategory(scope.category);
-    setSelection((s) => ({
-      ...s,
-      [scope.category]: {
-        index: scope.index,
-        chapter: getChapterMin(scope.category, scope.index),
-        halakha: scope.category === "yerushalmi" ? 1 : undefined,
-      },
-    }));
+  // NotebookPickerModal's two actions — pin an existing notebook open, or create a brand-new one
+  // (fixed scope from here on — see Notebook.scope's own doc comment) and pin that instead.
+  const handleSelectNotebook = useCallback((id: string) => {
+    setPinnedNotebookId(id);
+    setNotebookPickerOpen(false);
+  }, [setPinnedNotebookId, setNotebookPickerOpen]);
+  const handleCreateNotebook = useCallback((name: string, scope: NotebookScope | undefined) => {
+    const notebook = createNotebook(name, scope);
+    setNotebooks((list) => [...list, notebook]);
+    setPinnedNotebookId(notebook.id);
+    setNotebookPickerOpen(false);
+  }, [setNotebooks, setPinnedNotebookId, setNotebookPickerOpen]);
+
+  // Cross-notebook search result → just pin that notebook open and seed its find bar. No reader
+  // navigation — unlike the old scope-based model, a notebook isn't tied to one place in the
+  // reader, so there's no single "right" book/chapter to jump to just because a search hit lives
+  // in this notebook.
+  const openNotebookFromSearch = useCallback((id: string, seedSearchTerm: string) => {
+    setPinnedNotebookId(id);
     setNotebookSearchSeed(seedSearchTerm);
-    setNotebookOpen(true);
     setNotebookSearchOpen(false);
-  }, [setCategory, setSelection, setNotebookFocusSource, setNotebookSearchSeed, setNotebookOpen, setNotebookSearchOpen]);
+  }, [setPinnedNotebookId, setNotebookSearchSeed, setNotebookSearchOpen]);
 
   const [sourceSheetOpen, setSourceSheetOpen] = useState(false);
 
-  // Source Sheet entry → jump the reader to the anchor's own exact chapter/halakha (unlike
-  // navigateToNotebookScope, which resets to the book's first section for a scope-level search
-  // hit) and open the notebook on the matching scope — Notebook Phase 2's reverse-sync effect then
-  // scroll+flashes the specific anchor for free once the panel is open at that chapter.
-  const navigateToNotebookAnchor = useCallback((anchor: TextAnchor) => {
-    const desiredFocus: NotebookFocus =
-      anchor.source === "commentary" && anchor.commentaryType
-        ? { source: "commentary", commentaryType: anchor.commentaryType }
-        : { source: "main" };
-    pendingNotebookFocusRef.current = desiredFocus;
-    setNotebookFocusSource(desiredFocus);
+  // Source Sheet entry → jump the reader to the anchor's own exact chapter/halakha and pin
+  // whichever notebook that anchor actually lives in — the panel's reverse-sync effect then
+  // scroll+flashes the specific anchor for free once it's open at that chapter.
+  const navigateToNotebookAnchor = useCallback((anchor: TextAnchor, notebookId: string) => {
     setCategory(anchor.category);
     setSelection((s) => ({
       ...s,
       [anchor.category]: { index: anchor.index, chapter: anchor.chapter, halakha: anchor.halakha },
     }));
-    setNotebookOpen(true);
+    setPinnedNotebookId(notebookId);
     setSourceSheetOpen(false);
-  }, [setCategory, setSelection, setNotebookFocusSource, setNotebookOpen, setSourceSheetOpen]);
+  }, [setCategory, setSelection, setPinnedNotebookId, setSourceSheetOpen]);
 
   const upsertHighlight = (
     anchor: TextAnchor,
@@ -1629,6 +1814,35 @@ export default function Reader() {
     ? "shrink-0 rounded-full border border-border px-4 py-2 text-base transition-colors hover:border-[var(--accent)]"
     : "shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]";
 
+  // Shared JSX between the docked (in-flow) and floating (popped-out) notebook renderings below,
+  // so the two branches don't duplicate this whole prop list. Toggling notebookFloating still
+  // remounts NotebookPanel (its wrapper's position in the tree changes), but that's harmless —
+  // it reloads its own content on mount and autosaves on every edit, same as switching notebooks
+  // does. null whenever nothing's pinned open — both render branches below are already gated on
+  // notebookOpen, so this is only ever read once pinnedNotebookId is a real id.
+  const notebookPanelElement = pinnedNotebookId ? (
+    <NotebookPanel
+      key={pinnedNotebookId}
+      notebookId={pinnedNotebookId}
+      allNotebooks={notebooks}
+      currentScope={currentReaderScope}
+      readerChapter={chapter}
+      readerHalakha={isYerushalmi ? halakha : undefined}
+      readerAmud={category === "talmud" ? talmudAmud : undefined}
+      hebrewMode={hebrewMode}
+      onSwitchNotebook={setPinnedNotebookId}
+      onNavigateAnchor={navigateToAnchor}
+      onEditorReady={(insertFn) => {
+        notebookInsertRef.current = insertFn;
+      }}
+      onClose={() => setPinnedNotebookId(null)}
+      initialSearchTerm={notebookSearchSeed || undefined}
+      onInitialSearchConsumed={() => setNotebookSearchSeed("")}
+      isFloating={notebookFloating}
+      onToggleFloating={toggleNotebookFloating}
+    />
+  ) : null;
+
   return (
     <div className="flex h-screen w-full">
       {/* Logo/title sidebar — a permanently reserved column (explicit user choice, 2026-07-26)
@@ -1719,10 +1933,10 @@ export default function Reader() {
             </button>
             <VerticalDivider />
             <button
-              onClick={() => setNotebookOpen((o) => !o)}
+              onClick={() => setNotebookPickerOpen(true)}
               aria-pressed={notebookOpen}
-              aria-label={notebookOpen ? "Close notebook" : "Open notebook"}
-              title={notebookOpen ? "Close notebook" : "Open notebook"}
+              aria-label="Choose a notebook"
+              title="Choose a notebook"
               className={pillButtonClass}
               style={notebookOpen ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
             >
@@ -2194,11 +2408,11 @@ export default function Reader() {
                     )
                 : undefined
             }
-            onActiveTypeChange={(type) => setNotebookFocusSource({ source: "commentary", commentaryType: type })}
+            onActiveTypeChange={(type) => setReadingFocus({ source: "commentary", commentaryType: type })}
           />
         </div>
 
-        {notebookOpen && (
+        {notebookOpen && !notebookFloating && (
           <>
             {/* Notebook sits to the right of this handle, so dragging right shrinks it. */}
             <ResizeHandle onDrag={(delta) => adjustNotebookWidth(delta)} />
@@ -2206,34 +2420,17 @@ export default function Reader() {
               className="min-h-0 shrink-0 overflow-hidden rounded-lg border border-border bg-card"
               style={{ width: notebookWidth }}
             >
-              <NotebookPanel
-                key={notebookScopeKey(notebookScope)}
-                scope={notebookScope}
-                readerChapter={chapter}
-                readerHalakha={isYerushalmi ? halakha : undefined}
-                readerAmud={category === "talmud" ? talmudAmud : undefined}
-                hebrewMode={hebrewMode}
-                scopeOptions={notebookScopeOptions}
-                onScopeChange={(option) =>
-                  setNotebookFocusSource(
-                    option.source === "commentary" && option.commentaryType
-                      ? { source: "commentary", commentaryType: option.commentaryType }
-                      : { source: "main" },
-                  )
-                }
-                onNavigateToOtherScope={(otherScope) => navigateToNotebookScope(otherScope, "")}
-                onNavigateAnchor={navigateToAnchor}
-                onEditorReady={(insertFn) => {
-                  notebookInsertRef.current = insertFn;
-                }}
-                onClose={() => setNotebookOpen(false)}
-                initialSearchTerm={notebookSearchSeed || undefined}
-                onInitialSearchConsumed={() => setNotebookSearchSeed("")}
-              />
+              {notebookPanelElement}
             </div>
           </>
         )}
       </div>
+
+      {notebookOpen && notebookFloating && (
+        <FloatingNotebookWindow rect={notebookFloatRect} onRectChange={handleNotebookFloatRectChange}>
+          {notebookPanelElement}
+        </FloatingNotebookWindow>
+      )}
 
       {simanPickerOpen && (category === "shulchanArukh" || category === "tur") && (
         <SASimanPicker
@@ -2319,10 +2516,20 @@ export default function Reader() {
         />
       )}
 
+      {notebookPickerOpen && (
+        <NotebookPickerModal
+          currentScope={currentReaderScope}
+          notebooks={notebooks}
+          onSelect={handleSelectNotebook}
+          onCreate={handleCreateNotebook}
+          onClose={() => setNotebookPickerOpen(false)}
+        />
+      )}
+
       {notebookSearchOpen && (
         <NotebookSearchModal
           highlights={highlights}
-          onNavigate={(notebook, seedQuery) => navigateToNotebookScope(notebook.scope, seedQuery)}
+          onNavigate={(notebook, seedQuery) => openNotebookFromSearch(notebook.id, seedQuery)}
           onNavigateHighlight={(h) => {
             handleNavigateHighlight(h);
             setNotebookSearchOpen(false);

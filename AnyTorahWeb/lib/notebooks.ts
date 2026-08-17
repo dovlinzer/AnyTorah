@@ -1,9 +1,16 @@
-// Local-storage notebooks — one long-form rich-text document per "book scope" (a work's main
-// text, or a specific commentary on it), with embedded navigation anchors (see
-// components/notebook/AnchorNodeExtension.ts) linking passages of the notebook to specific
-// locations in the reader. Stores Tiptap/ProseMirror document JSON, not HTML — the Anchor node
-// needs to round-trip losslessly and be programmatically scannable (extractAnchors below), which
-// is native to the JSON doc model but awkward to do reliably by re-parsing HTML strings.
+// Local-storage notebooks — user-named, long-form rich-text documents (a user can have any number
+// of them, freely named, at most loosely tied to a book/commentary), with embedded navigation
+// anchors (see components/notebook/AnchorNodeExtension.ts) linking passages of a notebook to
+// specific locations in the reader. Stores Tiptap/ProseMirror document JSON, not HTML — the
+// Anchor node needs to round-trip losslessly and be programmatically scannable (extractAnchors
+// below), which is native to the JSON doc model but awkward to do reliably by re-parsing HTML
+// strings.
+//
+// Identity is a client-generated `id` (Notebook.id), not scope — `scope` is optional metadata set
+// once at creation (NotebookPickerModal), used only to seed a default name and to rank prominence
+// in the picker/switcher. A notebook, once open, stays open regardless of where the reader
+// navigates; switching which notebook is open is always an explicit user action (the 📓 header
+// button's picker, or the panel's own switch-notebook dropdown), never automatic.
 import type { JSONContent } from "@tiptap/core";
 import type { ReaderCategory } from "./commentaryPools";
 import {
@@ -24,11 +31,25 @@ export interface NotebookScope {
 }
 
 export interface Notebook {
-  /** Derived from NotebookScope — also the lookup/storage key. */
-  scopeKey: string;
-  scope: NotebookScope;
+  /** The notebook's real, stable identity — a client-generated uuid, independent of scope. Before
+   *  this field existed a Notebook's scope *was* its identity (one notebook per book/commentary,
+   *  system-wide); that forced navigating to a different book to silently swap which notebook was
+   *  open. See AnyTorahWeb/CLAUDE.md's "Notebook identity redesign" for the full rationale. */
+  id: string;
+  /** User-editable, defaults to formatNotebookScopeLabel(scope) or "General Notebook" at creation
+   *  time (NotebookPickerModal) — never auto-changes after that. */
+  name: string;
+  /** Optional, fixed at creation — a "general" notebook (created with no book/commentary in mind)
+   *  has none. Purely metadata now: seeds the default name and ranks this notebook's prominence
+   *  in the picker/switcher when the reader is on a matching book, never an identity and never a
+   *  trigger for auto-opening or auto-switching notebooks (a notebook, once pinned open, stays
+   *  open regardless of where the reader navigates — only NotebookPickerModal or the panel's own
+   *  switch dropdown changes which notebook is open). Deliberately never updated after creation
+   *  even if the notebook accumulates anchors from other books — see the "fixed creation scope"
+   *  decision in CLAUDE.md. */
+  scope?: NotebookScope;
   bodyJSON: JSONContent;
-  /** ISO 8601, set once at first save and never touched again — determines which notebook is the
+  /** ISO 8601, set once at creation and never touched again — determines which notebook is the
    *  permanently-free one under the subscription paywall (see supabase/migrations/
    *  004_user_notebooks.sql and lib/notebookAccess.ts). Optional only because notebooks saved
    *  before this field existed don't have it — callers sorting by creation order should fall back
@@ -37,19 +58,19 @@ export interface Notebook {
   updatedAt: string; // ISO 8601
 }
 
+/** A stable string for one *scope* (not a notebook) — still useful for comparing/grouping scopes
+ *  (e.g. NotebookPickerModal's prominence tiers), even though it's no longer a notebook's identity. */
 export function notebookScopeKey(scope: NotebookScope): string {
   return `${scope.category}:${scope.index}:${scope.source}:${scope.commentaryType ?? ""}`;
 }
 
-/** Human-readable label for a notebook's scope, e.g. "Tosafot on Gittin" / "Bavli, Gittin", or in
- *  Hebrew mode "תוספות על גיטין" / "בבלי, גיטין" — used by the cross-notebook search modal
- *  (NotebookSearchModal.tsx), which lists notebooks across every book/tractate at once and so
- *  can't rely on Reader.tsx's own scope-option labels (those are scoped to whatever's currently
- *  selected), and by NotebookPanel.tsx's own header/dropdown for the current scope. No chapter in
- *  the label — a Notebook is scoped to a whole book/commentary, not a chapter (see NotebookScope).
- *  Tanakh's book names are unambiguous on their own (no category prefix); every other category
- *  can share a tractate/work name across categories (e.g. "Pesachim" in both Mishnah and Talmud),
- *  so those get a category prefix. */
+/** Human-readable label for a scope on its own, e.g. "Tosafot on Gittin" / "Bavli, Gittin", or in
+ *  Hebrew mode "תוספות על גיטין" / "בבלי, גיטין" — used to seed a new notebook's default name
+ *  (NotebookPickerModal) and to build its "linked to X" subtitle (notebookSubtitle below). No
+ *  chapter in the label — a scope describes a whole book/commentary, not a chapter. Tanakh's book
+ *  names are unambiguous on their own (no category prefix); every other category can share a
+ *  tractate/work name across categories (e.g. "Pesachim" in both Mishnah and Talmud), so those get
+ *  a category prefix. */
 export function formatNotebookScopeLabel(scope: NotebookScope, hebrewMode = false): string {
   const bookName = getCategoryItemName(scope.category, scope.index, hebrewMode);
   if (scope.source === "commentary" && scope.commentaryType) {
@@ -62,6 +83,38 @@ export function formatNotebookScopeLabel(scope: NotebookScope, hebrewMode = fals
   return `${getCategoryDisplayName(scope.category, hebrewMode)}, ${bookName}`;
 }
 
+/** A notebook's prominence relative to `currentScope` (wherever the reader currently is) — tier 0:
+ *  this exact scope (e.g. "Ramban on Shemot" while reading Ramban on Shemot); tier 1: same book,
+ *  any source (a plain "Shemot" notebook, or a different commentary's); tier 2: everything else,
+ *  including every general notebook. Only ever looks at a notebook's fixed creation-time scope,
+ *  never what it's since accumulated anchors into — see Notebook.scope's own doc comment. Exported
+ *  (not just used internally by rankNotebooksByProminence below) so NotebookPickerModal can group
+ *  tiers 0/1 into a visually distinct "related" section, not just sort by it. */
+export function notebookProminenceTier(notebook: Notebook, currentScope: NotebookScope): 0 | 1 | 2 {
+  if (!notebook.scope) return 2;
+  if (notebookScopeKey(notebook.scope) === notebookScopeKey(currentScope)) return 0;
+  if (notebook.scope.category === currentScope.category && notebook.scope.index === currentScope.index) return 1;
+  return 2;
+}
+
+/** Sorts notebooks by prominence (notebookProminenceTier), recency (updatedAt desc) breaking ties
+ *  within a tier. Shared by NotebookPickerModal's existing-notebooks list and NotebookPanel's
+ *  switch dropdown so the two rank identically. */
+export function rankNotebooksByProminence(notebooks: Notebook[], currentScope: NotebookScope): Notebook[] {
+  return [...notebooks].sort((a, b) => {
+    const tierDiff = notebookProminenceTier(a, currentScope) - notebookProminenceTier(b, currentScope);
+    if (tierDiff !== 0) return tierDiff;
+    return b.updatedAt.localeCompare(a.updatedAt);
+  });
+}
+
+/** A notebook's linked-scope subtitle for list/picker rows — "General"/"כללית" for a scopeless
+ *  notebook, otherwise the same label formatNotebookScopeLabel gives the scope on its own. */
+export function notebookSubtitle(scope: NotebookScope | undefined, hebrewMode = false): string {
+  if (!scope) return hebrewMode ? "כללית" : "General";
+  return formatNotebookScopeLabel(scope, hebrewMode);
+}
+
 /** Empty Tiptap doc — a single empty paragraph, the shape `editor.getJSON()` produces for a
  *  blank editor, so a freshly created Notebook round-trips through setContent identically to
  *  one that's been typed in and cleared. */
@@ -72,7 +125,7 @@ export function emptyNotebookBody(): JSONContent {
 const STORAGE_KEY = "anytorah:notebooks";
 
 interface NotebookStore {
-  [scopeKey: string]: Notebook;
+  [id: string]: Notebook;
 }
 
 function loadStore(): NotebookStore {
@@ -98,24 +151,54 @@ export function loadNotebooks(): Notebook[] {
   return Object.values(loadStore());
 }
 
-export function loadNotebook(scope: NotebookScope): Notebook | undefined {
-  return loadStore()[notebookScopeKey(scope)];
+export function loadNotebook(id: string): Notebook | undefined {
+  return loadStore()[id];
 }
 
-export function saveNotebook(scope: NotebookScope, bodyJSON: JSONContent) {
+/** Creates and persists a brand-new, empty notebook — the only way a Notebook comes into being
+ *  (NotebookPickerModal's "create" flow). `scope` is fixed forever once set; see the field's own
+ *  doc comment on Notebook. */
+export function createNotebook(name: string, scope?: NotebookScope): Notebook {
   const store = loadStore();
   const previous = Object.values(store);
-  const scopeKey = notebookScopeKey(scope);
-  const existing = store[scopeKey];
-  store[scopeKey] = {
-    scopeKey,
+  const now = new Date().toISOString();
+  const notebook: Notebook = {
+    id: crypto.randomUUID(),
+    name,
     scope,
-    bodyJSON,
-    createdAt: existing?.createdAt ?? new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    bodyJSON: emptyNotebookBody(),
+    createdAt: now,
+    updatedAt: now,
   };
+  store[notebook.id] = notebook;
   saveStore(store);
-  syncArrayDiff("user_notebooks", previous, Object.values(store), (n) => n.scopeKey, "scope_key");
+  syncArrayDiff("user_notebooks", previous, Object.values(store), (n) => n.id, "client_id");
+  return notebook;
+}
+
+/** Updates an existing notebook's document body (NotebookPanel's autosave) — a no-op if `id`
+ *  doesn't exist, which shouldn't happen since a notebook is always created (createNotebook)
+ *  before its editor can ever call this. */
+export function saveNotebookBody(id: string, bodyJSON: JSONContent) {
+  const store = loadStore();
+  const existing = store[id];
+  if (!existing) return;
+  const previous = Object.values(store);
+  store[id] = { ...existing, bodyJSON, updatedAt: new Date().toISOString() };
+  saveStore(store);
+  syncArrayDiff("user_notebooks", previous, Object.values(store), (n) => n.id, "client_id");
+}
+
+/** Renames a notebook (its only ever-editable field besides body) — the picker's "choose a new
+ *  one" flow and any future rename UI both funnel through this. */
+export function renameNotebook(id: string, name: string) {
+  const store = loadStore();
+  const existing = store[id];
+  if (!existing) return;
+  const previous = Object.values(store);
+  store[id] = { ...existing, name, updatedAt: new Date().toISOString() };
+  saveStore(store);
+  syncArrayDiff("user_notebooks", previous, Object.values(store), (n) => n.id, "client_id");
 }
 
 /** Same reconcile-on-load pattern as lib/bookmarks.ts's loadAndReconcileBookmarks — see
@@ -125,9 +208,9 @@ export function saveNotebook(scope: NotebookScope, bodyJSON: JSONContent) {
  *  fail silently (logged, not thrown) and it simply stays local-only until unlocked. */
 export async function loadAndReconcileNotebooks(): Promise<Notebook[]> {
   const local = loadNotebooks();
-  const merged = await reconcileArray("user_notebooks", local, (n) => n.scopeKey, "scope_key");
+  const merged = await reconcileArray("user_notebooks", local, (n) => n.id, "client_id");
   const store: NotebookStore = {};
-  for (const notebook of merged) store[notebook.scopeKey] = notebook;
+  for (const notebook of merged) store[notebook.id] = notebook;
   saveStore(store);
   return merged;
 }

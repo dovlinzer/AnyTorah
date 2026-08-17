@@ -7,7 +7,6 @@ import type { Highlight } from "@/lib/highlights";
 import {
   extractAnchors,
   extractTags,
-  formatNotebookScopeLabel,
   getAnchorColor,
   getAnchorNotes,
   loadNotebooks,
@@ -25,6 +24,9 @@ interface SourceSheetEntry {
   quoteEn: string;
   note: string;
   highlight?: Highlight;
+  /** Set only for kind === "notebook-anchor" — which notebook this anchor actually lives in, so
+   *  navigating to it can pin the right one (a scope no longer identifies a single notebook). */
+  notebookId?: string;
 }
 
 // Matches the app's real top-level tab order (see AnyTorahWeb/CLAUDE.md's Tosefta/Yerushalmi and
@@ -136,10 +138,10 @@ export default function SourceSheetModal({
   highlights: Highlight[];
   onNavigateHighlight: (h: Highlight) => void;
   /** Notebook-anchor entries have no highlight record to navigate via — this jumps the reader to
-   *  the anchor's own location and opens the notebook to the matching scope (Reader.tsx wires this
-   *  to a new navigateToNotebookAnchor, which reuses the same reverse-sync flash Notebook Phase 2
-   *  already built for "the reader moved, does the open notebook have a matching anchor"). */
-  onNavigateNotebookAnchor: (anchor: TextAnchor) => void;
+   *  the anchor's own location and pins the specific notebook it came from (Reader.tsx wires this
+   *  to navigateToNotebookAnchor, which reuses the same reverse-sync flash Notebook Phase 2 already
+   *  built for "the reader moved, does the pinned notebook have a matching anchor"). */
+  onNavigateNotebookAnchor: (anchor: TextAnchor, notebookId: string) => void;
   onClose: () => void;
 }) {
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
@@ -158,7 +160,7 @@ export default function SourceSheetModal({
   // Empty = every notebook included — tracking exclusions (rather than a positive selection set)
   // means newly-created notebooks default to "included" without needing to pre-populate anything,
   // same convention as NotebookSearchModal's own notebook picker.
-  const [excludedScopeKeys, setExcludedScopeKeys] = useState<Set<string>>(new Set());
+  const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
   const [notebookPickerOpen, setNotebookPickerOpen] = useState(true);
 
   useEffect(() => setNotebooks(loadNotebooks()), []);
@@ -218,7 +220,7 @@ export default function SourceSheetModal({
   const notebookEntries: SourceSheetEntry[] = useMemo(() => {
     const list: SourceSheetEntry[] = [];
     for (const nb of notebooks) {
-      if (excludedScopeKeys.has(nb.scopeKey)) continue;
+      if (excludedIds.has(nb.id)) continue;
       const tagsByNodeId = new Map<string, string[]>();
       for (const tag of extractTags(nb.bodyJSON)) {
         for (const nodeId of tag.sourceNodeIds ?? []) {
@@ -229,7 +231,7 @@ export default function SourceSheetModal({
       }
       for (const a of extractAnchors(nb.bodyJSON)) {
         list.push({
-          key: `notebook:${nb.scopeKey}:${a.nodeId}`,
+          key: `notebook:${nb.id}:${a.nodeId}`,
           kind: "notebook-anchor",
           anchor: a.anchor,
           colorIndex: getAnchorColor(nb.bodyJSON, a.nodeId),
@@ -237,11 +239,12 @@ export default function SourceSheetModal({
           quoteHe: a.quoteHe ?? "",
           quoteEn: a.quoteEn ?? "",
           note: getAnchorNotes(nb.bodyJSON, a.nodeId),
+          notebookId: nb.id,
         });
       }
     }
     return list;
-  }, [notebooks, excludedScopeKeys]);
+  }, [notebooks, excludedIds]);
 
   const allEntries = useMemo(
     () => [...highlightEntries, ...notebookEntries].sort((a, b) => compareAnchors(a.anchor, b.anchor)),
@@ -388,38 +391,38 @@ export default function SourceSheetModal({
                 className="flex items-center gap-1 self-start text-xs font-medium hover:opacity-80"
                 style={{ color: "var(--accent)" }}
               >
-                {notebookPickerOpen ? "▾" : "▸"} Including {notebooks.length - excludedScopeKeys.size} of {notebooks.length} notebook
+                {notebookPickerOpen ? "▾" : "▸"} Including {notebooks.length - excludedIds.size} of {notebooks.length} notebook
                 {notebooks.length === 1 ? "" : "s"} — click to choose
               </button>
               {notebookPickerOpen && (
                 <div className="flex max-h-32 flex-col gap-1 overflow-y-auto rounded border border-border p-1.5">
                   <div className="flex gap-2 border-b border-border pb-1 text-[10px]">
-                    <button type="button" onClick={() => setExcludedScopeKeys(new Set())} className="opacity-60 hover:opacity-100">
+                    <button type="button" onClick={() => setExcludedIds(new Set())} className="opacity-60 hover:opacity-100">
                       All
                     </button>
                     <button
                       type="button"
-                      onClick={() => setExcludedScopeKeys(new Set(notebooks.map((n) => n.scopeKey)))}
+                      onClick={() => setExcludedIds(new Set(notebooks.map((n) => n.id)))}
                       className="opacity-60 hover:opacity-100"
                     >
                       None
                     </button>
                   </div>
                   {notebooks.map((n) => (
-                    <label key={n.scopeKey} className="flex items-center gap-1.5 text-xs">
+                    <label key={n.id} className="flex items-center gap-1.5 text-xs">
                       <input
                         type="checkbox"
-                        checked={!excludedScopeKeys.has(n.scopeKey)}
+                        checked={!excludedIds.has(n.id)}
                         onChange={(e) =>
-                          setExcludedScopeKeys((prev) => {
+                          setExcludedIds((prev) => {
                             const next = new Set(prev);
-                            if (e.target.checked) next.delete(n.scopeKey);
-                            else next.add(n.scopeKey);
+                            if (e.target.checked) next.delete(n.id);
+                            else next.add(n.id);
                             return next;
                           })
                         }
                       />
-                      {formatNotebookScopeLabel(n.scope)}
+                      {n.name}
                     </label>
                   ))}
                 </div>
@@ -436,7 +439,11 @@ export default function SourceSheetModal({
             results.map((entry) => (
               <button
                 key={entry.key}
-                onClick={() => (entry.kind === "highlight" ? onNavigateHighlight(entry.highlight!) : onNavigateNotebookAnchor(entry.anchor))}
+                onClick={() =>
+                  entry.kind === "highlight"
+                    ? onNavigateHighlight(entry.highlight!)
+                    : onNavigateNotebookAnchor(entry.anchor, entry.notebookId!)
+                }
                 className="block w-full rounded px-2 py-2 text-left hover:bg-[var(--border)]"
               >
                 <EntryBody entry={entry} colorLabels={colorLabels} includeNotes={includeNotes} />

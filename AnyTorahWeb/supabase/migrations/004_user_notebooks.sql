@@ -1,11 +1,15 @@
+-- client_id (not scope_key — see lib/notebooks.ts's module comment on the notebook identity
+-- redesign) is the app-generated Notebook.id, the same sync-dedup column name bookmarks/highlights
+-- already use (lib/supabase/sync.ts). A notebook's scope is optional, fixed-at-creation metadata
+-- now, not its identity, so it's no longer part of this table's uniqueness constraint.
 create table if not exists user_notebooks (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users on delete cascade,
-  scope_key text not null,
+  client_id text not null,
   data jsonb not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (user_id, scope_key)
+  unique (user_id, client_id)
 );
 
 alter table user_notebooks enable row level security;

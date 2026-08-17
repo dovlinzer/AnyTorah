@@ -15,12 +15,10 @@ import {
   emptyNotebookBody,
   extractAnchors,
   extractTags,
-  formatNotebookScopeLabel,
   loadNotebook,
-  loadNotebooks,
-  loadAndReconcileNotebooks,
-  notebookScopeKey,
-  saveNotebook,
+  notebookSubtitle,
+  rankNotebooksByProminence,
+  saveNotebookBody,
   type Notebook,
   type NotebookScope,
 } from "@/lib/notebooks";
@@ -29,7 +27,6 @@ import { HIGHLIGHT_CATEGORY_COUNT, loadHighlightCategoryLabels } from "@/lib/hig
 import FontSizeSlider from "@/components/FontSizeSlider";
 import { fontSizePx, FONT_SIZE_MIN, FONT_SIZE_MAX } from "@/lib/fontSizeLevels";
 import { schedulePreferencesSync } from "@/lib/preferences";
-import { useAuth } from "@/components/AuthProvider";
 
 const AUTOSAVE_DELAY_MS = 500;
 const NOTEBOOK_FONT_SIZE_KEY = "anytorah:notebookFontSizeLevel";
@@ -77,48 +74,55 @@ function dedupeTags(tags: { tagId: string; label: string }[]): string[] {
   return Array.from(new Set(tags.map((t) => t.label))).sort((a, b) => a.localeCompare(b));
 }
 
-export interface NotebookScopeOption {
-  source: NotebookScope["source"];
-  commentaryType?: NotebookScope["commentaryType"];
-  label: string;
-}
-
-/** Side-panel Notebook editor for one scope (main text of the current book, or one of its active
- *  commentaries) — mount with `key={notebookScopeKey(scope)}` from Reader.tsx so switching scope
- *  remounts this component (and thus useEditor) instead of manually resyncing content. */
+/** Side-panel Notebook editor for one pinned notebook — mount with `key={notebookId}` from
+ *  Reader.tsx so switching to a different notebook remounts this component (and thus useEditor)
+ *  instead of manually resyncing content. Which notebook is pinned never changes on its own as the
+ *  reader navigates elsewhere — only an explicit switch (this panel's own dropdown below, or
+ *  Reader.tsx's 📓 picker) changes it. See lib/notebooks.ts's module comment. */
 export default function NotebookPanel({
-  scope,
+  notebookId,
+  allNotebooks,
+  currentScope,
   readerChapter,
   readerHalakha,
   readerAmud,
   hebrewMode = false,
-  scopeOptions,
-  onScopeChange,
-  onNavigateToOtherScope,
+  onSwitchNotebook,
   onNavigateAnchor,
   onEditorReady,
   onClose,
   initialSearchTerm,
   onInitialSearchConsumed,
+  isFloating,
+  onToggleFloating,
 }: {
-  scope: NotebookScope;
-  /** Wherever the reader currently is, within this notebook's scope's book/tractate — drives
-   *  reverse sync: scrolling to and flashing whichever anchor pill(s) match. Anchor matching is
+  /** The pinned-open notebook's id — identity, not scope (see lib/notebooks.ts). */
+  notebookId: string;
+  /** Every notebook the user has, for the switch-notebook dropdown below — Reader.tsx owns the
+   *  single load/reconcile call so this panel doesn't need its own copy. */
+  allNotebooks: Notebook[];
+  /** Wherever the reader currently is (independent of which notebook is pinned open) — used only
+   *  to rank the switch dropdown's options by prominence (rankNotebooksByProminence), the same
+   *  ranking NotebookPickerModal uses. Never used to auto-switch anything. */
+  currentScope: NotebookScope;
+  /** Wherever the reader currently is, in reverse-sync-anchor-matching granularity: scrolling to
+   *  and flashing whichever of *this* notebook's embedded anchor pill(s) match. Anchor matching is
    *  chapter/halakha/amud granularity — this app still has no scroll-to-*segment* infrastructure,
-   *  so an anchor pointing at a specific verse/paragraph still only resolves to its chapter. */
+   *  so an anchor pointing at a specific verse/paragraph still only resolves to its chapter. This
+   *  is genuinely scope-agnostic already (it just scans this notebook's own anchors), so it keeps
+   *  working unchanged regardless of what the notebook's own linked scope (if any) is. */
   readerChapter: number;
   readerHalakha?: number;
   /** Talmud only — which amud the reader is currently on, for amud-aware matching. Anchors
    *  created before this field existed omit `amud` and match on chapter alone (broader match). */
   readerAmud?: "a" | "b";
-  /** saHebrewMode — the scope dropdown, header line, and newly-inserted anchor pill labels all
+  /** saHebrewMode — the switch dropdown, header line, and newly-inserted anchor pill labels all
    *  render in Hebrew when true. */
   hebrewMode?: boolean;
-  scopeOptions: NotebookScopeOption[];
-  onScopeChange: (option: NotebookScopeOption) => void;
-  /** Selecting a notebook from the "Other notebooks" group (any notebook ever created, not just
-   *  ones for the current book) — unlike onScopeChange, this can change category/index too. */
-  onNavigateToOtherScope: (scope: NotebookScope) => void;
+  /** Pins a different existing notebook open — the panel's own "pull-down menu on top of the
+   *  notebook itself." Creating a brand-new notebook is only ever done via Reader.tsx's 📓 picker
+   *  (NotebookPickerModal), not from here. */
+  onSwitchNotebook: (id: string) => void;
   onNavigateAnchor: (anchor: TextAnchor) => void;
   onEditorReady: (insertAnchor: (anchor: TextAnchor, quoteHe?: string, quoteEn?: string) => void) => void;
   onClose: () => void;
@@ -126,8 +130,13 @@ export default function NotebookPanel({
    *  the in-doc find bar pre-seeded with the query that matched, so the user lands on the hit. */
   initialSearchTerm?: string;
   /** Fired once initialSearchTerm has been applied — Reader.tsx clears its copy so a later,
-   *  unrelated scope switch doesn't reapply a stale seeded search. */
+   *  unrelated notebook switch doesn't reapply a stale seeded search. */
   onInitialSearchConsumed?: () => void;
+  /** Whether Reader.tsx is currently rendering this panel inside FloatingNotebookWindow rather
+   *  than the docked in-flow layout. Omit both this and onToggleFloating to hide the pop-out
+   *  button entirely (e.g. for a future embed that has no floating concept). */
+  isFloating?: boolean;
+  onToggleFloating?: () => void;
 }) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [findOpen, setFindOpen] = useState(!!initialSearchTerm);
@@ -149,25 +158,17 @@ export default function NotebookPanel({
     setFontSizeLevelState(level);
     storeNotebookFontSizeLevel(level);
   };
-  // Loaded once per mount (this component remounts on scope change anyway) — the "Other
-  // notebooks" picker doesn't need to react to notebooks created in other tabs/sessions live.
-  // Signed-in users additionally reconcile against Supabase on each mount, to pick up notebooks
-  // created on another device. loadAndReconcileNotebooks no-ops to a signed-out-safe default
-  // internally (it reads the current user id itself — see lib/supabase/sync.ts's
-  // getSyncUserId), so this effect can call it unconditionally, same as Reader.tsx's
-  // bookmarks/highlights reconcile effects.
-  const { user } = useAuth();
-  const [allNotebooks, setAllNotebooks] = useState<Notebook[]>(() => loadNotebooks());
-  useEffect(() => {
-    loadAndReconcileNotebooks().then(setAllNotebooks);
-  }, [user?.id]);
-
-  // Multi-notebook subscription gating (lib/notebookAccess.ts's isNotebookScopeLocked, still
-  // enforced independently by user_notebooks' RLS policy) is disabled here for now — the
-  // subscription flow isn't ready to ship yet and the lock screen was blocking normal
-  // multi-notebook testing. Re-enable by restoring the isNotebookScopeLocked call (plus the
-  // subscriptionActive fetch it depended on) once that flow is actually ready to launch.
+  // Multi-notebook subscription gating (lib/notebookAccess.ts's isNotebookLocked, still enforced
+  // independently by user_notebooks' RLS policy) is disabled here for now — the subscription flow
+  // isn't ready to ship yet and the lock screen was blocking normal multi-notebook testing.
+  // Re-enable by restoring the isNotebookLocked call (plus the subscriptionActive fetch it
+  // depended on) once that flow is actually ready to launch.
   const isLocked = false;
+
+  // loadNotebook is a cheap synchronous localStorage read (see lib/notebooks.ts) — safe to call
+  // directly at render time rather than needing its own effect/state, and always fresh since this
+  // component remounts (key={notebookId} in Reader.tsx) whenever notebookId itself changes.
+  const currentNotebook = loadNotebook(notebookId);
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -182,7 +183,7 @@ export default function NotebookPanel({
       SectionColorExtension,
       TagNodeExtension,
     ],
-    content: loadNotebook(scope)?.bodyJSON ?? emptyNotebookBody(),
+    content: currentNotebook?.bodyJSON ?? emptyNotebookBody(),
     onCreate: ({ editor }) => {
       setHeadings(extractHeadings(editor));
       setNoteTags(dedupeTags(extractTags(editor.getJSON())));
@@ -190,7 +191,7 @@ export default function NotebookPanel({
     onUpdate: ({ editor }) => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = setTimeout(() => {
-        saveNotebook(scope, editor.getJSON());
+        saveNotebookBody(notebookId, editor.getJSON());
       }, AUTOSAVE_DELAY_MS);
       setHeadings(extractHeadings(editor));
       setNoteTags(dedupeTags(extractTags(editor.getJSON())));
@@ -220,8 +221,8 @@ export default function NotebookPanel({
 
   // Run the seeded search whenever a fresh term arrives (cross-notebook search hand-off). Keyed
   // on initialSearchTerm itself, not just [editor] — navigating to a notebook that's already the
-  // open one doesn't remount this component (same key={notebookScopeKey(scope)} in Reader.tsx),
-  // so relying on mount alone would silently drop the seeded search in that case.
+  // open one doesn't remount this component (same key={notebookId} in Reader.tsx), so relying on
+  // mount alone would silently drop the seeded search in that case.
   useEffect(() => {
     if (!editor || !initialSearchTerm) return;
     setFindOpen(true);
@@ -231,13 +232,13 @@ export default function NotebookPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- onInitialSearchConsumed ref intentionally excluded
   }, [editor, initialSearchTerm]);
 
-  // Flush a pending debounced save immediately on unmount (scope switch or panel close) so the
+  // Flush a pending debounced save immediately on unmount (notebook switch or panel close) so the
   // last few hundred ms of typing aren't lost to the debounce window.
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
-        if (editor && !editor.isDestroyed) saveNotebook(scope, editor.getJSON());
+        if (editor && !editor.isDestroyed) saveNotebookBody(notebookId, editor.getJSON());
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on unmount
@@ -262,10 +263,12 @@ export default function NotebookPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- onEditorReady ref is set once editor exists
   }, [editor, hebrewMode]);
 
-  // Reverse sync — scroll to and briefly flash whichever anchor pill(s) match wherever the
-  // reader currently is. Runs on mount too (matching "always showing the matching notebook"),
-  // not just on subsequent navigation, since Reader.tsx remounts this component fresh whenever
-  // scope changes (key={notebookScopeKey(scope)}).
+  // Reverse sync — scroll to and briefly flash whichever of *this* notebook's anchor pill(s)
+  // match wherever the reader currently is. Genuinely scope-agnostic (just scans this notebook's
+  // own embedded anchors against the reader's position), so it needed no changes for the
+  // pinned-notebook redesign. Runs on mount too, not just on subsequent navigation, since
+  // Reader.tsx remounts this component fresh whenever the pinned notebook itself changes
+  // (key={notebookId}).
   useEffect(() => {
     if (!editor) return;
     const matches = extractAnchors(editor.getJSON()).filter(
@@ -285,66 +288,41 @@ export default function NotebookPanel({
     return () => clearTimeout(timeout);
   }, [editor, readerChapter, readerHalakha, readerAmud]);
 
-  const currentOptionLabel =
-    scopeOptions.find(
-      (o) => o.source === scope.source && (o.commentaryType ?? undefined) === (scope.commentaryType ?? undefined),
-    )?.label ?? formatNotebookScopeLabel(scope, hebrewMode);
-
-  // "Other notebooks" — every notebook ever created that isn't already reachable through the
-  // "this book" group above (a different book/tractate entirely, or a commentary that used to be
-  // an active slot but no longer is). Selecting one can change category/index, unlike
-  // onScopeChange which only switches source/commentaryType within the current book.
-  const currentScopeKeys = new Set(
-    scopeOptions.map((o) => notebookScopeKey({ category: scope.category, index: scope.index, source: o.source, commentaryType: o.commentaryType })),
-  );
-  const otherNotebookOptions = allNotebooks
-    .filter((n) => !currentScopeKeys.has(n.scopeKey))
-    .map((n) => ({ scopeKey: n.scopeKey, scope: n.scope, label: formatNotebookScopeLabel(n.scope, hebrewMode) }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+  // The switch dropdown lists every notebook, ranked the same way NotebookPickerModal ranks its
+  // own list (rankNotebooksByProminence) so the two feel consistent — the notebook(s) most likely
+  // to be relevant to wherever the reader actually is sort to the top, but every notebook is
+  // always reachable, not just ones "for" the current book.
+  const rankedNotebooks = rankNotebooksByProminence(allNotebooks, currentScope);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border p-2">
         <select
-          value={notebookScopeKey(scope)}
-          onChange={(e) => {
-            const key = e.target.value;
-            const here = scopeOptions.find(
-              (o) =>
-                notebookScopeKey({ category: scope.category, index: scope.index, source: o.source, commentaryType: o.commentaryType }) === key,
-            );
-            if (here) {
-              onScopeChange(here);
-              return;
-            }
-            const other = otherNotebookOptions.find((o) => o.scopeKey === key);
-            if (other) onNavigateToOtherScope(other.scope);
-          }}
+          value={notebookId}
+          onChange={(e) => onSwitchNotebook(e.target.value)}
           dir={hebrewMode ? "rtl" : "ltr"}
           className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs"
           style={hebrewMode ? { textAlign: "right" } : undefined}
-          aria-label="Notebook scope"
+          aria-label={hebrewMode ? "החלף מחברת" : "Switch notebook"}
         >
-          <optgroup label={hebrewMode ? "הטקסט הזה" : "This text"}>
-            {scopeOptions.map((o) => {
-              const key = notebookScopeKey({ category: scope.category, index: scope.index, source: o.source, commentaryType: o.commentaryType });
-              return (
-                <option key={key} value={key}>
-                  {o.label}
-                </option>
-              );
-            })}
-          </optgroup>
-          {otherNotebookOptions.length > 0 && (
-            <optgroup label={hebrewMode ? "עוד מחברות" : "Other notebooks"}>
-              {otherNotebookOptions.map((o) => (
-                <option key={o.scopeKey} value={o.scopeKey}>
-                  {o.label}
-                </option>
-              ))}
-            </optgroup>
-          )}
+          {rankedNotebooks.map((n) => (
+            <option key={n.id} value={n.id}>
+              {n.scope ? `${n.name} (${notebookSubtitle(n.scope, hebrewMode)})` : n.name}
+            </option>
+          ))}
         </select>
+        {onToggleFloating && (
+          <button
+            onClick={onToggleFloating}
+            aria-label={isFloating ? "Dock notebook" : "Pop out notebook"}
+            title={isFloating ? "Dock notebook back into the page" : "Pop out notebook into a floating window"}
+            className="shrink-0 rounded-full border border-border px-2 py-1 text-xs hover:border-[var(--accent)]"
+          >
+            <span aria-hidden style={{ display: "inline-block", transform: isFloating ? "rotate(180deg)" : undefined }}>
+              ⤢
+            </span>
+          </button>
+        )}
         <button
           onClick={onClose}
           aria-label="Close notebook"
@@ -644,7 +622,10 @@ export default function NotebookPanel({
         dir={hebrewMode ? "rtl" : "ltr"}
         className={`shrink-0 px-2 pt-1.5 text-[10px] opacity-50 ${hebrewMode ? "text-right" : ""}`}
       >
-        {hebrewMode ? `מחברת — ${currentOptionLabel}` : `Notebook — ${currentOptionLabel}`}
+        {hebrewMode
+          ? `מחברת — ${currentNotebook?.name ?? ""}`
+          : `Notebook — ${currentNotebook?.name ?? ""}`}
+        {currentNotebook?.scope && ` (${notebookSubtitle(currentNotebook.scope, hebrewMode)})`}
       </p>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">

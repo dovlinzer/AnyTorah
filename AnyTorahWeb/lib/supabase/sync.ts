@@ -26,9 +26,9 @@ export function getSyncUserId(): string | null {
 /** Fire-and-forget: upserts every item that's new or changed in `next` vs. `previous`, deletes
  *  every item that dropped out of `next`. Errors are logged, not thrown — a failed background
  *  sync must never block or roll back the local save that already succeeded. `getId` extracts
- *  each item's natural key (`Bookmark.id`/`Highlight.id`/`Notebook.scopeKey`) — tables vary in
+ *  each item's natural key (`Bookmark.id`/`Highlight.id`/`Notebook.id`) — tables vary in
  *  what they call the matching column, hence `idColumn` (defaults to "client_id", the column
- *  bookmarks/highlights use; notebooks pass "scope_key"). */
+ *  every table including notebooks now uses). */
 export function syncArrayDiff<T>(table: string, previous: T[], next: T[], getId: (item: T) => string, idColumn = "client_id") {
   const userId = currentUserId;
   if (!userId) return;

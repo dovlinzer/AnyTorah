@@ -117,17 +117,7 @@ export default function CommentaryPanel({
   const contentRef = useRef<HTMLDivElement>(null);
   const amudBRef = useRef<HTMLDivElement>(null);
 
-  // Set just before the auto-reset below, and consumed (once) by the onActiveTypeChange effect —
-  // an automatic "landed on a new book, snap back to tab 0" reset must never itself count as the
-  // user switching to that tab. Without this guard, onActiveTypeChange fired on every single
-  // category/index change (any book has a commentary panel), permanently clobbering Reader.tsx's
-  // "reset notebook focus to main on book/tractate change" default with whatever the first
-  // commentary tab happens to be — a real bug, found live: switching to Bavli and opening the
-  // notebook always landed on "Rashi on {tractate}" instead of the tractate's own main-text notes.
-  const isAutoResetRef = useRef(false);
-
   useEffect(() => {
-    isAutoResetRef.current = true;
     setActiveIndex(0);
     setOpenSlotIndex(null);
     // Slot *assignments* reset in Reader (which owns them); this just resets which tab is
@@ -136,11 +126,21 @@ export default function CommentaryPanel({
 
   const activeType = effectiveSlots[activeIndex] ?? slots[activeIndex];
 
+  // Real bug fixed here (reported live, notebook redesign follow-up): an "isAutoResetRef" guard
+  // used to suppress this notification specifically for the auto-reset-to-tab-0 case above (an
+  // automatic "landed on a new book, snap back to tab 0" was never supposed to count as the user
+  // switching to that tab). That made sense under the old model, where this notification drove
+  // which notebook auto-opened — an untouched default commentary auto-opening its notebook on
+  // every single book visited would have been wrong. But nothing auto-opens anymore (see
+  // Reader.tsx's readingFocus/NotebookPickerModal) — this is now purely an advisory hint for what
+  // NotebookPickerModal *offers*, so the old rationale for suppressing it no longer applies, and
+  // suppressing it left a real gap: the commentary genuinely showing in position 1 — on first
+  // load, or after landing on a new book/tractate — was never offered as a create-option in the
+  // picker until the user switched away from it and back, since only a *genuine* index change
+  // (not the auto-reset-to-0 one) used to fire this. Removed the guard entirely; this effect now
+  // always reports whatever commentary is actually on screen, whether the user explicitly clicked
+  // it or it's simply what's showing by default.
   useEffect(() => {
-    if (isAutoResetRef.current) {
-      isAutoResetRef.current = false;
-      return;
-    }
     if (activeType) onActiveTypeChange?.(activeType);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- onActiveTypeChange ref intentionally excluded, fire only when the tab itself changes
   }, [activeType]);
