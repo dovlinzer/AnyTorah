@@ -582,14 +582,17 @@ override), `photo_url`, `status` (`"approved"`).
   already-approved row sharing an app flag — a `confirm()` dialog, not a hard block. If more than
   one ends up active regardless, `fetch()` picks deterministically: `period`'s display tier
   (today > week > month), then most recently created — unchanged from before this feature.
-- **App targeting**: three independent boolean columns — `for_anytorah`, `for_anydaf`,
-  `for_anytorah_web` — replacing an older single `app` text column (`"anytorah"`/`"anydaf"`/`"both"`)
-  that couldn't target AnyTorah Web independently of native AnyTorah. `DedicationService.swift`/`.kt`
-  here filter `for_anytorah=eq.true`; AnyDaf's native services filter `for_anydaf=eq.true`;
-  AnyTorahWeb's `app/api/dedication/route.ts` filters `for_anytorah_web=eq.true`. Migrated via
-  `AnyDaf/dedication-app-targeting-migration.sql` (run manually in the Supabase SQL editor — no
-  service-role key is available to any of these codebases to run DDL programmatically). The old
-  `app` column is left in place, unused, after the migration.
+- **App targeting**: four independent boolean columns — `for_anytorah`, `for_anydaf`,
+  `for_anytorah_web`, `for_anyyctorah` (the last added 2026-08-18) — replacing an older single
+  `app` text column (`"anytorah"`/`"anydaf"`/`"both"`) that couldn't target apps independently.
+  `DedicationService.swift`/`.kt` here filter `for_anytorah=eq.true`; AnyDaf's native services
+  filter `for_anydaf=eq.true`; AnyTorahWeb's `app/api/dedication/route.ts` filters
+  `for_anytorah_web=eq.true`; AnyYCTorah's `DedicationService.swift` filters
+  `for_anyyctorah=eq.true` (see `AnyYCTorah/CLAUDE.md`'s "Dedications" section). Migrated via
+  `AnyDaf/dedication-app-targeting-migration.sql` and `AnyYCTorah/dedication-anyyctorah-
+  migration.sql` (both run manually in the Supabase SQL editor — no service-role key is available
+  to any of these codebases to run DDL programmatically). The old `app` column is left in place,
+  unused, after the migration.
 - **Admin submission form**: `AnyDaf/dedication-form.html` — a standalone HTML/JS tool (not part
   of any app build) shared across all three apps, with three independent checkboxes (AnyDaf /
   AnyTorah / AnyTorah Web) instead of the old three-way radio group, plus a Start date/End date
