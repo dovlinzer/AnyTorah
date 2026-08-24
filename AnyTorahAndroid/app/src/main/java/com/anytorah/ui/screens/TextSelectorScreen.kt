@@ -115,7 +115,7 @@ fun TextSelectorScreen(
                     }
                 }
                 Text(
-                    text = vm.category.displayName,
+                    text = vm.categoryDisplayName,
                     color = colors.appForeground,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -278,18 +278,9 @@ private fun MishnahWheels(vm: TextReaderViewModel, yomiResults: YomiService.Yomi
     }
     val currentChapter = if (isTosefta) vm.toseftaChapter else vm.mishnahChapter
 
-    // Subcategory toggle
-    val colors = LocalAnyTorahColors.current
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-        MishnahSubcategory.entries.forEachIndexed { idx, sub ->
-            SegmentedButton(
-                selected = vm.mishnahSubcategory == sub,
-                onClick = { vm.mishnahSubcategory = sub },
-                shape = SegmentedButtonDefaults.itemShape(index = idx, count = MishnahSubcategory.entries.size),
-                label = { Text(if (hebrewMode) sub.hebrewName else sub.displayName) }
-            )
-        }
-    }
+    // Mishnah and Tosefta are each chosen up front as independent, flat home-screen categories
+    // (not sub-choices within a shared category), so there is no in-selector toggle between
+    // them — switching means going back to Home and picking the sibling category.
 
     if (hebrewMode) {
         // RTL: Chapter | Tractate | Seder (seder on far right)
@@ -362,20 +353,10 @@ private fun MishnahWheels(vm: TextReaderViewModel, yomiResults: YomiService.Yomi
 
 @Composable
 private fun TalmudWheels(vm: TextReaderViewModel, yomiResults: YomiService.YomiResults?, isLoadingYomi: Boolean) {
-    val hebrewMode = vm.saHebrewMode
-
-    // Subcategory toggle
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-        TalmudSubcategory.entries.forEachIndexed { idx, sub ->
-            SegmentedButton(
-                selected = vm.talmudSubcategory == sub,
-                onClick = { vm.talmudSubcategory = sub },
-                shape = SegmentedButtonDefaults.itemShape(index = idx, count = TalmudSubcategory.entries.size),
-                label = { Text(if (hebrewMode) sub.hebrewName else sub.displayName) }
-            )
-        }
-    }
-
+    // Talmud Bavli and Talmud Yerushalmi are each chosen up front as independent, flat
+    // home-screen categories (not sub-choices within a shared category), so there is no
+    // in-selector toggle between them — switching means going back to Home and picking the
+    // sibling category.
     if (vm.talmudSubcategory == TalmudSubcategory.YERUSHALMI) {
         YerushalmiWheels(vm = vm)
     } else {
@@ -930,7 +911,6 @@ private fun YomiButton(
 @Composable
 private fun MidrashWheels(vm: TextReaderViewModel) {
     val hebrewMode = vm.saHebrewMode
-    val colors = LocalAnyTorahColors.current
 
     val availableWorks = MidrashWork.worksFor(vm.midrashSubcategory)
     val workIdx = availableWorks.indexOf(vm.midrashWork).coerceAtLeast(0)
@@ -942,30 +922,10 @@ private fun MidrashWheels(vm: TextReaderViewModel) {
     val chapterCount = currentBook?.chapters ?: 1
     val verseCount = torahVerseCount(vm.midrashBookIndex, vm.midrashChapter)
 
-    // Subcategory toggle
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-        MidrashSubcategory.entries.forEachIndexed { idx, sub ->
-            SegmentedButton(
-                selected = vm.midrashSubcategory == sub,
-                onClick = {
-                    if (vm.midrashSubcategory != sub) {
-                        vm.midrashSubcategory = sub
-                        val firstWork = MidrashWork.worksFor(sub).first()
-                        vm.midrashWork = firstWork
-                        if (firstWork.applicableBookIndices.isNotEmpty()) {
-                            vm.midrashBookIndex = firstWork.applicableBookIndices.first()
-                        }
-                        vm.midrashChapter = 1
-                        vm.midrashVerse = 1
-                    }
-                },
-                shape = SegmentedButtonDefaults.itemShape(index = idx, count = MidrashSubcategory.entries.size),
-                label = { Text(if (hebrewMode) sub.hebrewName else sub.displayName, fontSize = 13.sp) }
-            )
-        }
-    }
-
-    Spacer(modifier = Modifier.height(8.dp))
+    // Midrash Halakha and Midrash Aggada are each chosen up front as independent, flat
+    // home-screen categories (not sub-choices within a shared category), so there is no
+    // in-selector toggle between them — switching means going back to Home and picking the
+    // sibling category.
 
     // Work picker
     SelectorLabel(if (hebrewMode) "מדרש" else "Work")

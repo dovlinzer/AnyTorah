@@ -1,8 +1,18 @@
 import SwiftUI
 
-/// Home screen: category buttons only. Tapping a category restores its last-used
-/// selection (or a sensible default) and immediately opens the reader — book/chapter/daf
-/// navigation happens from the picker controls in the reader's own header, not here.
+/// Home screen: category buttons only, styled after AnyYCTorah's two-column gradient tile
+/// grid (`HomeView.swift`/`BrandGradients.swift`) — purple-family tiles on the left, blue-
+/// family tiles on the right. Tapping a category restores its last-used selection (or a
+/// sensible default) and immediately opens the reader — book/chapter/daf navigation happens
+/// from the picker controls in the reader's own header, not here.
+///
+/// Mishnah/Tosefta, Talmud Bavli/Talmud Yerushalmi, and Midrash Halakha/Midrash Aggada are
+/// each their own independent, flat entry here — not sub-choices within a shared category.
+/// Under the hood they still share `TextCategory.mishnah`/`.talmud`/`.midrash` plus a fixed
+/// subcategory (that's how the underlying Sefaria data and navigation wheels are genuinely
+/// organized), but nothing downstream ever re-presents that as a toggle or a nested choice —
+/// see `TextReaderViewModel.categoryDisplayName` and `TextSelectorView`'s removed subcategory
+/// toggle.
 struct HomeCombinedView: View {
     @Bindable var vm: TextReaderViewModel
     let appBg: Color
@@ -12,125 +22,121 @@ struct HomeCombinedView: View {
     @State private var showSettings = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header: gear (left) + centered app title
-            ZStack(alignment: .leading) {
-                Text("AnyTorah")
-                    .font(.title2.bold())
-                    .foregroundStyle(appFg)
-                    .frame(maxWidth: .infinity)
-                Button { showSettings = true } label: {
-                    Image(systemName: "gear")
-                        .font(.title3)
-                        .foregroundStyle(appFg.opacity(0.75))
-                        .padding(8)
+        ScrollView {
+            VStack(spacing: 20) {
+                header
+
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(spacing: 12) {
+                        ForEach(HomeCategoryEntry.leftColumn) { entry in
+                            categoryButton(entry)
+                        }
+                    }
+                    VStack(spacing: 12) {
+                        ForEach(HomeCategoryEntry.rightColumn) { entry in
+                            categoryButton(entry)
+                        }
+                    }
                 }
+                .frame(maxWidth: 600)
+                .padding(.horizontal, 16)
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 40)
-            .padding(.bottom, 14)
-
-            Spacer()
-
-            CategoryGrid(fg: appFg, onSelect: selectCategory)
-                .padding(.horizontal, 20)
-                .frame(maxWidth: 480)
-
-            Spacer()
-            Spacer()
+            .padding(.bottom, 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(appBg.ignoresSafeArea())
         .sheet(isPresented: $showSettings) { SettingsView() }
     }
 
-    private func selectCategory(_ cat: TextCategory) {
-        vm.category = cat
-        vm.restoreState(for: cat)
+    private var header: some View {
+        ZStack(alignment: .trailing) {
+            Text("AnyTorah")
+                .font(.title2.bold())
+                .foregroundStyle(appFg)
+                .frame(maxWidth: .infinity)
+            Button { showSettings = true } label: {
+                Image(systemName: "gear")
+                    .font(.title3)
+                    .foregroundStyle(appFg.opacity(0.75))
+                    .padding(8)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 40)
+    }
+
+    private func categoryButton(_ entry: HomeCategoryEntry) -> some View {
+        Button { select(entry) } label: {
+            CategoryTile(entry: entry)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func select(_ entry: HomeCategoryEntry) {
+        vm.category = entry.category
+        vm.restoreState(for: entry.category)
+        entry.applySelection(vm)
         onGo()
     }
 }
 
-// MARK: - Category grid, wrapped 3-per-row
+// MARK: - Category tile (icon + label, gradient background — matches AnyYCTorah's TopicCard)
 
-private struct CategoryGrid: View {
-    let fg: Color
-    let onSelect: (TextCategory) -> Void
-
-    private static let cardHeight: CGFloat = 90
-    private static let spacing: CGFloat = 8
-    private static let perRow = 3
-
-    // Chunks *all* cases into rows of `perRow`, so adding/removing a category (e.g. Tur) can
-    // never silently drop one — a hardcoded prefix(3)/suffix(3) split here previously assumed
-    // exactly 6 categories and dropped whichever one landed in the middle once a 7th was added.
-    private var rows: [[TextCategory]] {
-        let all = TextCategory.allCases
-        return stride(from: 0, to: all.count, by: Self.perRow).map {
-            Array(all[$0..<min($0 + Self.perRow, all.count)])
-        }
-    }
+private struct CategoryTile: View {
+    let entry: HomeCategoryEntry
 
     var body: some View {
-        GeometryReader { geo in
-            let cardWidth = (geo.size.width - Self.spacing * 2) / CGFloat(Self.perRow)
-            let rows = rows
-
-            VStack(spacing: Self.spacing) {
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                    HStack(spacing: Self.spacing) {
-                        ForEach(row) { cat in
-                            CompactCategoryCard(category: cat, fg: fg) {
-                                onSelect(cat)
-                            }
-                            .frame(width: cardWidth, height: Self.cardHeight)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: row.count == Self.perRow ? .leading : .center)
-                }
-            }
+        HStack(spacing: 10) {
+            Image(systemName: entry.icon)
+                .font(.title3)
+            Text(entry.label)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(2)
+            Spacer(minLength: 0)
         }
-        .frame(height: Self.cardHeight * CGFloat(rows.count) + Self.spacing * CGFloat(max(0, rows.count - 1)))
+        .foregroundStyle(entry.colorFamily.prefersDarkForeground ? .black.opacity(0.75) : .white)
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+        .background(entry.colorFamily.gradient)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 
-// MARK: - Category card
+// MARK: - Category entries
 
-private struct CompactCategoryCard: View {
+private struct HomeCategoryEntry: Identifiable {
+    let id: String
+    let label: String
+    let icon: String
+    let colorFamily: BrandColorFamily
     let category: TextCategory
-    let fg: Color
-    let onTap: () -> Void
+    /// Forces the specific subcategory this button represents. No-op for categories with no
+    /// subcategory concept (Tanakh, Rambam, Tur, Shulkhan Arukh).
+    let applySelection: (TextReaderViewModel) -> Void
 
-    @State private var pressed = false
+    static let leftColumn: [HomeCategoryEntry] = [
+        HomeCategoryEntry(id: "tanakh", label: "Tanakh", icon: "book.closed",
+                           colorFamily: .purple, category: .tanakh) { _ in },
+        HomeCategoryEntry(id: "midrashAggada", label: "Midrash Aggada", icon: "quote.bubble",
+                           colorFamily: .violet, category: .midrash) { $0.midrashSubcategory = .aggada },
+        HomeCategoryEntry(id: "midrashHalakha", label: "Midrash Halakha", icon: "text.book.closed",
+                           colorFamily: .lavender, category: .midrash) { $0.midrashSubcategory = .halakha },
+        HomeCategoryEntry(id: "mishnah", label: "Mishnah", icon: "books.vertical",
+                           colorFamily: .blossom, category: .mishnah) { $0.mishnahSubcategory = .mishnah },
+        HomeCategoryEntry(id: "tosefta", label: "Tosefta", icon: "doc.text",
+                           colorFamily: .plum, category: .mishnah) { $0.mishnahSubcategory = .tosefta },
+    ]
 
-    var body: some View {
-        Button(action: onTap) {
-            VStack(spacing: 5) {
-                Image(systemName: category.icon)
-                    .font(.system(size: 24))
-                    .foregroundStyle(fg)
-                Text(category.displayName)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(fg.opacity(0.85))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(fg.opacity(pressed ? 0.14 : 0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(fg.opacity(0.15), lineWidth: 0.5)
-                    )
-            )
-        }
-        .buttonStyle(.plain)
-        .scaleEffect(pressed ? 0.97 : 1.0)
-        .animation(.spring(response: 0.2, dampingFraction: 0.8), value: pressed)
-        .onLongPressGesture(minimumDuration: 0, maximumDistance: 50, pressing: { p in
-            pressed = p
-        }, perform: {})
-    }
+    static let rightColumn: [HomeCategoryEntry] = [
+        HomeCategoryEntry(id: "talmudBavli", label: "Talmud Bavli", icon: "scroll",
+                           colorFamily: .blue, category: .talmud) { $0.talmudSubcategory = .bavli },
+        HomeCategoryEntry(id: "talmudYerushalmi", label: "Talmud Yerushalmi", icon: "building.columns",
+                           colorFamily: .royalBlue, category: .talmud) { $0.talmudSubcategory = .yerushalmi },
+        HomeCategoryEntry(id: "tur", label: "Tur", icon: "list.bullet.rectangle",
+                           colorFamily: .skyBlue, category: .tur) { _ in },
+        HomeCategoryEntry(id: "shulchanArukh", label: "Shulkhan Arukh", icon: "checklist",
+                           colorFamily: .teal, category: .shulchanArukh) { _ in },
+        HomeCategoryEntry(id: "rambam", label: "Rambam", icon: "star.circle",
+                           colorFamily: .navy, category: .rambam) { _ in },
+    ]
 }

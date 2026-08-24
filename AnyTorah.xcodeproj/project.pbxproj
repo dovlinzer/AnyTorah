@@ -11,6 +11,7 @@
 		06836AD8E3F709C6183F6D45 /* NotoSerifHebrew-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E339DE91CA373FC06E790ED7 /* NotoSerifHebrew-Regular.ttf */; };
 		0706DF980CB1AE8E477F40E0 /* CommentaryPanelViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDD864AA5726C51F90A02A1F /* CommentaryPanelViewModel.swift */; };
 		093844CD4612B31EC589810D /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2174BC073154809126EC534 /* ContentView.swift */; };
+		1744EB89592D13B40B0AFA87 /* BrandGradients.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89138ED931F5B286C80F5D7B /* BrandGradients.swift */; };
 		1B2A5F4452B8FFCB0118B1A3 /* yct_splash.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = F77E3B0CA152ADB575234DA8 /* yct_splash.mp4 */; };
 		281EB0F0A6A3B8A7E9D7B80A /* ein_ayah.json in Resources */ = {isa = PBXBuildFile; fileRef = F04E84E17B5834D221B5387F /* ein_ayah.json */; };
 		29C24733DF15588DF6864AFC /* yct_splash_landscape.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 2FBDE4F605AEDC8D2A3F2F0A /* yct_splash_landscape.mp4 */; };
@@ -83,6 +84,7 @@
 		6B5D3890DE3DA6F49C1BB9BF /* Rashi.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Rashi.ttf; sourceTree = "<group>"; };
 		8868CCAF5BDE2EAFCB3E68ED /* EinAyahLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EinAyahLoader.swift; sourceTree = "<group>"; };
 		8971E52FB06D211090609113 /* DedicationBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DedicationBannerView.swift; sourceTree = "<group>"; };
+		89138ED931F5B286C80F5D7B /* BrandGradients.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandGradients.swift; sourceTree = "<group>"; };
 		90D0084EA7A9E2C5650A7747 /* TextReaderViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextReaderViewModel.swift; sourceTree = "<group>"; };
 		97BFCBD509B727A823273EF3 /* pages.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = pages.json; sourceTree = "<group>"; };
 		985DF0DB3464786C42B4558A /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -142,6 +144,7 @@
 		660F6E9B5D322776D75F4FEA /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				89138ED931F5B286C80F5D7B /* BrandGradients.swift */,
 				1182F1CB42D4E6F332A21D76 /* BookmarkEditSheet.swift */,
 				0D1A091DE272567481681DA2 /* BookmarkListView.swift */,
 				0E4556E61538888E6C341DD9 /* CategoryMenuView.swift */,
@@ -335,6 +338,7 @@
 			files = (
 				3B48880E9BE842A262F59FEE /* AnyTorahApp.swift in Sources */,
 				B223D09FDE0A48AF79F1DBDD /* AudioPlayer.swift in Sources */,
+				1744EB89592D13B40B0AFA87 /* BrandGradients.swift in Sources */,
 				2B3CA79DE1107F97DC0ED977 /* Bookmark.swift in Sources */,
 				8CFCB2F577A34412E3A9348E /* BookmarkEditSheet.swift in Sources */,
 				B41FC958ED052C2CCAF0668F /* BookmarkListView.swift in Sources */,

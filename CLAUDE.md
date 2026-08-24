@@ -66,6 +66,109 @@ Book/chapter/daf navigation always happens from pickers in `TextReaderView`'s ow
 the home screen. `CategoryMenuView.swift` is old, unreferenced dead code predating
 `HomeCombinedView`; nothing instantiates it.
 
+### Home screen — ten flat categories, gradient tiles (2026-08-24)
+
+The home screen shows **ten** independent category buttons, not the five/seven raw
+`TextCategory` cases: Tanakh, Mishnah, Tosefta, Talmud Bavli, Talmud Yerushalmi, Rambam, Tur,
+Shulkhan Arukh, Midrash Halakha, Midrash Aggada. Mishnah/Tosefta, Talmud Bavli/Yerushalmi, and
+Midrash Halakha/Aggada were previously exposed as a segmented **subcategory toggle** shown
+*after* picking the parent category, in the old bottom-of-home-screen selector — per explicit
+product direction, these are conceptually **flat, independent categories**, not sub-choices of
+a shared one; the toggle only ever existed because of that old UI shape, not because the
+underlying content is nested.
+
+**Implementation — deliberately not a data-model change.** `TextCategory` still has only its
+original 7 cases (`tanakh, mishnah, talmud, rambam, tur, shulchanArukh, midrash`), and
+`mishnahSubcategory`/`talmudSubcategory`/`midrashSubcategory` still exist on
+`TextReaderViewModel` — that's genuinely how the Sefaria data and navigation wheels are
+organized (Bavli and Yerushalmi have entirely different wheel layouts and navigation state,
+e.g.). Each home-screen button sets `category` + forces the one subcategory it represents, via
+`vm.restoreState(for:)` (restores that category's last-used state generally) followed by a
+direct subcategory assignment (`HomeCategoryEntry.applySelection` on iOS, same pattern on
+Android) — safe because neither `talmudSubcategory` nor `mishnahSubcategory` has any
+didSet/cascade side effect on either platform. `midrashSubcategory` **does** cascade
+(iOS: a `didSet` on the property itself; Android: no cascade on the property, so
+`HomeCategoryEntry`/`HomeScreen.kt`'s `applyMidrashSubcategory` replicates it by hand) —
+resetting `midrashWork`/`midrashBookIndex`/`midrashChapter`/`midrashVerse` to the first work of
+the new subcategory, intentionally mirroring what the old in-selector toggle already did.
+
+**What actually changed to make this feel flat, not just relabeled buttons:**
+- The old in-selector `SubcategoryToggle` (segmented Mishnah/Tosefta, Bavli/Yerushalmi,
+  Halakha/Aggada control shown inside `TextSelectorView`/`TextSelectorScreen` after picking a
+  category) is **removed entirely** on both platforms — switching between siblings now means
+  going back to Home, exactly like switching between any two unrelated categories.
+- `TextReaderViewModel.categoryDisplayName`/`categoryHebrewDisplayName` (iOS) and the Kotlin
+  equivalents replace every place that used to show the bare `category.displayName` (the
+  selector sheet's header, `Bookmark`'s subtitle, `BookmarkEditSheet`'s "Category" field) — so
+  a bookmark or the in-reader selector header reads "Talmud Yerushalmi"/"Tosefta"/"Midrash
+  Aggada", never the generic parent name.
+- `TextReaderViewModel.isTalmudBavli` (`category == .talmud && talmudSubcategory == .bavli`)
+  gates every Bavli-only reader feature that used to check `category == .talmud` alone: the
+  amud A/B pill, the Text/Daf image toggle + daf-image content (iOS only — Android has no
+  daf-image mode), and the shiur audio row + its availability check. **This was a real,
+  pre-existing gap**, not something newly introduced — Yerushalmi was already reachable via
+  the old toggle, it was just rarely tapped; promoting it to an equally-prominent home button
+  made it likely enough to hit that this needed fixing alongside the buttons themselves.
+  `vm.currentTalmudTractate`/`vm.talmudDaf` are Bavli-only state (Yerushalmi has its own
+  separate `yerushalmiSederIndex`/`yerushalmiTractateIndexInSeder`/`yerushalmiChapter`/
+  `yerushalmiHalakha`), so without this gate those Bavli-only UI elements would silently show
+  stale/unrelated Bavli content while the user was actually reading Yerushalmi text.
+- **Android fix found in the process, unrelated to the flat-categories work itself:** the
+  reader's "selector" list icon called `onNavigateToSelector()` (navigating back to the "home"
+  route, which used to embed the wheel picker) instead of setting
+  `activeSheet = ActiveSheet.SELECTOR`. Once the picker was removed from Home, that route had
+  nothing to show. Fixed to set `activeSheet = ActiveSheet.SELECTOR`, which now presents
+  `TextSelectorScreen` inline as a bottom sheet — matching how iOS already presented
+  `TextSelectorView` as a sheet directly from the reader. `onNavigateToSelector` was removed
+  from `TextReaderScreen`'s parameters and `MainActivity`'s call site.
+
+**Known gap, not fixed, flagged for follow-up:** neither platform's `Bookmark` model persists
+`mishnahSubcategory`/`talmudSubcategory` — bookmarking while in Tosefta or Talmud Yerushalmi
+saves/restores the *Mishnah*/*Bavli* fields only, silently losing which sibling was active.
+(Midrash is fine on Android — `Bookmark.kt` already has full `midrashSubcategoryId`/
+`midrashWorkId`/book/chapter/verse fields — but iOS's `Bookmark.swift` has **no** Midrash
+fields at all, so bookmarking anywhere in Midrash on iOS doesn't actually save a restorable
+location today.) Pre-existing on both platforms, not introduced by this change — but promoting
+Tosefta/Yerushalmi/Midrash Aggada to equally-prominent home buttons makes hitting it much more
+likely. Worth a dedicated fix (add the missing fields to `Bookmark`/`Bookmark.swift`, wire them
+through `createBookmark()`/`applyBookmark()` on Android and `Bookmark.from(vm:)`/`apply(to:)`
+on iOS) next time bookmarks are touched.
+
+### Home screen visual style — AnyYCTorah-style gradient tiles (2026-08-24)
+
+Borrowed directly from AnyYCTorah's `HomeView.swift`/`BrandGradients.swift`: two columns of
+tiles (icon + label, `HStack`/`Row`, ~64pt min height, 16pt corner radius), each filled with a
+three-stop diagonal gradient (bright tint → brand-anchor hue → deep shade of the same hue —
+never a flat color or a cross-hue blend) instead of the previous flat `appFg`-tinted card.
+Left column = purple family (Tanakh, Midrash Aggada, Midrash Halakha, Mishnah, Tosefta); right
+column = blue family (Talmud Bavli, Talmud Yerushalmi, Tur, Shulkhan Arukh, Rambam) — same
+left/purple, right/blue split AnyYCTorah uses.
+
+`Views/BrandGradients.swift` (iOS) / `ui/theme/BrandGradients.kt` (Android) define
+`BrandColorFamily`, a 10-case enum (5 purple, 5 blue) each with a 3-color `stops` list and a
+`gradient`/`brush` property. `purple`, `violet`, `blue`, `royalBlue`, and `skyBlue` reuse
+AnyYCTorah's exact confirmed-brand hex values; `lavender` and `blossom` also reuse AnyYCTorah's
+exact hex values, including its `prefersDarkForeground` flag on those two (their lightest
+gradient stop is pale enough that white text/icons lose contrast). `plum`, `teal`, and `navy`
+are new same-style extensions sized to exactly these ten categories — not claimed as confirmed
+YCT brand hexes, matching how AnyYCTorah documents its own non-brand extensions
+(green/gold/lavender/blossom). AnyYCTorah is iOS-only; the Android version is a fresh Compose
+translation of the same aesthetic (`Brush.linearGradient`), not a port of existing Kotlin.
+
+**iOS project-file gotcha:** `AnyTorah.xcodeproj/project.pbxproj` uses explicit
+`PBXFileReference`/`PBXBuildFile` entries (not Xcode 16's folder-synchronized groups), so a new
+`Views/*.swift` file is invisible to the build until it's registered in **four** places in
+`project.pbxproj`: the `PBXBuildFile` section, the `PBXFileReference` section, the `Views`
+group's `children` list, and the app target's `PBXSourcesBuildPhase` `files` list. `xcodegen`
+(the tool `project.yml` is written for) isn't available in every environment that edits this
+repo — when it isn't, add all four entries by hand, using another `Views/*.swift` file's
+existing four entries as the exact formatting template (tab-indented, 24-hex-char uppercase
+UUIDs). Android has no equivalent step — Gradle discovers new `.kt` files under `src/main`
+automatically by package directory.
+
+**Settings gear moved to the top-right on iOS home screen** (was top-left) to match the
+platform convention Android's `HomeScreen.kt` already followed.
+
 ### State flow
 
 - `TextReaderViewModel` (`@Observable @MainActor`) — single source of truth for selection, segments, commentary, display mode.
@@ -93,7 +196,8 @@ the home screen. `CategoryMenuView.swift` is old, unreferenced dead code predati
 | `API/TalmudAudioService.swift` | Resolves YCT Talmud audio URLs from Supabase |
 | `API/DedicationService.swift` | Fetches + decodes the daily/weekly/monthly learning dedication banner |
 | `AudioPlayer.swift` | `AVPlayer` + Now Playing + speed control |
-| `Views/HomeCombinedView.swift` | Home screen — category button grid only; selecting a category jumps straight to `TextReaderView` |
+| `Views/BrandGradients.swift` | `BrandColorFamily` — the 10 home-tile gradients (5 purple, 5 blue), borrowed from AnyYCTorah's own file of the same name |
+| `Views/HomeCombinedView.swift` | Home screen — 10 flat category tiles (not 7); selecting one jumps straight to `TextReaderView` |
 | `Views/TextSelectorView.swift` | Wheel pickers + Yomi buttons; presented as a sheet from `TextReaderView`'s header, not shown on the home screen |
 | `Views/TextReaderView.swift` | Header rows, sheet management, picker sheets, audio row |
 | `Views/TextContentView.swift` | Segment rendering + scroll-to-verse |
@@ -107,7 +211,8 @@ the home screen. `CategoryMenuView.swift` is old, unreferenced dead code predati
 | `models/TextCatalog.kt` | Static catalog |
 | `models/SASimanNames.kt` | SA siman names + `toHebrewNumeral()` |
 | `viewmodels/TextReaderViewModel.kt` | All selection state, load, commentary |
-| `ui/screens/HomeScreen.kt` | Home screen — category button grid only; selecting a category jumps straight to the reader |
+| `ui/theme/BrandGradients.kt` | `BrandColorFamily` — the 10 home-tile gradients (5 purple, 5 blue), Compose translation of the iOS file of the same purpose |
+| `ui/screens/HomeScreen.kt` | Home screen — 10 flat category tiles (not 7); selecting one jumps straight to the reader |
 | `ui/screens/TextReaderScreen.kt` | Main reading screen composable + all picker sheets |
 | `ui/screens/TextSelectorScreen.kt` | Wheel pickers + Yomi buttons; presented as a bottom sheet from `TextReaderScreen` (`ActiveSheet.SELECTOR`), not shown on the home screen |
 | `api/DedicationService.kt` | Fetches + decodes the daily/weekly/monthly learning dedication banner |
@@ -116,7 +221,14 @@ the home screen. `CategoryMenuView.swift` is old, unreferenced dead code predati
 
 ## Categories & Commentaries
 
-Five categories, each with its own selector UI and default commentaries:
+This section is about `TextCategory`/`contextKey` — the underlying data-model categories and
+their default commentary sets — which is a different count from the 10 home-screen category
+buttons (see "Home screen — ten flat categories" above); e.g. Talmud is one `TextCategory`
+here but two home buttons (Bavli/Yerushalmi), each inheriting the same default commentaries
+below since Yerushalmi's commentary pool isn't yet a separate concept.
+
+Five `TextCategory` cases with a selector UI, each contributing one or more `contextKey`s with
+their own default commentaries:
 
 | Category | Default commentaries |
 |----------|---------------------|

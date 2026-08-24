@@ -286,6 +286,31 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         TextCategory.MIDRASH -> "midrash"
     }
 
+    /** True only for Talmud Bavli — false for Talmud Yerushalmi and every other category.
+     *  Bavli-only features (daf images, amud A/B navigation, shiur audio) must gate on this
+     *  rather than on `category == TALMUD` alone, since Yerushalmi shares the same category
+     *  but has no daf/amud concept and no matching audio/image content. */
+    val isTalmudBavli: Boolean get() = category == TextCategory.TALMUD && talmudSubcategory == TalmudSubcategory.BAVLI
+
+    /** Fully-qualified display name for the current selection — e.g. "Talmud Yerushalmi",
+     *  "Midrash Aggada", "Tosefta" — rather than the bare parent category name. Tanakh/Mishnah/
+     *  Talmud/Midrash/etc. are chosen as independent, flat entry points from the home screen
+     *  (not sub-choices within a shared category), so anywhere the app names "what the user is
+     *  currently reading" should show the specific identity, not the generic parent. */
+    val categoryDisplayName: String get() = when (category) {
+        TextCategory.MISHNAH -> mishnahSubcategory.displayName
+        TextCategory.TALMUD  -> "Talmud ${talmudSubcategory.displayName}"
+        TextCategory.MIDRASH -> midrashSubcategory.displayName
+        else -> category.displayName
+    }
+
+    val categoryHebrewDisplayName: String get() = when (category) {
+        TextCategory.MISHNAH -> mishnahSubcategory.hebrewName
+        TextCategory.TALMUD  -> "${category.hebrewName} ${talmudSubcategory.hebrewName}"
+        TextCategory.MIDRASH -> midrashSubcategory.hebrewName
+        else -> category.hebrewName
+    }
+
     val availableCommentaries: List<CommentaryType> get() =
         commentarySlots[contextKey] ?: defaultSlots[contextKey] ?: emptyList()
 
@@ -1247,7 +1272,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         midrashChapter = midrashChapter,
         midrashVerse = midrashVerse,
         name = displayTitle,
-        subtitle = "${category.displayName} · $displayTitle"
+        subtitle = "$categoryDisplayName · $displayTitle"
     )
 
     fun applyBookmark(bookmark: Bookmark) {

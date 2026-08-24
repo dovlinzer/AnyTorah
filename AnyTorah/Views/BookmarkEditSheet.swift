@@ -25,7 +25,7 @@ struct BookmarkEditSheet: View {
                 }
 
                 Section("Location") {
-                    LabeledContent("Category", value: vm.category.displayName)
+                    LabeledContent("Category", value: vm.categoryDisplayName)
                     LabeledContent("Passage",  value: vm.displayTitle)
                 }
             }

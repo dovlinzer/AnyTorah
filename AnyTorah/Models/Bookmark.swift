@@ -108,7 +108,7 @@ struct Bookmark: Codable, Identifiable {
             name: vm.displayTitle,
             notes: "",
             createdAt: Date(),
-            subtitle: "\(vm.category.displayName) · \(vm.displayTitle)",
+            subtitle: "\(vm.categoryDisplayName) · \(vm.displayTitle)",
             category: vm.category,
             tanakhBookIndex:             vm.tanakhBookIndex,
             tanakhChapter:               vm.tanakhChapter,

@@ -69,10 +69,10 @@ struct TextSelectorView: View {
             if hasHeader {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(vm.category.displayName)
+                        Text(vm.categoryDisplayName)
                             .font(.title2.bold())
                             .foregroundStyle(appFg)
-                        Text(vm.category.hebrewName)
+                        Text(vm.categoryHebrewDisplayName)
                             .font(.subheadline)
                             .foregroundStyle(appFg.opacity(0.65))
                     }
@@ -107,42 +107,10 @@ struct TextSelectorView: View {
             Spacer().frame(height: 8)
 
             // Wheels
-            // Subcategory toggles
-            if vm.category == .mishnah {
-                SubcategoryToggle(
-                    options: MishnahSubcategory.allCases.map { $0.displayName },
-                    selectedIndex: Binding(
-                        get: { MishnahSubcategory.allCases.firstIndex(of: vm.mishnahSubcategory) ?? 0 },
-                        set: { vm.mishnahSubcategory = MishnahSubcategory.allCases[$0] }
-                    ),
-                    fg: appFg
-                )
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
-            } else if vm.category == .talmud {
-                SubcategoryToggle(
-                    options: TalmudSubcategory.allCases.map { $0.displayName },
-                    selectedIndex: Binding(
-                        get: { TalmudSubcategory.allCases.firstIndex(of: vm.talmudSubcategory) ?? 0 },
-                        set: { vm.talmudSubcategory = TalmudSubcategory.allCases[$0] }
-                    ),
-                    fg: appFg
-                )
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
-            } else if vm.category == .midrash {
-                SubcategoryToggle(
-                    options: MidrashSubcategory.allCases.map { $0.displayName },
-                    selectedIndex: Binding(
-                        get: { MidrashSubcategory.allCases.firstIndex(of: vm.midrashSubcategory) ?? 0 },
-                        set: { vm.midrashSubcategory = MidrashSubcategory.allCases[$0] }
-                    ),
-                    fg: appFg
-                )
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
-            }
-
+            // Mishnah/Tosefta, Talmud Bavli/Yerushalmi, and Midrash Halakha/Aggada are each
+            // chosen up front as independent, flat home-screen categories (not sub-choices
+            // within a shared category), so there is no in-selector toggle between them —
+            // switching means going back to Home and picking the sibling category.
             Group {
                 switch vm.category {
                 case .tanakh:        TanakhWheels(vm: vm, fg: appFg)
@@ -870,23 +838,6 @@ private struct YerushalmiWheels: View {
             // If current selection is out of range, snap back to last valid halakha
             if vm.yerushalmiHalakha > count { vm.yerushalmiHalakha = count }
         }
-    }
-}
-
-// MARK: - Subcategory Toggle
-
-private struct SubcategoryToggle: View {
-    let options: [String]
-    @Binding var selectedIndex: Int
-    let fg: Color
-
-    var body: some View {
-        Picker("", selection: $selectedIndex) {
-            ForEach(options.indices, id: \.self) { i in
-                Text(options[i]).tag(i)
-            }
-        }
-        .pickerStyle(.segmented)
     }
 }
 

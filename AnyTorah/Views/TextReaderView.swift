@@ -188,12 +188,13 @@ struct TextReaderView: View {
                             .background(RoundedRectangle(cornerRadius: 8).fill(appFg.opacity(0.12)))
                     }
                     // Amud A/B selector — shown in daf-image mode (controls image side) or
-                    // in text mode (scrolls within the loaded daf).
-                    if vm.category == .talmud && showDafImage,
+                    // in text mode (scrolls within the loaded daf). Bavli only — Yerushalmi
+                    // has no daf/amud concept, it navigates by chapter/halakha instead.
+                    if vm.isTalmudBavli && showDafImage,
                        let tractate = vm.currentTalmudTractate,
                        TalmudPageManager.shared.hasPages(for: tractate.sefariaName) {
                         dafAmudPill
-                    } else if vm.category == .talmud && !showDafImage {
+                    } else if vm.isTalmudBavli && !showDafImage {
                         talmudTextAmudPill
                     }
                 }
@@ -246,7 +247,7 @@ struct TextReaderView: View {
                 // ── Centre: language mode selector + optional text/daf toggle ──
                 HStack(spacing: 0) {
                     displayModePill
-                    if vm.category == .talmud,
+                    if vm.isTalmudBavli,
                        let tractate = vm.currentTalmudTractate,
                        TalmudPageManager.shared.hasPages(for: tractate.sefariaName) {
                         Rectangle()
@@ -314,8 +315,8 @@ struct TextReaderView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
 
-            // Row 3: Audio player (Talmud only)
-            if vm.category == .talmud {
+            // Row 3: Audio player (Talmud Bavli only — no shiur audio exists for Yerushalmi)
+            if vm.isTalmudBavli {
                 Divider()
                     .background(appFg.opacity(0.25))
                 audioPlayerRow
@@ -906,7 +907,7 @@ struct TextReaderView: View {
 
     @ViewBuilder
     private var mainContentPanel: some View {
-        if vm.category == .talmud && showDafImage,
+        if vm.isTalmudBavli && showDafImage,
            let tractate = vm.currentTalmudTractate,
            TalmudPageManager.shared.hasPages(for: tractate.sefariaName) {
             DafPageView(

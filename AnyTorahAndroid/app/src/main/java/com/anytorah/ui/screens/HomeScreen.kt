@@ -1,27 +1,27 @@
 package com.anytorah.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.HistoryEdu
 import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material.icons.filled.MenuBook
@@ -41,19 +41,34 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.anytorah.models.MidrashSubcategory
+import com.anytorah.models.MidrashWork
+import com.anytorah.models.MishnahSubcategory
+import com.anytorah.models.TalmudSubcategory
 import com.anytorah.models.TextCategory
+import com.anytorah.ui.theme.BrandColorFamily
 import com.anytorah.ui.theme.LocalAnyTorahColors
 import com.anytorah.viewmodels.TextReaderViewModel
 
 /**
- * Home screen: category buttons only. Tapping a category restores its last-used
- * selection (or a sensible default) and immediately opens the reader — book/chapter/daf
- * navigation happens from the picker controls in the reader's own header, not here.
+ * Home screen: category buttons only, styled after AnyYCTorah's two-column gradient tile grid
+ * (`HomeView.swift`/`BrandGradients.swift`) — purple-family tiles on the left, blue-family
+ * tiles on the right. Tapping a category restores its last-used selection (or a sensible
+ * default) and immediately opens the reader — book/chapter/daf navigation happens from the
+ * picker controls in the reader's own header, not here.
+ *
+ * Mishnah/Tosefta, Talmud Bavli/Talmud Yerushalmi, and Midrash Halakha/Midrash Aggada are each
+ * their own independent, flat entry here — not sub-choices within a shared category. Under the
+ * hood they still share `TextCategory.MISHNAH`/`TALMUD`/`MIDRASH` plus a fixed subcategory
+ * (that's how the underlying Sefaria data and navigation wheels are genuinely organized), but
+ * nothing downstream ever re-presents that as a toggle or a nested choice — see
+ * `TextReaderViewModel.categoryDisplayName` and `TextSelectorScreen`'s removed subcategory
+ * toggle.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,9 +90,10 @@ fun HomeScreen(
         }
     }
 
-    fun selectCategory(cat: TextCategory) {
-        vm.category = cat
-        vm.restoreState(cat)
+    fun select(entry: HomeCategoryEntry) {
+        vm.category = entry.category
+        vm.restoreState(entry.category)
+        entry.applySelection(vm)
         vm.load()
         onRead()
     }
@@ -85,7 +101,7 @@ fun HomeScreen(
     Column(
         modifier = Modifier.fillMaxSize().background(colors.appBackground)
     ) {
-        // Header: title + gear
+        // Header: title + gear (top-right, standard convention)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -110,40 +126,22 @@ fun HomeScreen(
             }
         }
 
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            // Category grid, wrapped 3-per-row (grows to fit however many categories exist).
-            // A hardcoded take(3)/drop(3) split here previously assumed exactly 5 categories
-            // fit in row 2 (<=3) — once Tur became the 7th category, row 2 held 4 items at a
-            // fixed 1/3-width each, overflowing the row. Chunking avoids baking in a count.
-            val allCategories = TextCategory.values().toList()
-            val categoryRows = allCategories.chunked(3)
-            val gridSpacing = 8.dp
-
-            BoxWithConstraints(
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            Row(
                 modifier = Modifier
-                    .widthIn(max = 480.dp)
+                    .widthIn(max = 600.dp)
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                val cardWidth = (maxWidth - gridSpacing * 2) / 3
-
-                Column(verticalArrangement = Arrangement.spacedBy(gridSpacing)) {
-                    categoryRows.forEach { row ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = if (row.size == 3) Arrangement.spacedBy(gridSpacing)
-                                                     else Arrangement.Center
-                        ) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(gridSpacing)) {
-                                row.forEach { cat ->
-                                    CategoryCard(
-                                        category = cat,
-                                        modifier = Modifier.width(cardWidth),
-                                        onClick = { selectCategory(cat) }
-                                    )
-                                }
-                            }
-                        }
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    HomeCategoryEntry.leftColumn.forEach { entry ->
+                        CategoryTile(entry = entry, onClick = { select(entry) })
+                    }
+                }
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    HomeCategoryEntry.rightColumn.forEach { entry ->
+                        CategoryTile(entry = entry, onClick = { select(entry) })
                     }
                 }
             }
@@ -151,53 +149,94 @@ fun HomeScreen(
     }
 }
 
+/** Icon + label, gradient background — matches AnyYCTorah's `TopicCard`. */
 @Composable
-private fun CategoryCard(
-    category: TextCategory,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    val colors = LocalAnyTorahColors.current
+private fun CategoryTile(entry: HomeCategoryEntry, onClick: () -> Unit) {
+    val fg = if (entry.colorFamily.prefersDarkForeground) Color.Black.copy(alpha = 0.75f) else Color.White
 
-    Column(
-        modifier = modifier
-            .height(90.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(colors.appForeground.copy(alpha = 0.08f))
-            .border(0.5.dp, colors.appForeground.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .sizeIn(minHeight = 64.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(entry.colorFamily.brush)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick
-            ),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            )
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = categoryIcon(category),
+            imageVector = entry.icon,
             contentDescription = null,
-            tint = colors.appForeground,
-            modifier = Modifier.size(24.dp)
+            tint = fg,
+            modifier = Modifier.width(24.dp)
         )
-        Spacer(modifier = Modifier.height(5.dp))
+        Spacer(modifier = Modifier.width(10.dp))
         Text(
-            text = category.displayName,
-            color = colors.appForeground.copy(alpha = 0.85f),
-            fontSize = 12.sp,
+            text = entry.label,
+            color = fg,
+            fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center,
-            lineHeight = 14.sp,
             maxLines = 2
         )
     }
 }
 
-private fun categoryIcon(category: TextCategory): ImageVector = when (category) {
-    TextCategory.TANAKH -> Icons.Default.Book
-    TextCategory.MISHNAH -> Icons.Default.LibraryBooks
-    TextCategory.TALMUD -> Icons.Default.AutoStories
-    TextCategory.RAMBAM -> Icons.Default.Star
-    TextCategory.TUR -> Icons.Default.MenuBook
-    TextCategory.SHULCHAN_ARUKH -> Icons.Default.FormatListBulleted
-    TextCategory.MIDRASH -> Icons.Default.HistoryEdu
+/** One home-screen category button. `applySelection` forces the specific subcategory this
+ *  button represents; a no-op for categories with no subcategory concept (Tanakh, Rambam,
+ *  Tur, Shulkhan Arukh). */
+private data class HomeCategoryEntry(
+    val label: String,
+    val icon: ImageVector,
+    val colorFamily: BrandColorFamily,
+    val category: TextCategory,
+    val applySelection: (TextReaderViewModel) -> Unit
+) {
+    companion object {
+        val leftColumn = listOf(
+            HomeCategoryEntry("Tanakh", Icons.Default.Book, BrandColorFamily.PURPLE, TextCategory.TANAKH) { },
+            HomeCategoryEntry("Midrash Aggada", Icons.Default.FormatQuote, BrandColorFamily.VIOLET, TextCategory.MIDRASH) { vm ->
+                applyMidrashSubcategory(vm, MidrashSubcategory.AGGADA)
+            },
+            HomeCategoryEntry("Midrash Halakha", Icons.Default.HistoryEdu, BrandColorFamily.LAVENDER, TextCategory.MIDRASH) { vm ->
+                applyMidrashSubcategory(vm, MidrashSubcategory.HALAKHA)
+            },
+            HomeCategoryEntry("Mishnah", Icons.Default.LibraryBooks, BrandColorFamily.BLOSSOM, TextCategory.MISHNAH) { vm ->
+                vm.mishnahSubcategory = MishnahSubcategory.MISHNAH
+            },
+            HomeCategoryEntry("Tosefta", Icons.Default.Description, BrandColorFamily.PLUM, TextCategory.MISHNAH) { vm ->
+                vm.mishnahSubcategory = MishnahSubcategory.TOSEFTA
+            },
+        )
+
+        val rightColumn = listOf(
+            HomeCategoryEntry("Talmud Bavli", Icons.Default.AutoStories, BrandColorFamily.BLUE, TextCategory.TALMUD) { vm ->
+                vm.talmudSubcategory = TalmudSubcategory.BAVLI
+            },
+            HomeCategoryEntry("Talmud Yerushalmi", Icons.Default.AccountBalance, BrandColorFamily.ROYAL_BLUE, TextCategory.TALMUD) { vm ->
+                vm.talmudSubcategory = TalmudSubcategory.YERUSHALMI
+            },
+            HomeCategoryEntry("Tur", Icons.Default.MenuBook, BrandColorFamily.SKY_BLUE, TextCategory.TUR) { },
+            HomeCategoryEntry("Shulkhan Arukh", Icons.Default.FormatListBulleted, BrandColorFamily.TEAL, TextCategory.SHULCHAN_ARUKH) { },
+            HomeCategoryEntry("Rambam", Icons.Default.Star, BrandColorFamily.NAVY, TextCategory.RAMBAM) { },
+        )
+
+        /** Mirrors the reset `MidrashSubcategory`'s own toggle used to perform in
+         *  `TextSelectorScreen`'s `MidrashWheels` before that toggle was removed — Android's
+         *  `midrashSubcategory` has no didSet-equivalent cascade of its own (unlike iOS), so
+         *  the work/book/chapter/verse reset has to happen here explicitly. */
+        private fun applyMidrashSubcategory(vm: TextReaderViewModel, sub: MidrashSubcategory) {
+            vm.midrashSubcategory = sub
+            val firstWork = MidrashWork.worksFor(sub).first()
+            vm.midrashWork = firstWork
+            if (firstWork.applicableBookIndices.isNotEmpty()) {
+                vm.midrashBookIndex = firstWork.applicableBookIndices.first()
+            }
+            vm.midrashChapter = 1
+            vm.midrashVerse = 1
+        }
+    }
 }

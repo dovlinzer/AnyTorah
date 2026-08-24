@@ -104,9 +104,9 @@ fun TextReaderScreen(
         }
     }
 
-    // Check audio availability when Talmud daf changes
-    LaunchedEffect(vm.category, vm.talmudDaf, vm.globalTalmudTractateIndex) {
-        if (vm.category == TextCategory.TALMUD) {
+    // Check audio availability when Talmud daf changes (Bavli only — no shiur audio for Yerushalmi)
+    LaunchedEffect(vm.category, vm.talmudSubcategory, vm.talmudDaf, vm.globalTalmudTractateIndex) {
+        if (vm.isTalmudBavli) {
             audioPlayer.stop()
             audioUrl = null
             isCheckingAudio = true
@@ -202,7 +202,7 @@ fun TextReaderScreen(
                         tint = colors.appForeground
                     )
                 }
-                IconButton(onClick = { onNavigateToSelector() }) {
+                IconButton(onClick = { activeSheet = ActiveSheet.SELECTOR }) {
                     Icon(
                         Icons.AutoMirrored.Filled.List,
                         contentDescription = "Selector",
@@ -232,7 +232,7 @@ fun TextReaderScreen(
             // Language pill: א / A / אA
             DisplayModePill(vm = vm)
 
-            if (vm.category == TextCategory.TALMUD) {
+            if (vm.isTalmudBavli) {
                 Spacer(modifier = Modifier.width(8.dp))
                 TalmudAmudPill(vm = vm)
             }
@@ -259,8 +259,8 @@ fun TextReaderScreen(
 
         HorizontalDivider(color = colors.dividerColor)
 
-        // Row 3 (Talmud only): Audio player
-        if (vm.category == TextCategory.TALMUD) {
+        // Row 3 (Talmud Bavli only): Audio player
+        if (vm.isTalmudBavli) {
             AudioPlayerPanel(
                 audioPlayer = audioPlayer,
                 onPlay = {

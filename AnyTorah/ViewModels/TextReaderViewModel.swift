@@ -341,6 +341,35 @@ final class TextReaderViewModel {
         }
     }
 
+    /// True only for Talmud Bavli — false for Talmud Yerushalmi and every other category.
+    /// Bavli-only features (daf images, amud A/B navigation, shiur audio) must gate on this
+    /// rather than on `category == .talmud` alone, since Yerushalmi shares the same category
+    /// but has no daf/amud concept and no matching audio/image content.
+    var isTalmudBavli: Bool { category == .talmud && talmudSubcategory == .bavli }
+
+    /// Fully-qualified display name for the current selection — e.g. "Talmud Yerushalmi",
+    /// "Midrash Aggada", "Tosefta" — rather than the bare parent category name. Tanakh/Mishnah/
+    /// Talmud/Midrash/etc. are chosen as independent, flat entry points from the home screen
+    /// (not sub-choices within a shared category), so anywhere the app names "what the user is
+    /// currently reading" should show the specific identity, not the generic parent.
+    var categoryDisplayName: String {
+        switch category {
+        case .mishnah: return mishnahSubcategory.displayName
+        case .talmud:  return "Talmud \(talmudSubcategory.displayName)"
+        case .midrash: return midrashSubcategory.displayName
+        default:       return category.displayName
+        }
+    }
+
+    var categoryHebrewDisplayName: String {
+        switch category {
+        case .mishnah: return mishnahSubcategory.hebrewName
+        case .talmud:  return "\(category.hebrewName) \(talmudSubcategory.hebrewName)"
+        case .midrash: return midrashSubcategory.hebrewName
+        default:       return category.hebrewName
+        }
+    }
+
     // MARK: - Computed helpers
 
     /// The commentators currently assigned to the visible tab slots for this context (main panel).
