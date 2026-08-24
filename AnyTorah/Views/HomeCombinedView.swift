@@ -111,8 +111,10 @@ private struct HomeCategoryEntry: Identifiable {
     let colorFamily: BrandColorFamily
     let category: TextCategory
     /// Forces the specific subcategory this button represents. No-op for categories with no
-    /// subcategory concept (Tanakh, Rambam, Tur, Shulkhan Arukh).
-    let applySelection: (TextReaderViewModel) -> Void
+    /// subcategory concept (Tanakh, Rambam, Tur, Shulkhan Arukh). `@MainActor`-annotated
+    /// because `TextReaderViewModel` itself is `@MainActor` — without this, the closures
+    /// below can't mutate its properties.
+    let applySelection: @MainActor (TextReaderViewModel) -> Void
 
     static let leftColumn: [HomeCategoryEntry] = [
         HomeCategoryEntry(id: "tanakh", label: "Tanakh", icon: "book.closed",
