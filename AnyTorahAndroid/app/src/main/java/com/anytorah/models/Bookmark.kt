@@ -5,6 +5,13 @@ import java.util.UUID
 data class Bookmark(
     val id: String = UUID.randomUUID().toString(),
     val category: TextCategory,
+    // Which sibling of a flat home-screen pair this bookmark belongs to (Mishnah/Tosefta,
+    // Talmud Bavli/Yerushalmi). These Kotlin defaults are honored reliably because
+    // BookmarkManager's BookmarkDto.toBookmark() calls this constructor directly (a normal
+    // function call, not Gson reflection) — see BookmarkDto's own doc comment for why the
+    // DTO's fields are nullable instead of relying on Gson to respect defaults itself.
+    val mishnahSubcategoryId: String = MishnahSubcategory.MISHNAH.id,
+    val talmudSubcategoryId: String = TalmudSubcategory.BAVLI.id,
     val tanakhBookIndex: Int = 0,
     val tanakhChapter: Int = 1,
     val mishnahSederIndex: Int = 0,

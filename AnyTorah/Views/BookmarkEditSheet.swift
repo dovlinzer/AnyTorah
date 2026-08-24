@@ -57,25 +57,14 @@ struct BookmarkEditSheet: View {
             existing.notes = notes
             bookmarkManager.update(existing)
         } else {
+            // `name`/`notes` are the only `var` fields on Bookmark — mutate those directly
+            // rather than reconstructing via the memberwise init, which previously dropped
+            // every field it didn't explicitly forward (turSection/turSiman, and now the
+            // subcategory + midrash fields too) back to their defaults.
             var bm = Bookmark.from(vm: vm)
-            // Reconstruct with edited name/notes (Bookmark.from gives defaults)
-            let updated = Bookmark(
-                id: bm.id, name: name, notes: notes,
-                createdAt: bm.createdAt, subtitle: bm.subtitle,
-                category: bm.category,
-                tanakhBookIndex: bm.tanakhBookIndex, tanakhChapter: bm.tanakhChapter,
-                mishnahSederIndex: bm.mishnahSederIndex,
-                mishnahTractateIndexInSeder: bm.mishnahTractateIndexInSeder,
-                mishnahChapter: bm.mishnahChapter,
-                talmudSederIndex: bm.talmudSederIndex,
-                talmudTractateIndexInSeder: bm.talmudTractateIndexInSeder,
-                talmudDaf: bm.talmudDaf,
-                rambamSeferIndex: bm.rambamSeferIndex,
-                rambamWorkIndexInSefer: bm.rambamWorkIndexInSefer,
-                rambamChapter: bm.rambamChapter,
-                saSection: bm.saSection, saSiman: bm.saSiman
-            )
-            bookmarkManager.add(updated)
+            bm.name = name
+            bm.notes = notes
+            bookmarkManager.add(bm)
         }
         dismiss()
     }

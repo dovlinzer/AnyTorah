@@ -122,17 +122,36 @@ the new subcategory, intentionally mirroring what the old in-selector toggle alr
   `TextSelectorView` as a sheet directly from the reader. `onNavigateToSelector` was removed
   from `TextReaderScreen`'s parameters and `MainActivity`'s call site.
 
-**Known gap, not fixed, flagged for follow-up:** neither platform's `Bookmark` model persists
-`mishnahSubcategory`/`talmudSubcategory` — bookmarking while in Tosefta or Talmud Yerushalmi
-saves/restores the *Mishnah*/*Bavli* fields only, silently losing which sibling was active.
-(Midrash is fine on Android — `Bookmark.kt` already has full `midrashSubcategoryId`/
-`midrashWorkId`/book/chapter/verse fields — but iOS's `Bookmark.swift` has **no** Midrash
-fields at all, so bookmarking anywhere in Midrash on iOS doesn't actually save a restorable
-location today.) Pre-existing on both platforms, not introduced by this change — but promoting
-Tosefta/Yerushalmi/Midrash Aggada to equally-prominent home buttons makes hitting it much more
-likely. Worth a dedicated fix (add the missing fields to `Bookmark`/`Bookmark.swift`, wire them
-through `createBookmark()`/`applyBookmark()` on Android and `Bookmark.from(vm:)`/`apply(to:)`
-on iOS) next time bookmarks are touched.
+**Bookmark subcategory/Midrash gap — fixed 2026-08-24.** Neither platform's `Bookmark` model
+used to persist `mishnahSubcategory`/`talmudSubcategory`; iOS's `Bookmark.swift` had no Midrash
+fields at all. Fixed on both platforms:
+- iOS: `MishnahSubcategory`/`TalmudSubcategory`/`MidrashSubcategory`/`MidrashWork` all gained
+  `Codable` conformance; `Bookmark` gained `mishnahSubcategory`/`talmudSubcategory` (default
+  `.mishnah`/`.bavli`) and the full Midrash quintet
+  (`midrashSubcategory`/`midrashWork`/`midrashBookIndex`/`midrashChapter`/`midrashVerse`,
+  defaulted to Midrash's own pre-existing fallbacks) — "by verse" navigation only, matching
+  what Android already supported (Midrash's separate "Native" mode chapter/section indices
+  aren't captured either, on either platform). The custom `init(from:)` decodes all of these
+  with `decodeIfPresent(...) ?? default` so bookmarks saved before this fix still load. Found
+  and fixed a second bug in the same file while here: `BookmarkEditSheet.swift`'s "new
+  bookmark" path reconstructed a `Bookmark` by manually forwarding fields one at a time,
+  silently dropping every field it forgot to list — already true for `turSection`/`turSiman`
+  before this fix, now would have also been true for every new field. Fixed by mutating the
+  `Bookmark.from(vm:)` result's `name`/`notes` directly (the only two `var` fields) instead of
+  reconstructing, which eliminates the whole "forgot to forward field X" class of bug.
+- Android: `Bookmark.kt` gained `mishnahSubcategoryId`/`talmudSubcategoryId` (Midrash was
+  already complete). Found and fixed a **more severe pre-existing bug** while wiring this up:
+  `BookmarkManager.kt`'s Gson `BookmarkDto` never included `turSection`/`turSiman` or any
+  `midrash*` field at all — meaning every Tur or Midrash bookmark silently lost its location on
+  app restart (correct for the rest of that session, since the in-memory list is untouched by
+  the DTO round-trip; reset to Tur OC §1 / Midrash Halakha's first work on reload) regardless of
+  what was actually bookmarked. Fixed by adding all the missing fields to `BookmarkDto`,
+  declared **nullable** with an explicit `?:` fallback in `toBookmark()` rather than relying on
+  `Bookmark`'s own non-null Kotlin defaults — plain Gson (no kotlin-reflect adapter registered
+  here) allocates data class instances via unsafe allocation for missing JSON keys, which does
+  *not* run the constructor and so does *not* apply Kotlin default parameter values; a
+  non-nullable `Int` field would silently come back `0` instead of its declared default instead.
+  Nullable fields don't have this trap — a missing JSON key reliably decodes to `null`.
 
 ### Home screen visual style — AnyYCTorah-style gradient tiles (2026-08-24)
 

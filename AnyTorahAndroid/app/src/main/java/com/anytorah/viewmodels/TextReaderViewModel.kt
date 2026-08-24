@@ -1251,6 +1251,8 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
 
     fun createBookmark(): Bookmark = Bookmark(
         category = category,
+        mishnahSubcategoryId = mishnahSubcategory.id,
+        talmudSubcategoryId = talmudSubcategory.id,
         tanakhBookIndex = tanakhBookIndex,
         tanakhChapter = tanakhChapter,
         mishnahSederIndex = mishnahSederIndex,
@@ -1277,6 +1279,8 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
 
     fun applyBookmark(bookmark: Bookmark) {
         category = bookmark.category
+        mishnahSubcategory = MishnahSubcategory.fromId(bookmark.mishnahSubcategoryId)
+        talmudSubcategory = TalmudSubcategory.fromId(bookmark.talmudSubcategoryId)
         tanakhBookIndex = bookmark.tanakhBookIndex
         tanakhChapter = bookmark.tanakhChapter
         mishnahSederIndex = bookmark.mishnahSederIndex

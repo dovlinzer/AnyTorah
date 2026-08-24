@@ -52,10 +52,28 @@ class BookmarkManager(private val context: Context) {
     }
 }
 
-// DTO for Gson serialization (uses string category instead of enum directly)
+// DTO for Gson serialization (uses string category instead of enum directly).
+//
+// Fields added after the original version (turSection/turSiman, the midrash* fields, and now
+// mishnahSubcategoryId/talmudSubcategoryId) are declared nullable with an explicit `?:`
+// fallback in toBookmark() — NOT non-null with a Kotlin default parameter value. Plain Gson
+// (no kotlin-reflect adapter registered here) constructs objects via unsafe allocation for
+// data classes, which does NOT run the constructor and so does NOT apply Kotlin default
+// parameter values for a field missing from old JSON; a non-null Int would silently come back
+// 0 instead of its declared default. Nullable fields don't have this trap — a missing JSON key
+// reliably decodes to null, which the `?:` below then maps to the real default explicitly.
+//
+// Historical bug fixed alongside the two new subcategory fields: this DTO never included
+// turSection/turSiman or any midrash* field at all (not even non-nullable), so every Tur or
+// Midrash bookmark silently lost its location on save/reload — it displayed correctly for the
+// remainder of the session that created it (the in-memory Bookmark list is untouched), but
+// reopening the app always snapped back to Tur OC siman 1 / Midrash Halakha's first work,
+// regardless of what was actually bookmarked. Fixed by adding the missing fields here too.
 private data class BookmarkDto(
     val id: String,
     val categoryRaw: String,
+    val mishnahSubcategoryId: String? = null,
+    val talmudSubcategoryId: String? = null,
     val tanakhBookIndex: Int,
     val tanakhChapter: Int,
     val mishnahSederIndex: Int,
@@ -69,6 +87,13 @@ private data class BookmarkDto(
     val rambamChapter: Int,
     val saSection: Int,
     val saSiman: Int,
+    val turSection: Int? = null,
+    val turSiman: Int? = null,
+    val midrashSubcategoryId: String? = null,
+    val midrashWorkId: String? = null,
+    val midrashBookIndex: Int? = null,
+    val midrashChapter: Int? = null,
+    val midrashVerse: Int? = null,
     val name: String,
     val subtitle: String,
     val notes: String,
@@ -79,6 +104,8 @@ private data class BookmarkDto(
         return Bookmark(
             id = id,
             category = cat,
+            mishnahSubcategoryId = mishnahSubcategoryId ?: MishnahSubcategory.MISHNAH.id,
+            talmudSubcategoryId = talmudSubcategoryId ?: TalmudSubcategory.BAVLI.id,
             tanakhBookIndex = tanakhBookIndex,
             tanakhChapter = tanakhChapter,
             mishnahSederIndex = mishnahSederIndex,
@@ -92,6 +119,13 @@ private data class BookmarkDto(
             rambamChapter = rambamChapter,
             saSection = saSection,
             saSiman = saSiman,
+            turSection = turSection ?: 0,
+            turSiman = turSiman ?: 1,
+            midrashSubcategoryId = midrashSubcategoryId ?: MidrashSubcategory.HALAKHA.id,
+            midrashWorkId = midrashWorkId ?: MidrashWork.MEKHILTA_YISHMAEL.id,
+            midrashBookIndex = midrashBookIndex ?: 1,
+            midrashChapter = midrashChapter ?: 1,
+            midrashVerse = midrashVerse ?: 1,
             name = name,
             subtitle = subtitle,
             notes = notes,
@@ -103,6 +137,8 @@ private data class BookmarkDto(
         fun from(b: Bookmark) = BookmarkDto(
             id = b.id,
             categoryRaw = b.category.name,
+            mishnahSubcategoryId = b.mishnahSubcategoryId,
+            talmudSubcategoryId = b.talmudSubcategoryId,
             tanakhBookIndex = b.tanakhBookIndex,
             tanakhChapter = b.tanakhChapter,
             mishnahSederIndex = b.mishnahSederIndex,
@@ -116,6 +152,13 @@ private data class BookmarkDto(
             rambamChapter = b.rambamChapter,
             saSection = b.saSection,
             saSiman = b.saSiman,
+            turSection = b.turSection,
+            turSiman = b.turSiman,
+            midrashSubcategoryId = b.midrashSubcategoryId,
+            midrashWorkId = b.midrashWorkId,
+            midrashBookIndex = b.midrashBookIndex,
+            midrashChapter = b.midrashChapter,
+            midrashVerse = b.midrashVerse,
             name = b.name,
             subtitle = b.subtitle,
             notes = b.notes,

@@ -74,7 +74,7 @@ enum TextCategory: String, CaseIterable, Identifiable, Codable {
 
 // MARK: - Subcategories
 
-enum MishnahSubcategory: String, CaseIterable {
+enum MishnahSubcategory: String, CaseIterable, Codable {
     case mishnah = "mishnah"
     case tosefta = "tosefta"
 
@@ -92,7 +92,7 @@ enum MishnahSubcategory: String, CaseIterable {
     }
 }
 
-enum TalmudSubcategory: String, CaseIterable {
+enum TalmudSubcategory: String, CaseIterable, Codable {
     case bavli     = "bavli"
     case yerushalmi = "yerushalmi"
 
@@ -110,7 +110,7 @@ enum TalmudSubcategory: String, CaseIterable {
     }
 }
 
-enum MidrashSubcategory: String, CaseIterable {
+enum MidrashSubcategory: String, CaseIterable, Codable {
     case halakha = "halakha"
     case aggada  = "aggada"
 
@@ -128,7 +128,7 @@ enum MidrashSubcategory: String, CaseIterable {
     }
 }
 
-enum MidrashWork: String, CaseIterable, Identifiable {
+enum MidrashWork: String, CaseIterable, Identifiable, Codable {
     // Midrash Halakha
     case mekhiltaYishmael = "mekhiltaYishmael"
     case mekhiltaShimon   = "mekhiltaShimon"

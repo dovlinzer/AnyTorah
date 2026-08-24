@@ -13,6 +13,13 @@ struct Bookmark: Codable, Identifiable {
     // Category
     let category: TextCategory
 
+    // Which sibling of a flat home-screen pair this bookmark belongs to (Mishnah/Tosefta,
+    // Talmud Bavli/Yerushalmi) — defaulted for bookmarks saved before these fields existed
+    // (see the custom decoder below), where the default matches each subcategory's own
+    // pre-existing fallback (`.mishnah`, `.bavli`).
+    let mishnahSubcategory: MishnahSubcategory
+    let talmudSubcategory: TalmudSubcategory
+
     // All VM indices — only the subset relevant to the category is meaningful,
     // but storing all avoids conditionals when restoring.
     let tanakhBookIndex: Int
@@ -31,6 +38,15 @@ struct Bookmark: Codable, Identifiable {
     let turSection: Int
     let turSiman: Int
 
+    // Midrash Halakha/Aggada — mirrors Android's Bookmark.kt, which has always had these.
+    // "By verse" navigation only (bookIndex/chapter/verse) — matches what Android supports;
+    // "Native" mode's own chapter/section indices aren't captured here either.
+    let midrashSubcategory: MidrashSubcategory
+    let midrashWork: MidrashWork
+    let midrashBookIndex: Int
+    let midrashChapter: Int
+    let midrashVerse: Int
+
     /// Returns true if name, notes, or subtitle contain the query (case-insensitive).
     func matches(_ query: String) -> Bool {
         let q = query.lowercased()
@@ -43,18 +59,25 @@ struct Bookmark: Codable, Identifiable {
     /// suppresses Swift's automatically-synthesized one).
     init(id: UUID, name: String, notes: String, createdAt: Date, subtitle: String,
          category: TextCategory,
+         mishnahSubcategory: MishnahSubcategory = .mishnah,
+         talmudSubcategory: TalmudSubcategory = .bavli,
          tanakhBookIndex: Int, tanakhChapter: Int,
          mishnahSederIndex: Int, mishnahTractateIndexInSeder: Int, mishnahChapter: Int,
          talmudSederIndex: Int, talmudTractateIndexInSeder: Int, talmudDaf: Int,
          rambamSeferIndex: Int, rambamWorkIndexInSefer: Int, rambamChapter: Int,
          saSection: Int, saSiman: Int,
-         turSection: Int = 0, turSiman: Int = 1) {
+         turSection: Int = 0, turSiman: Int = 1,
+         midrashSubcategory: MidrashSubcategory = .halakha,
+         midrashWork: MidrashWork = .mekhiltaYishmael,
+         midrashBookIndex: Int = 1, midrashChapter: Int = 1, midrashVerse: Int = 1) {
         self.id = id
         self.name = name
         self.notes = notes
         self.createdAt = createdAt
         self.subtitle = subtitle
         self.category = category
+        self.mishnahSubcategory = mishnahSubcategory
+        self.talmudSubcategory = talmudSubcategory
         self.tanakhBookIndex = tanakhBookIndex
         self.tanakhChapter = tanakhChapter
         self.mishnahSederIndex = mishnahSederIndex
@@ -70,11 +93,16 @@ struct Bookmark: Codable, Identifiable {
         self.saSiman = saSiman
         self.turSection = turSection
         self.turSiman = turSiman
+        self.midrashSubcategory = midrashSubcategory
+        self.midrashWork = midrashWork
+        self.midrashBookIndex = midrashBookIndex
+        self.midrashChapter = midrashChapter
+        self.midrashVerse = midrashVerse
     }
 
-    /// Custom decoder so bookmarks saved before Tur existed (missing turSection/turSiman
-    /// keys) still decode successfully instead of failing the whole array and silently
-    /// wiping all of the user's existing bookmarks.
+    /// Custom decoder so bookmarks saved before Tur/Midrash/subcategory fields existed
+    /// (missing those keys) still decode successfully instead of failing the whole array and
+    /// silently wiping all of the user's existing bookmarks.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
@@ -83,6 +111,8 @@ struct Bookmark: Codable, Identifiable {
         createdAt = try c.decode(Date.self, forKey: .createdAt)
         subtitle = try c.decode(String.self, forKey: .subtitle)
         category = try c.decode(TextCategory.self, forKey: .category)
+        mishnahSubcategory = try c.decodeIfPresent(MishnahSubcategory.self, forKey: .mishnahSubcategory) ?? .mishnah
+        talmudSubcategory = try c.decodeIfPresent(TalmudSubcategory.self, forKey: .talmudSubcategory) ?? .bavli
         tanakhBookIndex = try c.decode(Int.self, forKey: .tanakhBookIndex)
         tanakhChapter = try c.decode(Int.self, forKey: .tanakhChapter)
         mishnahSederIndex = try c.decode(Int.self, forKey: .mishnahSederIndex)
@@ -98,6 +128,11 @@ struct Bookmark: Codable, Identifiable {
         saSiman = try c.decode(Int.self, forKey: .saSiman)
         turSection = try c.decodeIfPresent(Int.self, forKey: .turSection) ?? 0
         turSiman = try c.decodeIfPresent(Int.self, forKey: .turSiman) ?? 1
+        midrashSubcategory = try c.decodeIfPresent(MidrashSubcategory.self, forKey: .midrashSubcategory) ?? .halakha
+        midrashWork = try c.decodeIfPresent(MidrashWork.self, forKey: .midrashWork) ?? .mekhiltaYishmael
+        midrashBookIndex = try c.decodeIfPresent(Int.self, forKey: .midrashBookIndex) ?? 1
+        midrashChapter = try c.decodeIfPresent(Int.self, forKey: .midrashChapter) ?? 1
+        midrashVerse = try c.decodeIfPresent(Int.self, forKey: .midrashVerse) ?? 1
     }
 
     /// Creates a Bookmark snapshot from the current ViewModel state.
@@ -110,6 +145,8 @@ struct Bookmark: Codable, Identifiable {
             createdAt: Date(),
             subtitle: "\(vm.categoryDisplayName) · \(vm.displayTitle)",
             category: vm.category,
+            mishnahSubcategory:          vm.mishnahSubcategory,
+            talmudSubcategory:           vm.talmudSubcategory,
             tanakhBookIndex:             vm.tanakhBookIndex,
             tanakhChapter:               vm.tanakhChapter,
             mishnahSederIndex:           vm.mishnahSederIndex,
@@ -124,7 +161,12 @@ struct Bookmark: Codable, Identifiable {
             saSection:                   vm.saSection,
             saSiman:                     vm.saSiman,
             turSection:                  vm.turSection,
-            turSiman:                    vm.turSiman
+            turSiman:                    vm.turSiman,
+            midrashSubcategory:          vm.midrashSubcategory,
+            midrashWork:                 vm.midrashWork,
+            midrashBookIndex:            vm.midrashBookIndex,
+            midrashChapter:              vm.midrashChapter,
+            midrashVerse:                vm.midrashVerse
         )
     }
 
@@ -132,6 +174,8 @@ struct Bookmark: Codable, Identifiable {
     @MainActor
     func apply(to vm: TextReaderViewModel) {
         vm.category                     = category
+        vm.mishnahSubcategory           = mishnahSubcategory
+        vm.talmudSubcategory            = talmudSubcategory
         vm.tanakhBookIndex              = tanakhBookIndex
         vm.tanakhChapter                = tanakhChapter
         vm.mishnahSederIndex            = mishnahSederIndex
@@ -147,5 +191,10 @@ struct Bookmark: Codable, Identifiable {
         vm.saSiman                      = saSiman
         vm.turSection                   = turSection
         vm.turSiman                     = turSiman
+        vm.midrashSubcategory           = midrashSubcategory
+        vm.midrashWork                  = midrashWork
+        vm.midrashBookIndex             = midrashBookIndex
+        vm.midrashChapter               = midrashChapter
+        vm.midrashVerse                 = midrashVerse
     }
 }
