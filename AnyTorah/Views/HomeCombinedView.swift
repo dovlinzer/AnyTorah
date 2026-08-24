@@ -1,38 +1,17 @@
 import SwiftUI
 
+/// Home screen: category buttons only. Tapping a category restores its last-used
+/// selection (or a sensible default) and immediately opens the reader — book/chapter/daf
+/// navigation happens from the picker controls in the reader's own header, not here.
 struct HomeCombinedView: View {
     @Bindable var vm: TextReaderViewModel
     let appBg: Color
     let appFg: Color
     let onGo: () -> Void
 
-    @AppStorage("lastSelectedCategory") private var lastCategoryRaw: String = ""
-    @State private var activeCategory: TextCategory? = nil
     @State private var showSettings = false
 
     var body: some View {
-        GeometryReader { geo in
-            let isLandscape = geo.size.width > geo.size.height
-            if isLandscape {
-                landscapeLayout
-            } else {
-                portraitLayout
-            }
-        }
-        .background(appBg.ignoresSafeArea())
-        .sheet(isPresented: $showSettings) { SettingsView() }
-        .onAppear {
-            if activeCategory == nil, !lastCategoryRaw.isEmpty,
-               let cat = TextCategory(rawValue: lastCategoryRaw) {
-                activeCategory = cat
-                vm.category = cat
-            }
-        }
-    }
-
-    // MARK: - Portrait
-
-    private var portraitLayout: some View {
         VStack(spacing: 0) {
             // Header: gear (left) + centered app title
             ZStack(alignment: .leading) {
@@ -51,99 +30,30 @@ struct HomeCombinedView: View {
             .padding(.top, 40)
             .padding(.bottom, 14)
 
-            // Category grid, wrapped 3-per-row (grows to fit however many categories exist)
-            CategoryGrid(selectedCategory: activeCategory, fg: appFg, onSelect: selectCategory)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 20)
+            Spacer()
 
-            Rectangle()
-                .fill(appFg.opacity(0.55))
-                .frame(height: 1.5)
-                .padding(.bottom, 4)
+            CategoryGrid(fg: appFg, onSelect: selectCategory)
+                .padding(.horizontal, 20)
+                .frame(maxWidth: 480)
 
-            // Selector pulls down from divider; empty state when nothing selected
-            if activeCategory != nil {
-                TextSelectorView(vm: vm, appBg: appBg, appFg: appFg, onBack: nil, onGo: onGo, showGear: false)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            } else {
-                Spacer()
-                Text("Select a category to begin")
-                    .font(.subheadline)
-                    .foregroundStyle(appFg.opacity(0.40))
-                Spacer()
-            }
+            Spacer()
+            Spacer()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(appBg.ignoresSafeArea())
+        .sheet(isPresented: $showSettings) { SettingsView() }
     }
-
-    // MARK: - Landscape
-
-    private var landscapeLayout: some View {
-        HStack(spacing: 0) {
-            // Left panel: title + gear + vertical category list
-            VStack(spacing: 0) {
-                ZStack(alignment: .leading) {
-                    Text("AnyTorah")
-                        .font(.headline.bold())
-                        .foregroundStyle(appFg)
-                        .frame(maxWidth: .infinity)
-                    Button { showSettings = true } label: {
-                        Image(systemName: "gear")
-                            .font(.subheadline)
-                            .foregroundStyle(appFg.opacity(0.75))
-                            .padding(6)
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
-
-                VStack(spacing: 6) {
-                    ForEach(TextCategory.allCases) { cat in
-                        LandscapeCategoryButton(
-                            category: cat,
-                            isSelected: cat == activeCategory,
-                            fg: appFg,
-                            onTap: { selectCategory(cat) }
-                        )
-                    }
-                }
-                .padding(.horizontal, 10)
-
-                Spacer()
-            }
-            .frame(width: 160)
-
-            Divider().background(appFg.opacity(0.30))
-
-            // Right panel: selector or empty state
-            if activeCategory != nil {
-                TextSelectorView(vm: vm, appBg: appBg, appFg: appFg, onBack: nil, onGo: onGo, showGear: false)
-            } else {
-                Spacer()
-                Text("Select a category")
-                    .font(.subheadline)
-                    .foregroundStyle(appFg.opacity(0.40))
-                Spacer()
-            }
-        }
-    }
-
-    // MARK: - Shared
 
     private func selectCategory(_ cat: TextCategory) {
-        lastCategoryRaw = cat.rawValue
         vm.category = cat
         vm.restoreState(for: cat)
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-            activeCategory = cat
-        }
+        onGo()
     }
 }
 
-// MARK: - Portrait: category grid, wrapped 3-per-row
+// MARK: - Category grid, wrapped 3-per-row
 
 private struct CategoryGrid: View {
-    let selectedCategory: TextCategory?
     let fg: Color
     let onSelect: (TextCategory) -> Void
 
@@ -170,7 +80,7 @@ private struct CategoryGrid: View {
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     HStack(spacing: Self.spacing) {
                         ForEach(row) { cat in
-                            CompactCategoryCard(category: cat, isSelected: cat == selectedCategory, fg: fg) {
+                            CompactCategoryCard(category: cat, fg: fg) {
                                 onSelect(cat)
                             }
                             .frame(width: cardWidth, height: Self.cardHeight)
@@ -184,11 +94,10 @@ private struct CategoryGrid: View {
     }
 }
 
-// MARK: - Portrait card
+// MARK: - Category card
 
 private struct CompactCategoryCard: View {
     let category: TextCategory
-    let isSelected: Bool
     let fg: Color
     let onTap: () -> Void
 
@@ -202,7 +111,7 @@ private struct CompactCategoryCard: View {
                     .foregroundStyle(fg)
                 Text(category.displayName)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(fg.opacity(isSelected ? 1 : 0.75))
+                    .foregroundStyle(fg.opacity(0.85))
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -210,63 +119,18 @@ private struct CompactCategoryCard: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(fg.opacity(isSelected ? 0.22 : pressed ? 0.14 : 0.08))
+                    .fill(fg.opacity(pressed ? 0.14 : 0.08))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(fg.opacity(isSelected ? 0.50 : 0.15),
-                                    lineWidth: isSelected ? 1.5 : 0.5)
+                            .stroke(fg.opacity(0.15), lineWidth: 0.5)
                     )
             )
         }
         .buttonStyle(.plain)
         .scaleEffect(pressed ? 0.97 : 1.0)
         .animation(.spring(response: 0.2, dampingFraction: 0.8), value: pressed)
-        .animation(.easeInOut(duration: 0.15), value: isSelected)
         .onLongPressGesture(minimumDuration: 0, maximumDistance: 50, pressing: { p in
             pressed = p
         }, perform: {})
-    }
-}
-
-// MARK: - Landscape category button (icon + name, horizontal)
-
-private struct LandscapeCategoryButton: View {
-    let category: TextCategory
-    let isSelected: Bool
-    let fg: Color
-    let onTap: () -> Void
-
-    @State private var pressed = false
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 8) {
-                Image(systemName: category.icon)
-                    .font(.system(size: 17))
-                    .frame(width: 22)
-                    .foregroundStyle(fg)
-                Text(category.displayName)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(fg.opacity(isSelected ? 1 : 0.80))
-                    .lineLimit(1)
-                Spacer()
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(fg.opacity(isSelected ? 0.22 : pressed ? 0.12 : 0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(fg.opacity(isSelected ? 0.50 : 0.12),
-                                    lineWidth: isSelected ? 1.5 : 0.5)
-                    )
-            )
-        }
-        .buttonStyle(.plain)
-        .scaleEffect(pressed ? 0.97 : 1.0)
-        .animation(.spring(response: 0.2, dampingFraction: 0.8), value: pressed)
-        .animation(.easeInOut(duration: 0.15), value: isSelected)
-        .onLongPressGesture(minimumDuration: 0, maximumDistance: 50, pressing: { p in pressed = p }, perform: {})
     }
 }

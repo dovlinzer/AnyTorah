@@ -49,14 +49,22 @@ to pull in the real implementation for any test that parses JSON.
 ```
 ContentView  (owns all top-level @State)
   ├── SplashView          (2.5s intro, fades out)
-  ├── CategoryMenuView    (pick one of 5 categories)
-  ├── TextSelectorView    (wheel-picker selector per category)
+  ├── HomeCombinedView    (home screen — category buttons ONLY; tapping one restores
+  │                        that category's last-used selection and jumps straight to
+  │                        TextReaderView, skipping any book/chapter picker screen)
   └── TextReaderView      (main reading + commentary + audio)
         ├── TextContentView       (scrollable VStack of segments)
         ├── CommentaryPanelView   (bottom slide-up panel)
+        ├── TextSelectorView      (sheet — full wheel-picker selector + Yomi buttons,
+        │                          opened via the header's list.bullet icon)
         ├── BookmarkListView      (sheet — searchable list)
         └── BookmarkEditSheet     (sheet — add/edit one bookmark)
 ```
+
+Book/chapter/daf navigation always happens from pickers in `TextReaderView`'s own header
+(tap the book/chapter nav pills, or the list.bullet icon for the full selector) — never from
+the home screen. `CategoryMenuView.swift` is old, unreferenced dead code predating
+`HomeCombinedView`; nothing instantiates it.
 
 ### State flow
 
@@ -85,7 +93,8 @@ ContentView  (owns all top-level @State)
 | `API/TalmudAudioService.swift` | Resolves YCT Talmud audio URLs from Supabase |
 | `API/DedicationService.swift` | Fetches + decodes the daily/weekly/monthly learning dedication banner |
 | `AudioPlayer.swift` | `AVPlayer` + Now Playing + speed control |
-| `Views/TextSelectorView.swift` | Wheel pickers + Yomi buttons |
+| `Views/HomeCombinedView.swift` | Home screen — category button grid only; selecting a category jumps straight to `TextReaderView` |
+| `Views/TextSelectorView.swift` | Wheel pickers + Yomi buttons; presented as a sheet from `TextReaderView`'s header, not shown on the home screen |
 | `Views/TextReaderView.swift` | Header rows, sheet management, picker sheets, audio row |
 | `Views/TextContentView.swift` | Segment rendering + scroll-to-verse |
 | `Views/CommentaryPanelView.swift` | Draggable bottom panel with commentary tabs + swap picker |
@@ -98,8 +107,9 @@ ContentView  (owns all top-level @State)
 | `models/TextCatalog.kt` | Static catalog |
 | `models/SASimanNames.kt` | SA siman names + `toHebrewNumeral()` |
 | `viewmodels/TextReaderViewModel.kt` | All selection state, load, commentary |
+| `ui/screens/HomeScreen.kt` | Home screen — category button grid only; selecting a category jumps straight to the reader |
 | `ui/screens/TextReaderScreen.kt` | Main reading screen composable + all picker sheets |
-| `ui/screens/TextSelectorScreen.kt` | Category selector composable |
+| `ui/screens/TextSelectorScreen.kt` | Wheel pickers + Yomi buttons; presented as a bottom sheet from `TextReaderScreen` (`ActiveSheet.SELECTOR`), not shown on the home screen |
 | `api/DedicationService.kt` | Fetches + decodes the daily/weekly/monthly learning dedication banner |
 
 ---

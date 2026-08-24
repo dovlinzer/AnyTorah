@@ -64,9 +64,6 @@ class MainActivity : ComponentActivity() {
                             audioPlayer = audioPlayer,
                             onBack = {
                                 navController.popBackStack()
-                            },
-                            onNavigateToSelector = {
-                                navController.navigate("home")
                             }
                         )
                     }

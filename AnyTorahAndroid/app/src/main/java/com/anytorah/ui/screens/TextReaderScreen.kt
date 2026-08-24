@@ -84,8 +84,7 @@ enum class ActiveSheet { SELECTOR, SETTINGS, BOOKMARKS, BOOKMARK_EDIT, CHAPTER_P
 fun TextReaderScreen(
     vm: TextReaderViewModel,
     audioPlayer: AudioPlayer,
-    onBack: () -> Unit,
-    onNavigateToSelector: () -> Unit
+    onBack: () -> Unit
 ) {
     val colors = LocalAnyTorahColors.current
     val scope = rememberCoroutineScope()
@@ -443,9 +442,13 @@ fun TextReaderScreen(
                     )
                 }
                 ActiveSheet.SELECTOR -> {
-                    // Navigate to selector
-                    activeSheet = null
-                    onNavigateToSelector()
+                    // TextSelectorScreen's own "Read" button already calls vm.load()
+                    // before invoking onRead — just dismiss the sheet here.
+                    TextSelectorScreen(
+                        vm = vm,
+                        onRead = { activeSheet = null },
+                        showHeader = true
+                    )
                 }
                 ActiveSheet.CHAPTER_PICKER -> {
                     ChapterPickerSheet(vm = vm, onDone = {

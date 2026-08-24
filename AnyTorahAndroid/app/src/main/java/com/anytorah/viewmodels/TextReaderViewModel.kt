@@ -134,16 +134,6 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         prefs.edit().putString("saTextMode", value.raw).apply()
     }
 
-    // MARK: - Home screen — last selected category persistence
-
-    var lastSelectedCategory: TextCategory?
-        get() = prefs.getString("lastSelectedCategory", null)
-            ?.let { raw -> TextCategory.values().find { it.name == raw } }
-        set(value) {
-            if (value == null) prefs.edit().remove("lastSelectedCategory").apply()
-            else prefs.edit().putString("lastSelectedCategory", value.name).apply()
-        }
-
     // MARK: - Selection state
 
     var category by mutableStateOf(TextCategory.TALMUD)
