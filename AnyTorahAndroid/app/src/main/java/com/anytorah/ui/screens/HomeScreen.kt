@@ -202,13 +202,13 @@ private data class HomeCategoryEntry(
             HomeCategoryEntry("Midrash Aggada", Icons.Default.FormatQuote, BrandColorFamily.VIOLET, TextCategory.MIDRASH) { vm ->
                 applyMidrashSubcategory(vm, MidrashSubcategory.AGGADA)
             },
-            HomeCategoryEntry("Midrash Halakha", Icons.Default.HistoryEdu, BrandColorFamily.PLUM, TextCategory.MIDRASH) { vm ->
+            HomeCategoryEntry("Midrash Halakha", Icons.Default.HistoryEdu, BrandColorFamily.VIOLET, TextCategory.MIDRASH) { vm ->
                 applyMidrashSubcategory(vm, MidrashSubcategory.HALAKHA)
             },
-            HomeCategoryEntry("Mishnah", Icons.Default.LibraryBooks, BrandColorFamily.BLOSSOM, TextCategory.MISHNAH) { vm ->
+            HomeCategoryEntry("Mishnah", Icons.Default.LibraryBooks, BrandColorFamily.PLUM, TextCategory.MISHNAH) { vm ->
                 vm.mishnahSubcategory = MishnahSubcategory.MISHNAH
             },
-            HomeCategoryEntry("Tosefta", Icons.Default.Description, BrandColorFamily.LAVENDER, TextCategory.MISHNAH) { vm ->
+            HomeCategoryEntry("Tosefta", Icons.Default.Description, BrandColorFamily.PLUM, TextCategory.MISHNAH) { vm ->
                 vm.mishnahSubcategory = MishnahSubcategory.TOSEFTA
             },
         )
@@ -221,8 +221,8 @@ private data class HomeCategoryEntry(
                 vm.talmudSubcategory = TalmudSubcategory.YERUSHALMI
             },
             HomeCategoryEntry("Tur", Icons.Default.MenuBook, BrandColorFamily.ROYAL_BLUE, TextCategory.TUR) { },
-            HomeCategoryEntry("Shulkhan Arukh", Icons.Default.FormatListBulleted, BrandColorFamily.SKY_BLUE, TextCategory.SHULCHAN_ARUKH) { },
-            HomeCategoryEntry("Rambam", Icons.Default.Star, BrandColorFamily.TEAL, TextCategory.RAMBAM) { },
+            HomeCategoryEntry("Shulkhan Arukh", Icons.Default.FormatListBulleted, BrandColorFamily.ROYAL_BLUE, TextCategory.SHULCHAN_ARUKH) { },
+            HomeCategoryEntry("Rambam", Icons.Default.Star, BrandColorFamily.SKY_BLUE, TextCategory.RAMBAM) { },
         )
 
         /** Mirrors the reset `MidrashSubcategory`'s own toggle used to perform in

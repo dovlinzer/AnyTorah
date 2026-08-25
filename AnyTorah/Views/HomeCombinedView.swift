@@ -122,11 +122,11 @@ private struct HomeCategoryEntry: Identifiable {
         HomeCategoryEntry(id: "midrashAggada", label: "Midrash Aggada", icon: "quote.bubble",
                            colorFamily: .violet, category: .midrash) { $0.midrashSubcategory = .aggada },
         HomeCategoryEntry(id: "midrashHalakha", label: "Midrash Halakha", icon: "text.book.closed",
-                           colorFamily: .plum, category: .midrash) { $0.midrashSubcategory = .halakha },
+                           colorFamily: .violet, category: .midrash) { $0.midrashSubcategory = .halakha },
         HomeCategoryEntry(id: "mishnah", label: "Mishnah", icon: "books.vertical",
-                           colorFamily: .blossom, category: .mishnah) { $0.mishnahSubcategory = .mishnah },
+                           colorFamily: .plum, category: .mishnah) { $0.mishnahSubcategory = .mishnah },
         HomeCategoryEntry(id: "tosefta", label: "Tosefta", icon: "doc.text",
-                           colorFamily: .lavender, category: .mishnah) { $0.mishnahSubcategory = .tosefta },
+                           colorFamily: .plum, category: .mishnah) { $0.mishnahSubcategory = .tosefta },
     ]
 
     static let rightColumn: [HomeCategoryEntry] = [
@@ -137,8 +137,8 @@ private struct HomeCategoryEntry: Identifiable {
         HomeCategoryEntry(id: "tur", label: "Tur", icon: "list.bullet.rectangle",
                            colorFamily: .royalBlue, category: .tur) { _ in },
         HomeCategoryEntry(id: "shulchanArukh", label: "Shulkhan Arukh", icon: "checklist",
-                           colorFamily: .skyBlue, category: .shulchanArukh) { _ in },
+                           colorFamily: .royalBlue, category: .shulchanArukh) { _ in },
         HomeCategoryEntry(id: "rambam", label: "Rambam", icon: "star.circle",
-                           colorFamily: .teal, category: .rambam) { _ in },
+                           colorFamily: .skyBlue, category: .rambam) { _ in },
     ]
 }

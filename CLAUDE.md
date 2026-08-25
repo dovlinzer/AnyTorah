@@ -179,7 +179,7 @@ so a leftover value from visiting the sibling subcategory can never leak through
    `.byVerse` can't surface mismatched wheels even transiently. Midrash Aggada is unaffected —
    still shows the toggle, still defaults to by-verse.
 
-### Home screen visual style — AnyYCTorah-style gradient tiles (2026-08-24, revised 2026-08-25)
+### Home screen visual style — AnyYCTorah-style gradient tiles (2026-08-24, revised 2026-08-25 twice)
 
 Borrowed directly from AnyYCTorah's `HomeView.swift`/`BrandGradients.swift`: two columns of
 tiles (icon + label, `HStack`/`Row`, ~64pt min height, 16pt corner radius), each filled with a
@@ -191,14 +191,13 @@ left/purple, right/blue split AnyYCTorah uses. Column gap is 24pt/dp, tile-to-ti
 column is 18pt/dp (both widened from an initial 12pt/dp — the first pass read as cramped).
 
 `Views/BrandGradients.swift` (iOS) / `ui/theme/BrandGradients.kt` (Android) define
-`BrandColorFamily`, now a **9**-case enum (5 purple, 4 blue — see the Rambam/navy note below)
-each with a 3-color `stops` list and a `gradient`/`brush` property. `purple`, `violet`, `blue`,
-`royalBlue`, and `skyBlue` reuse AnyYCTorah's exact confirmed-brand hex values; `lavender` and
-`blossom` also reuse AnyYCTorah's exact hex values. `plum` and `teal` are new same-style
-extensions — not claimed as confirmed YCT brand hexes, matching how AnyYCTorah documents its
-own non-brand extensions (green/gold/lavender/blossom). AnyYCTorah is iOS-only; the Android
-version is a fresh Compose translation of the same aesthetic (`Brush.linearGradient`), not a
-port of existing Kotlin.
+`BrandColorFamily`, now a **6**-case enum (3 purple, 3 blue — down from the original 10, see
+below) each with a 3-color `stops` list and a `gradient`/`brush` property. `purple`, `violet`,
+`blue`, `royalBlue`, and `skyBlue` reuse AnyYCTorah's exact confirmed-brand hex values. `plum`
+is a new same-style extension — not claimed as a confirmed YCT brand hex, matching how
+AnyYCTorah documents its own non-brand extensions (green/gold/lavender/blossom). AnyYCTorah is
+iOS-only; the Android version is a fresh Compose translation of the same aesthetic
+(`Brush.linearGradient`), not a port of existing Kotlin.
 
 **Tile text is always white (2026-08-25).** The initial pass used `prefersDarkForeground` to
 switch to dark text on the two palest stops (`lavender`, `blossom`) for contrast — per explicit
@@ -206,17 +205,35 @@ user direction this was dropped in favor of white everywhere, and the `prefersDa
 flag/property was deleted from `BrandColorFamily` on both platforms as dead code rather than
 left unused.
 
-**Color assignments, revised 2026-08-25** (swap + shift, all per explicit user direction):
-- Midrash Halakha and Tosefta **swapped** colors: Midrash Halakha is now `plum` (was
-  `lavender`), Tosefta is now `lavender` (was `plum`). Tanakh/Midrash Aggada/Mishnah unchanged
+**Color assignments — two rounds of changes on 2026-08-25, all per explicit user direction.**
+Round 1 (swap + shift, one color per category, 10 cases):
+- Midrash Halakha and Tosefta swapped colors: Midrash Halakha → `plum` (was `lavender`),
+  Tosefta → `lavender` (was `plum`). Tanakh/Midrash Aggada/Mishnah unchanged
   (`purple`/`violet`/`blossom`).
-- Talmud Yerushalmi now uses **the same** `blue` as Talmud Bavli, rather than its own shade —
-  freeing up the color it used to have (`royalBlue`).
-- The freed blue shifted down the column: Tur takes the freed `royalBlue` (Yerushalmi's old
-  color), Shulkhan Arukh takes Tur's old color (`skyBlue`), Rambam takes Shulkhan Arukh's old
-  color (`teal`). Rambam's own old color (`navy`) has nothing left to shift onto and was
-  **deleted** from `BrandColorFamily` entirely (checked for other references first — there were
-  none) rather than left defined-but-unused.
+- Talmud Yerushalmi took on Talmud Bavli's `blue` instead of its own shade, freeing the color
+  it used to have (`royalBlue`).
+- The freed blue shifted down the column: Tur → the freed `royalBlue`, Shulkhan Arukh → Tur's
+  old `skyBlue`, Rambam → Shulkhan Arukh's old `teal`. Rambam's own old color (`navy`) had
+  nothing left to shift onto and was deleted.
+
+Round 2 (siblings now **share** one color instead of each having its own, 10 cases → 6):
+- Midrash Aggada and Midrash Halakha both take Midrash Aggada's round-1 color, `violet`
+  (Halakha drops `plum`).
+- Mishnah and Tosefta both take Midrash Halakha's round-1 color, `plum` (Mishnah drops
+  `blossom`, Tosefta drops `lavender`).
+- Tur and Shulkhan Arukh both take Tur's round-1 color, `royalBlue` (Shulkhan Arukh drops
+  `skyBlue`).
+- Rambam takes Shulkhan Arukh's round-1 color, `skyBlue` (drops `teal`).
+- Talmud Bavli/Yerushalmi were already sharing `blue` from round 1 — untouched.
+- `lavender`, `blossom`, and `teal` all became unused by this pairing and were deleted from
+  `BrandColorFamily` on both platforms (checked for other references first — none), leaving
+  just `purple`/`violet`/`plum` (left column) and `blue`/`royalBlue`/`skyBlue` (right column).
+
+**The four retired hexes (`lavender`, `blossom`, `teal`, `navy`) are gone from the enum, not
+just unused — restore them from git history (`git log -- AnyTorah/Views/BrandGradients.swift`
+around 2026-08-25, same commit touches the Android file) if a future category addition (the
+user mentioned Responsa as a plausible example) needs its own distinct color again rather than
+pairing with an existing sibling.**
 
 **iOS project-file gotcha:** `AnyTorah.xcodeproj/project.pbxproj` uses explicit
 `PBXFileReference`/`PBXBuildFile` entries (not Xcode 16's folder-synchronized groups), so a new
