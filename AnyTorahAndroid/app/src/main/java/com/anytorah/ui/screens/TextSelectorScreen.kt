@@ -947,26 +947,30 @@ private fun MidrashWheels(vm: TextReaderViewModel) {
 
     Spacer(modifier = Modifier.height(8.dp))
 
-    // Navigation mode toggle
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-        listOf("By Verse" to MidrashNavigationMode.BY_VERSE, "Native" to MidrashNavigationMode.NATIVE)
-            .forEachIndexed { idx, (label, mode) ->
-                SegmentedButton(
-                    selected = vm.midrashNavigationMode == mode,
-                    onClick = {
-                        vm.midrashNavigationMode = mode
-                        vm.midrashNativeChapter = 1
-                        vm.midrashNativeSection = 1
-                    },
-                    shape = SegmentedButtonDefaults.itemShape(index = idx, count = 2),
-                    label = { Text(label, fontSize = 13.sp) }
-                )
-            }
+    // Navigation mode toggle — Midrash Halakha is always organized natively (chapter/halakha
+    // or perek/pasuk), not by Tanakh verse, so there's nothing to toggle for it; only Midrash
+    // Aggada offers a choice.
+    if (vm.midrashSubcategory != MidrashSubcategory.HALAKHA) {
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            listOf("By Verse" to MidrashNavigationMode.BY_VERSE, "Native" to MidrashNavigationMode.NATIVE)
+                .forEachIndexed { idx, (label, mode) ->
+                    SegmentedButton(
+                        selected = vm.midrashNavigationMode == mode,
+                        onClick = {
+                            vm.midrashNavigationMode = mode
+                            vm.midrashNativeChapter = 1
+                            vm.midrashNativeSection = 1
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(index = idx, count = 2),
+                        label = { Text(label, fontSize = 13.sp) }
+                    )
+                }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
     }
 
-    Spacer(modifier = Modifier.height(8.dp))
-
-    if (vm.midrashNavigationMode == MidrashNavigationMode.NATIVE) {
+    if (vm.midrashSubcategory == MidrashSubcategory.HALAKHA || vm.midrashNavigationMode == MidrashNavigationMode.NATIVE) {
         // Native navigation: chapter/section based on work structure
         val chapLabels = vm.midrashWork.nativeChapterLabels
         SelectorLabel(vm.midrashWork.nativeChapterLabel)

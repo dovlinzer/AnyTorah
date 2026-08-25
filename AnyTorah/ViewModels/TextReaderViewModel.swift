@@ -104,6 +104,12 @@ final class TextReaderViewModel {
         didSet {
             guard !isRestoring else { return }
             midrashWork = MidrashWork.works(for: midrashSubcategory).first ?? .mekhiltaYishmael
+            // Midrash Halakha (Mekhilta/Sifra/Sifrei) is always organized natively
+            // (chapter/halakha or perek/pasuk), not by Tanakh verse — Midrash Aggada keeps
+            // the by-verse default. Forced here, not just as an initial default, so the
+            // single shared `midrashNavigationMode` property can't carry a stale value
+            // across a Home-screen switch between the two sibling categories.
+            midrashNavigationMode = midrashSubcategory == .halakha ? .native : .byVerse
         }
     }
     var midrashWork: MidrashWork = .mekhiltaYishmael {
@@ -251,6 +257,10 @@ final class TextReaderViewModel {
             if let rawMode = d.string(forKey: "sel_midrash_navmode"),
                let mode = MidrashNavigationMode(rawValue: rawMode) {
                 midrashNavigationMode = mode
+            }
+            // Belt-and-suspenders against a stale persisted mode: Halakha is never by-verse.
+            if midrashSubcategory == .halakha {
+                midrashNavigationMode = .native
             }
             midrashNativeChapter = d.object(forKey: "sel_midrash_native_ch")  as? Int ?? 1
             midrashNativeSection = d.object(forKey: "sel_midrash_native_sec") as? Int ?? 1

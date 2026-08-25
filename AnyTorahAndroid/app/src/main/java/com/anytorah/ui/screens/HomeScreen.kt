@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.anytorah.models.MidrashNavigationMode
 import com.anytorah.models.MidrashSubcategory
 import com.anytorah.models.MidrashWork
 import com.anytorah.models.MishnahSubcategory
@@ -132,14 +133,14 @@ fun HomeScreen(
                     .widthIn(max = 600.dp)
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     HomeCategoryEntry.leftColumn.forEach { entry ->
                         CategoryTile(entry = entry, onClick = { select(entry) })
                     }
                 }
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     HomeCategoryEntry.rightColumn.forEach { entry ->
                         CategoryTile(entry = entry, onClick = { select(entry) })
                     }
@@ -152,7 +153,7 @@ fun HomeScreen(
 /** Icon + label, gradient background — matches AnyYCTorah's `TopicCard`. */
 @Composable
 private fun CategoryTile(entry: HomeCategoryEntry, onClick: () -> Unit) {
-    val fg = if (entry.colorFamily.prefersDarkForeground) Color.Black.copy(alpha = 0.75f) else Color.White
+    val fg = Color.White
 
     Row(
         modifier = Modifier
@@ -201,13 +202,13 @@ private data class HomeCategoryEntry(
             HomeCategoryEntry("Midrash Aggada", Icons.Default.FormatQuote, BrandColorFamily.VIOLET, TextCategory.MIDRASH) { vm ->
                 applyMidrashSubcategory(vm, MidrashSubcategory.AGGADA)
             },
-            HomeCategoryEntry("Midrash Halakha", Icons.Default.HistoryEdu, BrandColorFamily.LAVENDER, TextCategory.MIDRASH) { vm ->
+            HomeCategoryEntry("Midrash Halakha", Icons.Default.HistoryEdu, BrandColorFamily.PLUM, TextCategory.MIDRASH) { vm ->
                 applyMidrashSubcategory(vm, MidrashSubcategory.HALAKHA)
             },
             HomeCategoryEntry("Mishnah", Icons.Default.LibraryBooks, BrandColorFamily.BLOSSOM, TextCategory.MISHNAH) { vm ->
                 vm.mishnahSubcategory = MishnahSubcategory.MISHNAH
             },
-            HomeCategoryEntry("Tosefta", Icons.Default.Description, BrandColorFamily.PLUM, TextCategory.MISHNAH) { vm ->
+            HomeCategoryEntry("Tosefta", Icons.Default.Description, BrandColorFamily.LAVENDER, TextCategory.MISHNAH) { vm ->
                 vm.mishnahSubcategory = MishnahSubcategory.TOSEFTA
             },
         )
@@ -216,18 +217,21 @@ private data class HomeCategoryEntry(
             HomeCategoryEntry("Talmud Bavli", Icons.Default.AutoStories, BrandColorFamily.BLUE, TextCategory.TALMUD) { vm ->
                 vm.talmudSubcategory = TalmudSubcategory.BAVLI
             },
-            HomeCategoryEntry("Talmud Yerushalmi", Icons.Default.AccountBalance, BrandColorFamily.ROYAL_BLUE, TextCategory.TALMUD) { vm ->
+            HomeCategoryEntry("Talmud Yerushalmi", Icons.Default.AccountBalance, BrandColorFamily.BLUE, TextCategory.TALMUD) { vm ->
                 vm.talmudSubcategory = TalmudSubcategory.YERUSHALMI
             },
-            HomeCategoryEntry("Tur", Icons.Default.MenuBook, BrandColorFamily.SKY_BLUE, TextCategory.TUR) { },
-            HomeCategoryEntry("Shulkhan Arukh", Icons.Default.FormatListBulleted, BrandColorFamily.TEAL, TextCategory.SHULCHAN_ARUKH) { },
-            HomeCategoryEntry("Rambam", Icons.Default.Star, BrandColorFamily.NAVY, TextCategory.RAMBAM) { },
+            HomeCategoryEntry("Tur", Icons.Default.MenuBook, BrandColorFamily.ROYAL_BLUE, TextCategory.TUR) { },
+            HomeCategoryEntry("Shulkhan Arukh", Icons.Default.FormatListBulleted, BrandColorFamily.SKY_BLUE, TextCategory.SHULCHAN_ARUKH) { },
+            HomeCategoryEntry("Rambam", Icons.Default.Star, BrandColorFamily.TEAL, TextCategory.RAMBAM) { },
         )
 
         /** Mirrors the reset `MidrashSubcategory`'s own toggle used to perform in
          *  `TextSelectorScreen`'s `MidrashWheels` before that toggle was removed — Android's
          *  `midrashSubcategory` has no didSet-equivalent cascade of its own (unlike iOS), so
-         *  the work/book/chapter/verse reset has to happen here explicitly. */
+         *  the work/book/chapter/verse reset has to happen here explicitly. Also forces the
+         *  navigation mode: Midrash Halakha is always organized natively (chapter/halakha or
+         *  perek/pasuk) rather than by Tanakh verse, per 2026-08-25 request — Midrash Aggada
+         *  keeps the by-verse default. */
         private fun applyMidrashSubcategory(vm: TextReaderViewModel, sub: MidrashSubcategory) {
             vm.midrashSubcategory = sub
             val firstWork = MidrashWork.worksFor(sub).first()
@@ -237,6 +241,8 @@ private data class HomeCategoryEntry(
             }
             vm.midrashChapter = 1
             vm.midrashVerse = 1
+            vm.midrashNavigationMode = if (sub == MidrashSubcategory.HALAKHA)
+                MidrashNavigationMode.NATIVE else MidrashNavigationMode.BY_VERSE
         }
     }
 }

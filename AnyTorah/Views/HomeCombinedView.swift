@@ -26,13 +26,13 @@ struct HomeCombinedView: View {
             VStack(spacing: 20) {
                 header
 
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(spacing: 12) {
+                HStack(alignment: .top, spacing: 24) {
+                    VStack(spacing: 18) {
                         ForEach(HomeCategoryEntry.leftColumn) { entry in
                             categoryButton(entry)
                         }
                     }
-                    VStack(spacing: 12) {
+                    VStack(spacing: 18) {
                         ForEach(HomeCategoryEntry.rightColumn) { entry in
                             categoryButton(entry)
                         }
@@ -94,7 +94,7 @@ private struct CategoryTile: View {
                 .lineLimit(2)
             Spacer(minLength: 0)
         }
-        .foregroundStyle(entry.colorFamily.prefersDarkForeground ? .black.opacity(0.75) : .white)
+        .foregroundStyle(.white)
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
         .background(entry.colorFamily.gradient)
@@ -122,23 +122,23 @@ private struct HomeCategoryEntry: Identifiable {
         HomeCategoryEntry(id: "midrashAggada", label: "Midrash Aggada", icon: "quote.bubble",
                            colorFamily: .violet, category: .midrash) { $0.midrashSubcategory = .aggada },
         HomeCategoryEntry(id: "midrashHalakha", label: "Midrash Halakha", icon: "text.book.closed",
-                           colorFamily: .lavender, category: .midrash) { $0.midrashSubcategory = .halakha },
+                           colorFamily: .plum, category: .midrash) { $0.midrashSubcategory = .halakha },
         HomeCategoryEntry(id: "mishnah", label: "Mishnah", icon: "books.vertical",
                            colorFamily: .blossom, category: .mishnah) { $0.mishnahSubcategory = .mishnah },
         HomeCategoryEntry(id: "tosefta", label: "Tosefta", icon: "doc.text",
-                           colorFamily: .plum, category: .mishnah) { $0.mishnahSubcategory = .tosefta },
+                           colorFamily: .lavender, category: .mishnah) { $0.mishnahSubcategory = .tosefta },
     ]
 
     static let rightColumn: [HomeCategoryEntry] = [
         HomeCategoryEntry(id: "talmudBavli", label: "Talmud Bavli", icon: "scroll",
                            colorFamily: .blue, category: .talmud) { $0.talmudSubcategory = .bavli },
         HomeCategoryEntry(id: "talmudYerushalmi", label: "Talmud Yerushalmi", icon: "building.columns",
-                           colorFamily: .royalBlue, category: .talmud) { $0.talmudSubcategory = .yerushalmi },
+                           colorFamily: .blue, category: .talmud) { $0.talmudSubcategory = .yerushalmi },
         HomeCategoryEntry(id: "tur", label: "Tur", icon: "list.bullet.rectangle",
-                           colorFamily: .skyBlue, category: .tur) { _ in },
+                           colorFamily: .royalBlue, category: .tur) { _ in },
         HomeCategoryEntry(id: "shulchanArukh", label: "Shulkhan Arukh", icon: "checklist",
-                           colorFamily: .teal, category: .shulchanArukh) { _ in },
+                           colorFamily: .skyBlue, category: .shulchanArukh) { _ in },
         HomeCategoryEntry(id: "rambam", label: "Rambam", icon: "star.circle",
-                           colorFamily: .navy, category: .rambam) { _ in },
+                           colorFamily: .teal, category: .rambam) { _ in },
     ]
 }

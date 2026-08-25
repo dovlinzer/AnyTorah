@@ -5,16 +5,19 @@ import SwiftUI
 /// diagonal gradient: a brighter tint, a mid anchor hue, and a deeper shade of the same
 /// hue — never a flat color or a cross-hue blend). `purple`, `violet`, `blue`, `royalBlue`,
 /// and `skyBlue` reuse AnyYCTorah's exact confirmed-brand hex values directly; `lavender`
-/// and `blossom` also reuse AnyYCTorah's exact hex values (see `prefersDarkForeground`
-/// below). `plum`, `teal`, and `navy` are new same-style extensions sized to exactly the
-/// ten home-screen categories here (five purple-family, five blue-family) — not claimed as
-/// confirmed YCT brand hexes, matching how AnyYCTorah's own non-brand extensions
-/// (`green`/`gold`/`lavender`/`blossom`) are documented there.
+/// and `blossom` also reuse AnyYCTorah's exact hex values. `plum` and `teal` are new
+/// same-style extensions sized to exactly the ten home-screen categories here (five
+/// purple-family, five blue-family) — not claimed as confirmed YCT brand hexes, matching
+/// how AnyYCTorah's own non-brand extensions (`green`/`gold`/`lavender`/`blossom`) are
+/// documented there. `navy` (originally Rambam's color) was retired 2026-08-25 when tile
+/// text was standardized to always-white and the right column's colors shifted down by one
+/// (Bavli's blue now covers Yerushalmi too, freeing royalBlue/skyBlue/teal to shift onto
+/// Tur/SA/Rambam) — no category needs a sixth blue shade.
 enum BrandColorFamily {
     // Purple family — left column (Tanakh, Midrash Aggada, Midrash Halakha, Mishnah, Tosefta)
     case purple, violet, lavender, blossom, plum
     // Blue family — right column (Talmud Bavli, Talmud Yerushalmi, Tur, Shulkhan Arukh, Rambam)
-    case blue, royalBlue, skyBlue, teal, navy
+    case blue, royalBlue, skyBlue, teal
 
     var stops: [Color] {
         switch self {
@@ -27,14 +30,7 @@ enum BrandColorFamily {
         case .royalBlue: return [Color(hex: "6fa3ff"), Color(hex: "0059ea"), Color(hex: "00297a")]
         case .skyBlue:   return [Color(hex: "6fe0ff"), Color(hex: "0b90ff"), Color(hex: "0044b8")]
         case .teal:      return [Color(hex: "7dd3e8"), Color(hex: "0ea5e9"), Color(hex: "0369a1")]
-        case .navy:      return [Color(hex: "5c7fb0"), Color(hex: "1e3a5f"), Color(hex: "0a1826")]
         }
-    }
-
-    /// `lavender`/`blossom` are pale enough (same hexes as AnyYCTorah, where these two are
-    /// also flagged) that white text/icons lose contrast against their lightest stop.
-    var prefersDarkForeground: Bool {
-        self == .lavender || self == .blossom
     }
 
     var gradient: LinearGradient {

@@ -500,6 +500,10 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                 midrashChapter        = prefs.getInt("sel_midrash_chapter", 1)
                 midrashVerse          = prefs.getInt("sel_midrash_verse", 1)
                 midrashNavigationMode = MidrashNavigationMode.fromId(prefs.getString("sel_midrash_navmode", null))
+                // Belt-and-suspenders against a stale persisted mode: Halakha is never by-verse.
+                if (midrashSubcategory == MidrashSubcategory.HALAKHA) {
+                    midrashNavigationMode = MidrashNavigationMode.NATIVE
+                }
                 midrashNativeChapter  = prefs.getInt("sel_midrash_native_ch", 1)
                 midrashNativeSection  = prefs.getInt("sel_midrash_native_sec", 1)
             }

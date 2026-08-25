@@ -1280,16 +1280,20 @@ private struct MidrashWheels: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            // Mode toggle
-            Picker("Nav Mode", selection: $vm.midrashNavigationMode) {
-                Text("By Verse").tag(MidrashNavigationMode.byVerse)
-                Text("Native").tag(MidrashNavigationMode.native)
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 16)
-            .onChange(of: vm.midrashNavigationMode) { _, _ in
-                vm.midrashNativeChapter = 1
-                vm.midrashNativeSection = 1
+            // Mode toggle — Midrash Halakha is always organized natively (chapter/halakha or
+            // perek/pasuk), not by Tanakh verse, so there's nothing to toggle for it; only
+            // Midrash Aggada offers a choice.
+            if vm.midrashSubcategory != .halakha {
+                Picker("Nav Mode", selection: $vm.midrashNavigationMode) {
+                    Text("By Verse").tag(MidrashNavigationMode.byVerse)
+                    Text("Native").tag(MidrashNavigationMode.native)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .onChange(of: vm.midrashNavigationMode) { _, _ in
+                    vm.midrashNativeChapter = 1
+                    vm.midrashNativeSection = 1
+                }
             }
 
             HStack(spacing: 0) {
@@ -1306,7 +1310,7 @@ private struct MidrashWheels: View {
                     .pickerStyle(.wheel)
                 }
 
-                if vm.midrashNavigationMode == .native {
+                if vm.midrashSubcategory == .halakha || vm.midrashNavigationMode == .native {
                     nativeWheels
                 } else {
                     byVerseWheels

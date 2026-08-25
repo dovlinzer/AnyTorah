@@ -153,7 +153,33 @@ fields at all. Fixed on both platforms:
   non-nullable `Int` field would silently come back `0` instead of its declared default instead.
   Nullable fields don't have this trap — a missing JSON key reliably decodes to `null`.
 
-### Home screen visual style — AnyYCTorah-style gradient tiles (2026-08-24)
+**Midrash Halakha is always "Native" navigation, never "By Verse" — fixed 2026-08-25.**
+`midrashNavigationMode` (`MidrashNavigationMode.byVerse`/`.native` on iOS,
+`MidrashNavigationMode.BY_VERSE`/`.NATIVE` on Android) is a single property shared by both
+Midrash subcategories, defaulting to by-verse — appropriate for Midrash Aggada (Midrash
+Rabbah etc., genuinely organized around a Tanakh verse), wrong for Midrash Halakha (Mekhilta/
+Sifra/Sifrei), which per explicit user direction should always use its native chapter/
+halakha (or perek/pasuk) structure, never the verse association. Since there's only one
+shared property, forcing it correctly required three coordinated changes, on both platforms,
+so a leftover value from visiting the sibling subcategory can never leak through:
+1. **Selection time** — iOS's `midrashSubcategory` `didSet` (already existed, to reset
+   `midrashWork`) now also sets `midrashNavigationMode = midrashSubcategory == .halakha ?
+   .native : .byVerse`. Android has no such cascade (see above), so
+   `HomeScreen.kt`'s `applyMidrashSubcategory` sets it explicitly the same way.
+2. **Restore time** — `TextReaderViewModel.restoreState(for:)` (iOS) /
+   `restoreState(cat:)` (Android) both restore `midrashNavigationMode` from a single
+   UserDefaults/SharedPreferences key not itself scoped by subcategory; both now force it back
+   to native immediately afterward whenever the restored subcategory is Halakha, as a
+   belt-and-suspenders against a value persisted from an earlier Aggada session.
+3. **Selector UI** — `TextSelectorView.swift`'s `MidrashWheels` / `TextSelectorScreen.kt`'s
+   `MidrashWheels` hide the "By Verse"/"Native" segmented toggle entirely when
+   `midrashSubcategory == .halakha` (there's nothing to choose), and the wheel-picker branch
+   that used to key only on `midrashNavigationMode == .native` now also treats
+   `midrashSubcategory == .halakha` as native regardless of the stored mode value, so a stray
+   `.byVerse` can't surface mismatched wheels even transiently. Midrash Aggada is unaffected —
+   still shows the toggle, still defaults to by-verse.
+
+### Home screen visual style — AnyYCTorah-style gradient tiles (2026-08-24, revised 2026-08-25)
 
 Borrowed directly from AnyYCTorah's `HomeView.swift`/`BrandGradients.swift`: two columns of
 tiles (icon + label, `HStack`/`Row`, ~64pt min height, 16pt corner radius), each filled with a
@@ -161,18 +187,36 @@ three-stop diagonal gradient (bright tint → brand-anchor hue → deep shade of
 never a flat color or a cross-hue blend) instead of the previous flat `appFg`-tinted card.
 Left column = purple family (Tanakh, Midrash Aggada, Midrash Halakha, Mishnah, Tosefta); right
 column = blue family (Talmud Bavli, Talmud Yerushalmi, Tur, Shulkhan Arukh, Rambam) — same
-left/purple, right/blue split AnyYCTorah uses.
+left/purple, right/blue split AnyYCTorah uses. Column gap is 24pt/dp, tile-to-tile gap within a
+column is 18pt/dp (both widened from an initial 12pt/dp — the first pass read as cramped).
 
 `Views/BrandGradients.swift` (iOS) / `ui/theme/BrandGradients.kt` (Android) define
-`BrandColorFamily`, a 10-case enum (5 purple, 5 blue) each with a 3-color `stops` list and a
-`gradient`/`brush` property. `purple`, `violet`, `blue`, `royalBlue`, and `skyBlue` reuse
-AnyYCTorah's exact confirmed-brand hex values; `lavender` and `blossom` also reuse AnyYCTorah's
-exact hex values, including its `prefersDarkForeground` flag on those two (their lightest
-gradient stop is pale enough that white text/icons lose contrast). `plum`, `teal`, and `navy`
-are new same-style extensions sized to exactly these ten categories — not claimed as confirmed
-YCT brand hexes, matching how AnyYCTorah documents its own non-brand extensions
-(green/gold/lavender/blossom). AnyYCTorah is iOS-only; the Android version is a fresh Compose
-translation of the same aesthetic (`Brush.linearGradient`), not a port of existing Kotlin.
+`BrandColorFamily`, now a **9**-case enum (5 purple, 4 blue — see the Rambam/navy note below)
+each with a 3-color `stops` list and a `gradient`/`brush` property. `purple`, `violet`, `blue`,
+`royalBlue`, and `skyBlue` reuse AnyYCTorah's exact confirmed-brand hex values; `lavender` and
+`blossom` also reuse AnyYCTorah's exact hex values. `plum` and `teal` are new same-style
+extensions — not claimed as confirmed YCT brand hexes, matching how AnyYCTorah documents its
+own non-brand extensions (green/gold/lavender/blossom). AnyYCTorah is iOS-only; the Android
+version is a fresh Compose translation of the same aesthetic (`Brush.linearGradient`), not a
+port of existing Kotlin.
+
+**Tile text is always white (2026-08-25).** The initial pass used `prefersDarkForeground` to
+switch to dark text on the two palest stops (`lavender`, `blossom`) for contrast — per explicit
+user direction this was dropped in favor of white everywhere, and the `prefersDarkForeground`
+flag/property was deleted from `BrandColorFamily` on both platforms as dead code rather than
+left unused.
+
+**Color assignments, revised 2026-08-25** (swap + shift, all per explicit user direction):
+- Midrash Halakha and Tosefta **swapped** colors: Midrash Halakha is now `plum` (was
+  `lavender`), Tosefta is now `lavender` (was `plum`). Tanakh/Midrash Aggada/Mishnah unchanged
+  (`purple`/`violet`/`blossom`).
+- Talmud Yerushalmi now uses **the same** `blue` as Talmud Bavli, rather than its own shade —
+  freeing up the color it used to have (`royalBlue`).
+- The freed blue shifted down the column: Tur takes the freed `royalBlue` (Yerushalmi's old
+  color), Shulkhan Arukh takes Tur's old color (`skyBlue`), Rambam takes Shulkhan Arukh's old
+  color (`teal`). Rambam's own old color (`navy`) has nothing left to shift onto and was
+  **deleted** from `BrandColorFamily` entirely (checked for other references first — there were
+  none) rather than left defined-but-unused.
 
 **iOS project-file gotcha:** `AnyTorah.xcodeproj/project.pbxproj` uses explicit
 `PBXFileReference`/`PBXBuildFile` entries (not Xcode 16's folder-synchronized groups), so a new
