@@ -123,18 +123,35 @@ fun TextReaderScreen(
             .fillMaxSize()
             .background(colors.appBackground)
     ) {
-        // Row 1: Settings | Title | [Bookmark, Bookmarks, List]
+        // Row 1: [Bookmark, Bookmarks, List] | Title | Settings
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 4.dp, vertical = 2.dp)
         ) {
-            // Left: Settings
-            IconButton(
-                onClick = { activeSheet = ActiveSheet.SETTINGS },
-                modifier = Modifier.align(Alignment.CenterStart)
-            ) {
-                Icon(Icons.Default.Settings, contentDescription = "Settings", tint = colors.appForeground)
+            // Left: bookmark, bookmarks list, selector
+            Row(modifier = Modifier.align(Alignment.CenterStart)) {
+                IconButton(onClick = { activeSheet = ActiveSheet.BOOKMARK_EDIT }) {
+                    Icon(
+                        Icons.Default.BookmarkBorder,
+                        contentDescription = "Save bookmark",
+                        tint = colors.editorialColor
+                    )
+                }
+                IconButton(onClick = { activeSheet = ActiveSheet.BOOKMARKS }) {
+                    Icon(
+                        Icons.Default.Bookmarks,
+                        contentDescription = "Bookmarks",
+                        tint = colors.appForeground
+                    )
+                }
+                IconButton(onClick = { activeSheet = ActiveSheet.SELECTOR }) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.List,
+                        contentDescription = "Selector",
+                        tint = colors.appForeground
+                    )
+                }
             }
 
             // Center: Nav pills. In Hebrew mode the layout flips RTL so book name sits on the right.
@@ -186,29 +203,12 @@ fun TextReaderScreen(
             }
             } // end CompositionLocalProvider
 
-            // Right: bookmark, bookmarks list
-            Row(modifier = Modifier.align(Alignment.CenterEnd)) {
-                IconButton(onClick = { activeSheet = ActiveSheet.BOOKMARK_EDIT }) {
-                    Icon(
-                        Icons.Default.BookmarkBorder,
-                        contentDescription = "Save bookmark",
-                        tint = colors.editorialColor
-                    )
-                }
-                IconButton(onClick = { activeSheet = ActiveSheet.BOOKMARKS }) {
-                    Icon(
-                        Icons.Default.Bookmarks,
-                        contentDescription = "Bookmarks",
-                        tint = colors.appForeground
-                    )
-                }
-                IconButton(onClick = { activeSheet = ActiveSheet.SELECTOR }) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.List,
-                        contentDescription = "Selector",
-                        tint = colors.appForeground
-                    )
-                }
+            // Right: Settings
+            IconButton(
+                onClick = { activeSheet = ActiveSheet.SETTINGS },
+                modifier = Modifier.align(Alignment.CenterEnd)
+            ) {
+                Icon(Icons.Default.Settings, contentDescription = "Settings", tint = colors.appForeground)
             }
         }
 

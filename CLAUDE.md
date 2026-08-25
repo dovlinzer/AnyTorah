@@ -247,7 +247,12 @@ UUIDs). Android has no equivalent step — Gradle discovers new `.kt` files unde
 automatically by package directory.
 
 **Settings gear moved to the top-right on iOS home screen** (was top-left) to match the
-platform convention Android's `HomeScreen.kt` already followed.
+platform convention Android's `HomeScreen.kt` already followed. **Extended 2026-08-25 to the
+reader screen's header too** (`TextReaderView.swift`'s `readerHeader`, `TextReaderScreen.kt`'s
+Row 1) — the gear swapped places with the bookmark/bookmarks/selector icon cluster, so gear is
+now top-right and that cluster is top-left on both screens, both platforms. Also added more
+breathing room between the "AnyTorah" title and the tile grid on the home screen (iOS: outer
+`VStack` spacing 20→32; Android: header `Box`'s `bottom` padding 12dp→24dp).
 
 ### Tanakh selector — Torah/Nevi'im/Ketuvim as a segmented row (2026-08-25)
 

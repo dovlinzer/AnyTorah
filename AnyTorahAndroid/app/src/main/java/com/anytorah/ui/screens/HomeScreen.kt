@@ -106,7 +106,7 @@ fun HomeScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 48.dp, start = 12.dp, end = 4.dp, bottom = 12.dp)
+                .padding(top = 48.dp, start = 12.dp, end = 4.dp, bottom = 24.dp)
         ) {
             Text(
                 text = "AnyTorah",

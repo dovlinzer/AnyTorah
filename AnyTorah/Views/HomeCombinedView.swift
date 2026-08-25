@@ -23,7 +23,7 @@ struct HomeCombinedView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
+            VStack(spacing: 32) {
                 header
 
                 HStack(alignment: .top, spacing: 24) {

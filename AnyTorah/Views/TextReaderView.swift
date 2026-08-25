@@ -161,7 +161,7 @@ struct TextReaderView: View {
 
     private var readerHeader: some View {
         VStack(spacing: 0) {
-            // Row 1: Gear (far left) | centered title | [bookmark][bookmarks][list] (far right)
+            // Row 1: [bookmark][bookmarks][list] (far left) | centered title | Gear (far right)
             // The HStack gets .frame(maxWidth:.infinity) so it always spans the full width
             // regardless of ZStack sizing, keeping the right-icon cluster truly at the edge.
             ZStack {
@@ -203,15 +203,7 @@ struct TextReaderView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
 
                 HStack {
-                    Button { activeSheet = .settings } label: {
-                        Image(systemName: "gear")
-                            .foregroundStyle(appFg)
-                            .font(.body)
-                    }
-
-                    Spacer()
-
-                    // Right-side cluster — always together at the trailing edge
+                    // Left-side cluster — always together at the leading edge
                     HStack(spacing: 14) {
                         Button { activeSheet = .bookmarkEdit } label: {
                             Image(systemName: bookmarkManager.isCurrentLocationBookmarked(vm: vm)
@@ -229,6 +221,15 @@ struct TextReaderView: View {
                                 .foregroundStyle(appFg)
                                 .font(.body)
                         }
+                    }
+
+                    Spacer()
+
+                    // Settings gear — top-right, matching the home screen convention
+                    Button { activeSheet = .settings } label: {
+                        Image(systemName: "gear")
+                            .foregroundStyle(appFg)
+                            .font(.body)
                     }
                 }
                 .frame(maxWidth: .infinity)   // guarantee full-width HStack in ZStack
