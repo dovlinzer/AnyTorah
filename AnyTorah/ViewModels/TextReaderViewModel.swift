@@ -136,6 +136,17 @@ final class TextReaderViewModel {
     /// 1-based scroll target set after by-verse load; consumed by TextContentView scrollToVerse binding.
     var midrashScrollToIndex: Int? = nil
 
+    // Teshuvot — subcategory → work → volume → siman. See TeshuvotWork's own doc comment:
+    // volume/siman navigation uses draft, unverified Sefaria ref data.
+    var teshuvotSubcategory: TeshuvotSubcategory = .rishonim
+    var teshuvotWork: TeshuvotWork = .rashi {
+        didSet { if !isRestoring { teshuvotVolume = 1; teshuvotSiman = 1 } }
+    }
+    var teshuvotVolume: Int = 1 {
+        didSet { if !isRestoring { teshuvotSiman = 1 } }
+    }
+    var teshuvotSiman: Int = 1
+
     // MARK: - Display state
 
     private var _displayMode: TextDisplayMode = .source
@@ -264,6 +275,15 @@ final class TextReaderViewModel {
             }
             midrashNativeChapter = d.object(forKey: "sel_midrash_native_ch")  as? Int ?? 1
             midrashNativeSection = d.object(forKey: "sel_midrash_native_sec") as? Int ?? 1
+        case .teshuvot:
+            if let sub = d.string(forKey: "sel_teshuvot_sub").flatMap(TeshuvotSubcategory.init) {
+                teshuvotSubcategory = sub
+            }
+            if let raw = d.string(forKey: "sel_teshuvot_work"), let w = TeshuvotWork(rawValue: raw) {
+                teshuvotWork = w
+            }
+            teshuvotVolume = d.object(forKey: "sel_teshuvot_volume") as? Int ?? 1
+            teshuvotSiman  = d.object(forKey: "sel_teshuvot_siman")  as? Int ?? 1
         }
     }
 
@@ -310,6 +330,11 @@ final class TextReaderViewModel {
             d.set(midrashNavigationMode.rawValue, forKey: "sel_midrash_navmode")
             d.set(midrashNativeChapter,           forKey: "sel_midrash_native_ch")
             d.set(midrashNativeSection,           forKey: "sel_midrash_native_sec")
+        case .teshuvot:
+            d.set(teshuvotSubcategory.rawValue, forKey: "sel_teshuvot_sub")
+            d.set(teshuvotWork.rawValue,        forKey: "sel_teshuvot_work")
+            d.set(teshuvotVolume,               forKey: "sel_teshuvot_volume")
+            d.set(teshuvotSiman,                forKey: "sel_teshuvot_siman")
         }
     }
 
@@ -348,6 +373,7 @@ final class TextReaderViewModel {
         case .tur:           return "tur_\(turSection)"
         case .shulchanArukh: return "sa_\(saSection)"
         case .midrash:       return "midrash"
+        case .teshuvot:      return "teshuvot"
         }
     }
 
@@ -367,6 +393,7 @@ final class TextReaderViewModel {
         case .mishnah: return mishnahSubcategory.displayName
         case .talmud:  return "Talmud \(talmudSubcategory.displayName)"
         case .midrash: return midrashSubcategory.displayName
+        case .teshuvot: return teshuvotSubcategory.displayName
         default:       return category.displayName
         }
     }
@@ -376,6 +403,7 @@ final class TextReaderViewModel {
         case .mishnah: return mishnahSubcategory.hebrewName
         case .talmud:  return "\(category.hebrewName) \(talmudSubcategory.hebrewName)"
         case .midrash: return midrashSubcategory.hebrewName
+        case .teshuvot: return teshuvotSubcategory.hebrewName
         default:       return category.hebrewName
         }
     }
@@ -418,6 +446,8 @@ final class TextReaderViewModel {
             return true
         case .midrash:
             return false
+        case .teshuvot:
+            return false
         }
     }
 
@@ -445,6 +475,7 @@ final class TextReaderViewModel {
         case .tur:           return availableCommentaries  // Tur slots are always valid (fixed, no swap picker)
         case .shulchanArukh: return availableCommentaries  // SA slots are always valid
         case .midrash:       return []
+        case .teshuvot:      return []
         }
     }
 
@@ -740,6 +771,11 @@ final class TextReaderViewModel {
             }
             let bookName = TextCatalog.allTanakhBooks.first(where: { $0.id == midrashBookIndex })?.name ?? ""
             return "\(midrashWork.displayName), \(bookName) \(midrashChapter):\(midrashVerse)"
+        case .teshuvot:
+            if let label = teshuvotWork.volumeLabel {
+                return "\(teshuvotWork.displayName), \(label) \(teshuvotVolume):\(teshuvotSiman)"
+            }
+            return "\(teshuvotWork.displayName) §\(teshuvotSiman)"
         }
     }
 
@@ -774,6 +810,8 @@ final class TextReaderViewModel {
             return useHe ? s.hebrewName.strippingNikud : s.name
         case .midrash:
             return useHe ? midrashWork.hebrewName : midrashWork.displayName
+        case .teshuvot:
+            return useHe ? teshuvotWork.hebrewName : teshuvotWork.displayName
         }
     }
 
@@ -810,6 +848,11 @@ final class TextReaderViewModel {
             }
             let bookName = TextCatalog.allTanakhBooks.first(where: { $0.id == midrashBookIndex })?.name ?? "?"
             return "\(bookName) \(midrashChapter):\(midrashVerse)"
+        case .teshuvot:
+            if teshuvotWork.volumeLabel != nil {
+                return "\(teshuvotVolume):\(teshuvotSiman)"
+            }
+            return "§\(teshuvotSiman)"
         }
     }
 
@@ -923,6 +966,20 @@ final class TextReaderViewModel {
                         verse: midrashVerse)
                     segments = segs
                     midrashScrollToIndex = scrollIdx + 1  // 1-based for scrollToVerse compat
+                }
+            case .teshuvot:
+                // DRAFT ref — see TeshuvotWork's own doc comment. Same generic-ref fetch
+                // pattern as Midrash's native-mode branch above; a wrong ref surfaces via the
+                // existing "Error loading text" / Retry UI, not a crash.
+                let ref = teshuvotWork.sefariaRef(volume: teshuvotVolume, siman: teshuvotSiman)
+                currentRef = ref
+                let (he, en) = try await SefariaTextClient.shared.fetchBoth(ref: ref)
+                let count = max(he.count, en.count)
+                segments = (0..<count).compactMap { i in
+                    let seg = TextSegment.content(index: i,
+                                                  he: i < he.count ? he[i] : "",
+                                                  en: i < en.count ? en[i] : "")
+                    return seg.hebrewHTML.isEmpty && seg.englishHTML.isEmpty ? nil : seg
                 }
             case .tur:
                 let r = SefariaTextClient.shared.ref(
@@ -1253,6 +1310,8 @@ final class TextReaderViewModel {
                 return midrashNativeChapter == 1 && midrashNativeSection == 1
             }
             return midrashChapter == 1 && midrashVerse == 1
+        case .teshuvot:
+            return teshuvotVolume == 1 && teshuvotSiman == 1
         }
     }
 
@@ -1342,6 +1401,12 @@ final class TextReaderViewModel {
                 if midrashVerse > 1 { midrashVerse -= 1 }
                 else if midrashChapter > 1 { midrashChapter -= 1 }
             }
+        case .teshuvot:
+            if teshuvotSiman > 1 {
+                teshuvotSiman -= 1
+            } else if teshuvotWork.volumeLabel != nil && teshuvotVolume > 1 {
+                teshuvotVolume -= 1
+            }
         }
         await load()
     }
@@ -1389,6 +1454,13 @@ final class TextReaderViewModel {
                     let bookChapters = TextCatalog.allTanakhBooks.first(where: { $0.id == midrashBookIndex })?.chapters ?? 1
                     if midrashChapter < bookChapters { midrashChapter += 1 }
                 }
+            }
+        case .teshuvot:
+            if teshuvotSiman < TeshuvotWork.placeholderMaxSiman {
+                teshuvotSiman += 1
+            } else if teshuvotWork.volumeLabel != nil && teshuvotVolume < teshuvotWork.volumeCount {
+                teshuvotVolume += 1
+                teshuvotSiman = 1
             }
         }
         await load()

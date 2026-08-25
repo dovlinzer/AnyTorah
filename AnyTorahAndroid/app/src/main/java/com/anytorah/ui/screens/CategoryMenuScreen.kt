@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.HistoryEdu
 import androidx.compose.material.icons.filled.LibraryBooks
@@ -200,4 +201,5 @@ private fun categoryIcon(category: TextCategory): ImageVector = when (category) 
     TextCategory.TUR -> Icons.Default.MenuBook
     TextCategory.SHULCHAN_ARUKH -> Icons.Default.FormatListBulleted
     TextCategory.MIDRASH -> Icons.Default.HistoryEdu
+    TextCategory.TESHUVOT -> Icons.Default.Email
 }

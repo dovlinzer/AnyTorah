@@ -47,6 +47,12 @@ struct Bookmark: Codable, Identifiable {
     let midrashChapter: Int
     let midrashVerse: Int
 
+    // Teshuvot Rishonim — added alongside the category itself, not as a later fix.
+    let teshuvotSubcategory: TeshuvotSubcategory
+    let teshuvotWork: TeshuvotWork
+    let teshuvotVolume: Int
+    let teshuvotSiman: Int
+
     /// Returns true if name, notes, or subtitle contain the query (case-insensitive).
     func matches(_ query: String) -> Bool {
         let q = query.lowercased()
@@ -69,7 +75,10 @@ struct Bookmark: Codable, Identifiable {
          turSection: Int = 0, turSiman: Int = 1,
          midrashSubcategory: MidrashSubcategory = .halakha,
          midrashWork: MidrashWork = .mekhiltaYishmael,
-         midrashBookIndex: Int = 1, midrashChapter: Int = 1, midrashVerse: Int = 1) {
+         midrashBookIndex: Int = 1, midrashChapter: Int = 1, midrashVerse: Int = 1,
+         teshuvotSubcategory: TeshuvotSubcategory = .rishonim,
+         teshuvotWork: TeshuvotWork = .rashi,
+         teshuvotVolume: Int = 1, teshuvotSiman: Int = 1) {
         self.id = id
         self.name = name
         self.notes = notes
@@ -98,6 +107,10 @@ struct Bookmark: Codable, Identifiable {
         self.midrashBookIndex = midrashBookIndex
         self.midrashChapter = midrashChapter
         self.midrashVerse = midrashVerse
+        self.teshuvotSubcategory = teshuvotSubcategory
+        self.teshuvotWork = teshuvotWork
+        self.teshuvotVolume = teshuvotVolume
+        self.teshuvotSiman = teshuvotSiman
     }
 
     /// Custom decoder so bookmarks saved before Tur/Midrash/subcategory fields existed
@@ -133,6 +146,10 @@ struct Bookmark: Codable, Identifiable {
         midrashBookIndex = try c.decodeIfPresent(Int.self, forKey: .midrashBookIndex) ?? 1
         midrashChapter = try c.decodeIfPresent(Int.self, forKey: .midrashChapter) ?? 1
         midrashVerse = try c.decodeIfPresent(Int.self, forKey: .midrashVerse) ?? 1
+        teshuvotSubcategory = try c.decodeIfPresent(TeshuvotSubcategory.self, forKey: .teshuvotSubcategory) ?? .rishonim
+        teshuvotWork = try c.decodeIfPresent(TeshuvotWork.self, forKey: .teshuvotWork) ?? .rashi
+        teshuvotVolume = try c.decodeIfPresent(Int.self, forKey: .teshuvotVolume) ?? 1
+        teshuvotSiman = try c.decodeIfPresent(Int.self, forKey: .teshuvotSiman) ?? 1
     }
 
     /// Creates a Bookmark snapshot from the current ViewModel state.
@@ -166,7 +183,11 @@ struct Bookmark: Codable, Identifiable {
             midrashWork:                 vm.midrashWork,
             midrashBookIndex:            vm.midrashBookIndex,
             midrashChapter:              vm.midrashChapter,
-            midrashVerse:                vm.midrashVerse
+            midrashVerse:                vm.midrashVerse,
+            teshuvotSubcategory:         vm.teshuvotSubcategory,
+            teshuvotWork:                vm.teshuvotWork,
+            teshuvotVolume:              vm.teshuvotVolume,
+            teshuvotSiman:               vm.teshuvotSiman
         )
     }
 
@@ -196,5 +217,9 @@ struct Bookmark: Codable, Identifiable {
         vm.midrashBookIndex             = midrashBookIndex
         vm.midrashChapter               = midrashChapter
         vm.midrashVerse                 = midrashVerse
+        vm.teshuvotSubcategory          = teshuvotSubcategory
+        vm.teshuvotWork                 = teshuvotWork
+        vm.teshuvotVolume               = teshuvotVolume
+        vm.teshuvotSiman                = teshuvotSiman
     }
 }

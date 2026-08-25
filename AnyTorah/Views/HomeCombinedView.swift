@@ -140,5 +140,7 @@ private struct HomeCategoryEntry: Identifiable {
                            colorFamily: .royalBlue, category: .shulchanArukh) { _ in },
         HomeCategoryEntry(id: "rambam", label: "Rambam", icon: "star.circle",
                            colorFamily: .skyBlue, category: .rambam) { _ in },
+        HomeCategoryEntry(id: "teshuvotRishonim", label: "Teshuvot Rishonim", icon: "envelope",
+                           colorFamily: .navy, category: .teshuvot) { $0.teshuvotSubcategory = .rishonim },
     ]
 }

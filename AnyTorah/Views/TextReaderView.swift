@@ -1115,6 +1115,15 @@ struct TextReaderView: View {
                 }
             }
             .pickerStyle(.wheel)
+        case .teshuvot:
+            // Quick pill only changes siman within the current volume — switching volume
+            // needs the full selector's TeshuvotWheels (tap the work pill, not the chapter pill).
+            Picker("", selection: $vm.teshuvotSiman) {
+                ForEach(1...TeshuvotWork.placeholderMaxSiman, id: \.self) { s in
+                    Text(saHebrewMode ? SASimanNames.toHebrewNumeral(s) : "\(s)").tag(s)
+                }
+            }
+            .pickerStyle(.wheel)
         }
     }
 
@@ -1501,6 +1510,28 @@ struct TextReaderView: View {
                         .listRowSeparatorTint(appFg.opacity(0.12))
                         .id("book_midrash_\(idx)")
                     }
+                case .teshuvot:
+                    let works = TeshuvotWork.works(for: vm.teshuvotSubcategory)
+                    ForEach(works.indices, id: \.self) { idx in
+                        let work = works[idx]
+                        let isSelected = vm.teshuvotWork == work
+                        Button {
+                            vm.teshuvotWork = work
+                            activeSheet = nil
+                            Task { await vm.load() }
+                        } label: {
+                            HStack {
+                                Text(saHebrewMode ? work.hebrewName : work.displayName).foregroundStyle(appFg)
+                                Text("(\(work.edah.abbreviation))").foregroundStyle(appFg.opacity(0.5)).font(.caption)
+                                Spacer()
+                                if isSelected { Image(systemName: "checkmark").foregroundStyle(appFg).font(.caption.weight(.semibold)) }
+                            }.contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparatorTint(appFg.opacity(0.12))
+                        .id("book_teshuvot_\(idx)")
+                    }
                 }
             }
             .listStyle(.plain)
@@ -1520,6 +1551,10 @@ struct TextReaderView: View {
                         let works = MidrashWork.works(for: vm.midrashSubcategory)
                         let idx = works.firstIndex(of: vm.midrashWork) ?? 0
                         return "book_midrash_\(idx)"
+                    case .teshuvot:
+                        let works = TeshuvotWork.works(for: vm.teshuvotSubcategory)
+                        let idx = works.firstIndex(of: vm.teshuvotWork) ?? 0
+                        return "book_teshuvot_\(idx)"
                     }
                 }()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {

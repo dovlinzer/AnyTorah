@@ -144,6 +144,7 @@ fun TextSelectorScreen(
                 TextCategory.TUR -> TurWheels(vm = vm)
                 TextCategory.SHULCHAN_ARUKH -> SAWheels(vm = vm)
                 TextCategory.MIDRASH -> MidrashWheels(vm = vm)
+                TextCategory.TESHUVOT -> TeshuvotWheels(vm = vm)
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -1038,6 +1039,49 @@ private fun MidrashWheels(vm: TextReaderViewModel) {
             onIndexSelected = { vm.midrashVerse = it + 1 }
         )
     }
+}
+
+// MARK: - Teshuvot Wheels
+
+/** Work -> Volume (conditional, only when the work has one -- see [TeshuvotWork.volumeLabel]) ->
+ *  Siman. See [TeshuvotWork]'s own doc comment: volume/siman navigation uses draft, unverified
+ *  Sefaria ref data as of 2026-08-25. */
+@Composable
+private fun TeshuvotWheels(vm: TextReaderViewModel) {
+    val works = TeshuvotWork.worksFor(vm.teshuvotSubcategory)
+    val workIdx = works.indexOf(vm.teshuvotWork).coerceAtLeast(0)
+
+    SelectorLabel("Work")
+    WheelPicker(
+        items = works.map { "${it.displayName} (${it.edah.abbreviation})" },
+        selectedIndex = workIdx,
+        onIndexSelected = { idx ->
+            val newWork = works.getOrNull(idx) ?: return@WheelPicker
+            vm.teshuvotWork = newWork
+            vm.teshuvotVolume = 1
+            vm.teshuvotSiman = 1
+        }
+    )
+
+    Spacer(modifier = Modifier.height(8.dp))
+
+    val volumeLabel = vm.teshuvotWork.volumeLabel
+    if (volumeLabel != null) {
+        val volumeCount = vm.teshuvotWork.volumeCount
+        SelectorLabel(volumeLabel)
+        WheelPicker(
+            items = (1..volumeCount).map { it.toString() },
+            selectedIndex = (vm.teshuvotVolume - 1).coerceIn(0, volumeCount - 1),
+            onIndexSelected = { vm.teshuvotVolume = it + 1; vm.teshuvotSiman = 1 }
+        )
+    }
+
+    SelectorLabel("Siman")
+    WheelPicker(
+        items = (1..TeshuvotWork.PLACEHOLDER_MAX_SIMAN).map { it.toString() },
+        selectedIndex = (vm.teshuvotSiman - 1).coerceIn(0, TeshuvotWork.PLACEHOLDER_MAX_SIMAN - 1),
+        onIndexSelected = { vm.teshuvotSiman = it + 1 }
+    )
 }
 
 // MARK: - Helpers

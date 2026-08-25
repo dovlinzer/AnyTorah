@@ -11,7 +11,8 @@ enum class TextCategory(val displayName: String, val hebrewName: String) {
     RAMBAM("Rambam", "רמב״ם"),
     TUR("Tur", "טור"),
     SHULCHAN_ARUKH("Shulkhan Arukh", "שולחן ערוך"),
-    MIDRASH("Midrash", "מדרש");
+    MIDRASH("Midrash", "מדרש"),
+    TESHUVOT("Teshuvot", "שו״ת");
 
     val segmentLabelStyle: SegmentLabelStyle get() = when (this) {
         TANAKH -> SegmentLabelStyle.VERSE
@@ -21,6 +22,7 @@ enum class TextCategory(val displayName: String, val hebrewName: String) {
         TUR -> SegmentLabelStyle.SIF
         SHULCHAN_ARUKH -> SegmentLabelStyle.SIF
         MIDRASH -> SegmentLabelStyle.NONE
+        TESHUVOT -> SegmentLabelStyle.NONE
     }
 }
 
@@ -252,6 +254,85 @@ enum class MidrashNavigationMode(val id: String) {
 
     companion object {
         fun fromId(id: String?) = values().firstOrNull { it.id == id } ?: BY_VERSE
+    }
+}
+
+// MARK: - Teshuvot (Responsa)
+
+enum class TeshuvotSubcategory(val id: String, val displayName: String, val hebrewName: String) {
+    RISHONIM("rishonim", "Teshuvot Rishonim", "שו״ת ראשונים");
+    // ACHARONIM intentionally not added yet — no work list exists for it (2026-08-25); add a
+    // case here plus its own TeshuvotWork entries once that list is provided, following exactly
+    // the same shape as RISHONIM below.
+
+    companion object {
+        fun fromId(id: String?) = values().firstOrNull { it.id == id } ?: RISHONIM
+    }
+}
+
+/** Which community's rite this posek's teshuvot are associated with — informational only
+ *  (shown as a small badge in the work picker), not used in any navigation/fetch logic. */
+enum class TeshuvotEdah(val abbreviation: String) {
+    ASHKENAZ("A"), SEFARAD("S")
+}
+
+/** **DRAFT DATA — unverified against live Sefaria content.** Built 2026-08-25 in a sandboxed
+ *  session with no network access to sefaria.org; `sefariaBaseTitle`/`volumeLabel`/
+ *  `volumeCount` below are best-effort bibliographic guesses, not confirmed Sefaria index
+ *  titles or real siman counts. `PLACEHOLDER_MAX_SIMAN` is a single generous placeholder for
+ *  every work/volume — same "generous range + graceful failure on overshoot" pattern already
+ *  used for Midrash's native section wheel, not a real count. Test each work on-device (real
+ *  internet) against the reader's existing error/retry UI and report which ones fail to load —
+ *  see CLAUDE.md's Teshuvot section for the full list and the specific ones flagged as least
+ *  certain (Maharach Or Zarua, Mahari Weil, Mahari Bruna, Maharik's shoresh count, and which
+ *  printed edition of Maharam MiRotenburg Sefaria carries, if any).
+ *
+ *  Declaration order is the corrected chronological order within each century (see CLAUDE.md
+ *  for the two corrections made to the user's original ordering) — `values()`/`worksFor`
+ *  preserve this order, which is what the work picker displays. */
+enum class TeshuvotWork(
+    val id: String,
+    val displayName: String,
+    val hebrewName: String,
+    val edah: TeshuvotEdah,
+    val century: String,
+    val volumeLabel: String?,
+    val volumeCount: Int,
+    val sefariaBaseTitle: String
+) {
+    // 11th–12th century
+    RASHI("rashi", "Rashi", "רש״י", TeshuvotEdah.ASHKENAZ, "11th–12th Century", null, 1, "Teshuvot Rashi"),
+    RI_MIGASH("riMigash", "Ri Migash", "ר״י מיגאש", TeshuvotEdah.SEFARAD, "11th–12th Century", null, 1, "Teshuvot HaRi MiGash"),
+    RAMBAM("rambamTeshuvot", "Rambam", "רמב״ם", TeshuvotEdah.SEFARAD, "11th–12th Century", null, 1, "Teshuvot HaRambam"),
+    // 13th century
+    RASHBA("rashba", "Rashba", "רשב״א", TeshuvotEdah.SEFARAD, "13th Century", "Part", 7, "Teshuvot HaRashba"),
+    RITVA("ritva", "Ritva", "ריטב״א", TeshuvotEdah.SEFARAD, "13th Century", null, 1, "Teshuvot HaRitva"),
+    MAHARAM("maharam", "Maharam", "מהר״ם מרוטנבורג", TeshuvotEdah.ASHKENAZ, "13th Century", null, 1, "Teshuvot Maharam MiRotenburg"),
+    MAHARACH_OR_ZARUA("maharachOrZarua", "Maharach Or Zarua", "מהר״ח אור זרוע", TeshuvotEdah.ASHKENAZ, "13th Century", null, 1, "Teshuvot Chaim Or Zarua"),
+    // 14th century
+    ROSH("rosh", "Rosh", "רא״ש", TeshuvotEdah.SEFARAD, "14th Century", "Klal", 108, "Teshuvot HaRosh"),
+    RAN("ran", "Ran", "ר״ן", TeshuvotEdah.SEFARAD, "14th Century", null, 1, "Teshuvot HaRan"),
+    RIVASH("rivash", "Rivash", "ריב״ש", TeshuvotEdah.SEFARAD, "14th Century", null, 1, "Teshuvot HaRivash"),
+    // 15th century
+    MAHARIL("maharil", "Maharil", "מהרי״ל", TeshuvotEdah.ASHKENAZ, "15th Century", null, 1, "Teshuvot Maharil"),
+    TERUMAT_HA_DESHEN("terumatHaDeshen", "Terumat HaDeshen", "תרומת הדשן", TeshuvotEdah.ASHKENAZ, "15th Century", "Section", 2, "Terumat HaDeshen"),
+    MAHARI_WEIL("mahariWeil", "Mahari Weil", "מהר״י ווייל", TeshuvotEdah.ASHKENAZ, "15th Century", null, 1, "Teshuvot Mahari Weil"),
+    MAHARI_BRUNA("mahariBruna", "Mahari Bruna", "מהר״י ברונא", TeshuvotEdah.ASHKENAZ, "15th Century", null, 1, "Teshuvot Mahari Bruna"),
+    MAHARIK("maharik", "Maharik", "מהרי״ק", TeshuvotEdah.ASHKENAZ, "15th Century", "Shoresh", 193, "Teshuvot Maharik"),
+    SEFER_HA_TASHBETZ("seferHaTashbetz", "Sefer HaTashbetz", "תשב״ץ", TeshuvotEdah.SEFARAD, "15th Century", "Chelek", 4, "Teshuvot HaTashbetz"),
+    TESHUVOT_HA_RASHBASH("teshuvotHaRashbash", "Teshuvot HaRashbash", "רשב״ש", TeshuvotEdah.SEFARAD, "15th Century", null, 1, "Teshuvot HaRashbash");
+
+    val subcategory: TeshuvotSubcategory get() = TeshuvotSubcategory.RISHONIM
+
+    /** `"{title} {volume}:{siman}"` when the work has more than one volume, `"{title} {siman}"`
+     *  otherwise — mirrors `MidrashWork.nativeRef`'s own `NumericTwo`/`NumericOne` shape. */
+    fun sefariaRef(volume: Int, siman: Int): String =
+        if (volumeCount > 1) "$sefariaBaseTitle $volume:$siman" else "$sefariaBaseTitle $siman"
+
+    companion object {
+        const val PLACEHOLDER_MAX_SIMAN = 400
+        fun fromId(id: String?) = values().firstOrNull { it.id == id } ?: RASHI
+        fun worksFor(subcategory: TeshuvotSubcategory) = values().filter { it.subcategory == subcategory }
     }
 }
 

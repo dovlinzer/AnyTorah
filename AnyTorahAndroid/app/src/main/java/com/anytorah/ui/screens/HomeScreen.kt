@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.HistoryEdu
@@ -51,6 +52,7 @@ import com.anytorah.models.MidrashSubcategory
 import com.anytorah.models.MidrashWork
 import com.anytorah.models.MishnahSubcategory
 import com.anytorah.models.TalmudSubcategory
+import com.anytorah.models.TeshuvotSubcategory
 import com.anytorah.models.TextCategory
 import com.anytorah.ui.theme.BrandColorFamily
 import com.anytorah.ui.theme.LocalAnyTorahColors
@@ -223,6 +225,9 @@ private data class HomeCategoryEntry(
             HomeCategoryEntry("Tur", Icons.Default.MenuBook, BrandColorFamily.ROYAL_BLUE, TextCategory.TUR) { },
             HomeCategoryEntry("Shulkhan Arukh", Icons.Default.FormatListBulleted, BrandColorFamily.ROYAL_BLUE, TextCategory.SHULCHAN_ARUKH) { },
             HomeCategoryEntry("Rambam", Icons.Default.Star, BrandColorFamily.SKY_BLUE, TextCategory.RAMBAM) { },
+            HomeCategoryEntry("Teshuvot Rishonim", Icons.Default.Email, BrandColorFamily.NAVY, TextCategory.TESHUVOT) { vm ->
+                vm.teshuvotSubcategory = TeshuvotSubcategory.RISHONIM
+            },
         )
 
         /** Mirrors the reset `MidrashSubcategory`'s own toggle used to perform in

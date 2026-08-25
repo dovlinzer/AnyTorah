@@ -436,6 +436,10 @@ final class SefariaTextClient {
         case .midrash:
             // Midrash uses verse-based navigation; this fallback shouldn't be called.
             return ""
+        case .teshuvot:
+            // Teshuvot builds its own ref via TeshuvotWork.sefariaRef(volume:siman:); this
+            // fallback shouldn't be called.
+            return ""
         }
     }
 

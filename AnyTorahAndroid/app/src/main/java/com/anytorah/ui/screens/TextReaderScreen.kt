@@ -843,6 +843,21 @@ private fun BookPickerSheet(vm: TextReaderViewModel, onSelect: () -> Unit) {
                     HorizontalDivider(color = colors.dividerColor)
                 }
             }
+            TextCategory.TESHUVOT -> {
+                val works = TeshuvotWork.worksFor(vm.teshuvotSubcategory)
+                itemsIndexed(works) { _, work ->
+                    BookPickerRow(
+                        name = "${if (useHe) work.hebrewName else work.displayName} (${work.edah.abbreviation})",
+                        isSelected = vm.teshuvotWork == work,
+                        onClick = {
+                            vm.teshuvotWork = work
+                            vm.teshuvotVolume = 1; vm.teshuvotSiman = 1
+                            onSelect()
+                        }
+                    )
+                    HorizontalDivider(color = colors.dividerColor)
+                }
+            }
         }
     }
     } // end CompositionLocalProvider

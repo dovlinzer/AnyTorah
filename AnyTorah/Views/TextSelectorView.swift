@@ -125,10 +125,11 @@ struct TextSelectorView: View {
                 case .tur:           TurWheels(vm: vm, fg: appFg)
                 case .shulchanArukh: SAWheels(vm: vm, fg: appFg)
                 case .midrash:       MidrashWheels(vm: vm, fg: appFg)
+                case .teshuvot:      TeshuvotWheels(vm: vm, fg: appFg)
                 }
             }
             .frame(height: [TextCategory.shulchanArukh, .tur].contains(vm.category) ? 210 :
-                          (vm.category == .midrash ? 200 : 160))
+                          ([TextCategory.midrash, .teshuvot].contains(vm.category) ? 200 : 160))
 
             Divider().background(appFg.opacity(0.7))
 
@@ -1379,6 +1380,70 @@ private struct MidrashWheels: View {
                     }
                 }
                 .pickerStyle(.wheel)
+            }
+        }
+    }
+}
+
+// MARK: - Teshuvot Wheels
+
+/// Work → Volume (conditional, only when the work has one — see `TeshuvotWork.volumeLabel`) →
+/// Siman. See `TeshuvotWork`'s own doc comment: volume/siman navigation uses draft, unverified
+/// Sefaria ref data as of 2026-08-25.
+private struct TeshuvotWheels: View {
+    @Bindable var vm: TextReaderViewModel
+    let fg: Color
+
+    private var works: [TeshuvotWork] { TeshuvotWork.works(for: vm.teshuvotSubcategory) }
+    private var currentWorkIdx: Int { works.firstIndex(of: vm.teshuvotWork) ?? 0 }
+
+    var body: some View {
+        VStack(spacing: 4) {
+            WheelColumn(fg: fg, label: "Work") {
+                Picker("", selection: Binding(
+                    get: { currentWorkIdx },
+                    set: { vm.teshuvotWork = works[$0] }
+                )) {
+                    ForEach(works.indices, id: \.self) { i in
+                        Text("\(works[i].displayName) (\(works[i].edah.abbreviation))")
+                            .foregroundStyle(i == currentWorkIdx ? fg : fg.opacity(0.35))
+                            .tag(i)
+                    }
+                }
+                .pickerStyle(.wheel)
+            }
+
+            HStack(spacing: 0) {
+                if let label = vm.teshuvotWork.volumeLabel {
+                    WheelColumn(fg: fg, label: label) {
+                        let count = vm.teshuvotWork.volumeCount
+                        let selVol = min(max(1, vm.teshuvotVolume), count)
+                        Picker("", selection: Binding(
+                            get: { selVol },
+                            set: { vm.teshuvotVolume = $0 }
+                        )) {
+                            ForEach(1...count, id: \.self) { v in
+                                Text("\(v)")
+                                    .foregroundStyle(v == selVol ? fg : fg.opacity(0.35))
+                                    .tag(v)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .id(vm.teshuvotWork)
+                    }
+                }
+
+                WheelColumn(fg: fg, label: "Siman") {
+                    Picker("", selection: $vm.teshuvotSiman) {
+                        ForEach(1...TeshuvotWork.placeholderMaxSiman, id: \.self) { s in
+                            Text("\(s)")
+                                .foregroundStyle(s == vm.teshuvotSiman ? fg : fg.opacity(0.35))
+                                .tag(s)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                    .id("\(vm.teshuvotWork.rawValue)-\(vm.teshuvotVolume)")
+                }
             }
         }
     }

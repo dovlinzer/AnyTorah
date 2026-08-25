@@ -205,6 +205,13 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
     var midrashNativeSection by mutableIntStateOf(1)
     var midrashScrollToIndex by mutableStateOf<Int?>(null)
 
+    // Teshuvot — subcategory -> work -> volume -> siman. See TeshuvotWork's own doc comment:
+    // volume/siman navigation uses draft, unverified Sefaria ref data.
+    var teshuvotSubcategory by mutableStateOf(TeshuvotSubcategory.RISHONIM)
+    var teshuvotWork by mutableStateOf(TeshuvotWork.RASHI)
+    var teshuvotVolume by mutableIntStateOf(1)
+    var teshuvotSiman by mutableIntStateOf(1)
+
     // MARK: - Display state
 
     private fun loadDisplayMode(): TextDisplayMode {
@@ -284,6 +291,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         TextCategory.TUR -> "tur_$turSection"
         TextCategory.SHULCHAN_ARUKH -> "sa_$saSection"
         TextCategory.MIDRASH -> "midrash"
+        TextCategory.TESHUVOT -> "teshuvot"
     }
 
     /** True only for Talmud Bavli — false for Talmud Yerushalmi and every other category.
@@ -301,6 +309,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         TextCategory.MISHNAH -> mishnahSubcategory.displayName
         TextCategory.TALMUD  -> "Talmud ${talmudSubcategory.displayName}"
         TextCategory.MIDRASH -> midrashSubcategory.displayName
+        TextCategory.TESHUVOT -> teshuvotSubcategory.displayName
         else -> category.displayName
     }
 
@@ -308,6 +317,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         TextCategory.MISHNAH -> mishnahSubcategory.hebrewName
         TextCategory.TALMUD  -> "${category.hebrewName} ${talmudSubcategory.hebrewName}"
         TextCategory.MIDRASH -> midrashSubcategory.hebrewName
+        TextCategory.TESHUVOT -> teshuvotSubcategory.hebrewName
         else -> category.hebrewName
     }
 
@@ -349,6 +359,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         TextCategory.TUR -> listOf(CommentaryType.turPool)
         TextCategory.SHULCHAN_ARUKH -> listOf(CommentaryType.saPool(saSection))
         TextCategory.MIDRASH -> listOf(emptyList())
+        TextCategory.TESHUVOT -> listOf(emptyList())
     }
 
     /** Section labels parallel to [commentaryPoolGrouped]; null means no header for that group. */
@@ -390,6 +401,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         TextCategory.TUR -> true
         TextCategory.SHULCHAN_ARUKH -> true
         TextCategory.MIDRASH -> false
+        TextCategory.TESHUVOT -> false
     }
 
     private val fallbackCommentaries: List<CommentaryType> get() = when (category) {
@@ -411,6 +423,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         TextCategory.TUR -> availableCommentaries
         TextCategory.SHULCHAN_ARUKH -> availableCommentaries
         TextCategory.MIDRASH -> emptyList()
+        TextCategory.TESHUVOT -> emptyList()
     }
 
     val effectiveCommentaries: List<CommentaryType> get() {
@@ -507,6 +520,12 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                 midrashNativeChapter  = prefs.getInt("sel_midrash_native_ch", 1)
                 midrashNativeSection  = prefs.getInt("sel_midrash_native_sec", 1)
             }
+            TextCategory.TESHUVOT -> {
+                teshuvotSubcategory = TeshuvotSubcategory.fromId(prefs.getString("sel_teshuvot_sub", null))
+                teshuvotWork        = TeshuvotWork.fromId(prefs.getString("sel_teshuvot_work", null))
+                teshuvotVolume      = prefs.getInt("sel_teshuvot_volume", 1)
+                teshuvotSiman       = prefs.getInt("sel_teshuvot_siman", 1)
+            }
         }
     }
 
@@ -557,6 +576,12 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                 e.putString("sel_midrash_navmode", midrashNavigationMode.id)
                 e.putInt("sel_midrash_native_ch", midrashNativeChapter)
                 e.putInt("sel_midrash_native_sec", midrashNativeSection)
+            }
+            TextCategory.TESHUVOT -> {
+                e.putString("sel_teshuvot_sub", teshuvotSubcategory.id)
+                e.putString("sel_teshuvot_work", teshuvotWork.id)
+                e.putInt("sel_teshuvot_volume", teshuvotVolume)
+                e.putInt("sel_teshuvot_siman", teshuvotSiman)
             }
         }
         e.apply()
@@ -665,6 +690,11 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                 "${midrashWork.displayName}, $book $midrashChapter:$midrashVerse"
             }
         }
+        TextCategory.TESHUVOT -> {
+            val label = teshuvotWork.volumeLabel
+            if (label != null) "${teshuvotWork.displayName}, $label $teshuvotVolume:$teshuvotSiman"
+            else "${teshuvotWork.displayName} §$teshuvotSiman"
+        }
     }
 
     /** Short title for the "book" navigation pill in the reader header. */
@@ -699,6 +729,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
             if (s == null) "–" else if (saHebrewMode) s.hebrewName.strippingNikud() else s.name
         }
         TextCategory.MIDRASH -> if (saHebrewMode) midrashWork.hebrewName else midrashWork.displayName
+        TextCategory.TESHUVOT -> if (saHebrewMode) teshuvotWork.hebrewName else teshuvotWork.displayName
     }
 
     /** Short title for the "chapter" navigation pill in the reader header. */
@@ -731,6 +762,10 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                 val book = TextCatalog.allTanakhBooks.getOrNull(midrashBookIndex)?.name ?: ""
                 "$book $midrashChapter:$midrashVerse"
             }
+        }
+        TextCategory.TESHUVOT -> {
+            if (teshuvotWork.volumeLabel != null) "$teshuvotVolume:$teshuvotSiman"
+            else "§$teshuvotSiman"
         }
     }
 
@@ -848,6 +883,19 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                             val (segs, scrollIdx) = SefariaTextClient.fetchMidrashByVerse(midrashWork, book.sefariaName, midrashChapter, midrashVerse)
                             segments = segs
                             midrashScrollToIndex = scrollIdx + 1  // 1-based for scrollToVerse compat
+                        }
+                    }
+                    TextCategory.TESHUVOT -> {
+                        // DRAFT ref — see TeshuvotWork's own doc comment. Same generic-ref
+                        // fetch pattern as Midrash's native-mode branch above; a wrong ref
+                        // surfaces via the existing error/Retry UI, not a crash.
+                        val ref = teshuvotWork.sefariaRef(teshuvotVolume, teshuvotSiman)
+                        currentRef = ref
+                        val (he, en) = SefariaTextClient.fetchBoth(ref)
+                        val count = maxOf(he.size, en.size)
+                        segments = (0 until count).mapNotNull { i ->
+                            val seg = TextSegment.content(index = i, he = if (i < he.size) he[i] else "", en = if (i < en.size) en[i] else "")
+                            if (seg.hebrewHTML.isEmpty() && seg.englishHTML.isEmpty()) null else seg
                         }
                     }
                 }
@@ -1094,6 +1142,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         TextCategory.MIDRASH -> if (midrashNavigationMode == MidrashNavigationMode.NATIVE)
             midrashNativeChapter == 1 && midrashNativeSection == 1
         else midrashChapter == 1 && midrashVerse == 1
+        TextCategory.TESHUVOT -> teshuvotVolume == 1 && teshuvotSiman == 1
     }
 
     private fun introRef(commentaryRef: String): String? {
@@ -1189,6 +1238,13 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                         }
                     }
                 }
+                TextCategory.TESHUVOT -> {
+                    if (teshuvotSiman > 1) {
+                        teshuvotSiman -= 1
+                    } else if (teshuvotWork.volumeLabel != null && teshuvotVolume > 1) {
+                        teshuvotVolume -= 1
+                    }
+                }
             }
             load()
         }
@@ -1246,6 +1302,14 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                         }
                     }
                 }
+                TextCategory.TESHUVOT -> {
+                    if (teshuvotSiman < TeshuvotWork.PLACEHOLDER_MAX_SIMAN) {
+                        teshuvotSiman += 1
+                    } else if (teshuvotWork.volumeLabel != null && teshuvotVolume < teshuvotWork.volumeCount) {
+                        teshuvotVolume += 1
+                        teshuvotSiman = 1
+                    }
+                }
             }
             load()
         }
@@ -1277,6 +1341,10 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         midrashBookIndex = midrashBookIndex,
         midrashChapter = midrashChapter,
         midrashVerse = midrashVerse,
+        teshuvotSubcategoryId = teshuvotSubcategory.id,
+        teshuvotWorkId = teshuvotWork.id,
+        teshuvotVolume = teshuvotVolume,
+        teshuvotSiman = teshuvotSiman,
         name = displayTitle,
         subtitle = "$categoryDisplayName · $displayTitle"
     )
@@ -1305,6 +1373,10 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         midrashBookIndex = bookmark.midrashBookIndex
         midrashChapter = bookmark.midrashChapter
         midrashVerse = bookmark.midrashVerse
+        teshuvotSubcategory = TeshuvotSubcategory.fromId(bookmark.teshuvotSubcategoryId)
+        teshuvotWork = TeshuvotWork.fromId(bookmark.teshuvotWorkId)
+        teshuvotVolume = bookmark.teshuvotVolume
+        teshuvotSiman = bookmark.teshuvotSiman
         load()
     }
 

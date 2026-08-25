@@ -32,6 +32,11 @@ data class Bookmark(
     val midrashBookIndex: Int = 1,
     val midrashChapter: Int = 1,
     val midrashVerse: Int = 1,
+    // Teshuvot Rishonim — added alongside the category itself, not as a later fix.
+    val teshuvotSubcategoryId: String = TeshuvotSubcategory.RISHONIM.id,
+    val teshuvotWorkId: String = TeshuvotWork.RASHI.id,
+    val teshuvotVolume: Int = 1,
+    val teshuvotSiman: Int = 1,
     val name: String,
     val subtitle: String,
     val notes: String = "",

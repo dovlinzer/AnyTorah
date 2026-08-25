@@ -435,6 +435,9 @@ object SefariaTextClient {
                 "${section.sefariaName} $chapterOrDaf"
             }
             TextCategory.MIDRASH -> ""
+            // Teshuvot builds its own ref via TeshuvotWork.sefariaRef(volume, siman); this
+            // fallback shouldn't be called.
+            TextCategory.TESHUVOT -> ""
         }
     }
 

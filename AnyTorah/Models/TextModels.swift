@@ -4,7 +4,7 @@ import SwiftUI
 // MARK: - Category
 
 enum TextCategory: String, CaseIterable, Identifiable, Codable {
-    case tanakh, mishnah, talmud, rambam, tur, shulchanArukh, midrash
+    case tanakh, mishnah, talmud, rambam, tur, shulchanArukh, midrash, teshuvot
 
     var id: String { rawValue }
 
@@ -17,6 +17,7 @@ enum TextCategory: String, CaseIterable, Identifiable, Codable {
         case .tur:           return "Tur"
         case .shulchanArukh: return "Shulkhan Arukh"
         case .midrash:       return "Midrash"
+        case .teshuvot:      return "Teshuvot"
         }
     }
 
@@ -29,6 +30,7 @@ enum TextCategory: String, CaseIterable, Identifiable, Codable {
         case .tur:           return "טור"
         case .shulchanArukh: return "שולחן ערוך"
         case .midrash:       return "מדרש"
+        case .teshuvot:      return "שו״ת"
         }
     }
 
@@ -41,6 +43,7 @@ enum TextCategory: String, CaseIterable, Identifiable, Codable {
         case .tur:           return "list.bullet.rectangle"
         case .shulchanArukh: return "list.bullet.rectangle"
         case .midrash:       return "text.book.closed"
+        case .teshuvot:      return "envelope"
         }
     }
 
@@ -55,6 +58,7 @@ enum TextCategory: String, CaseIterable, Identifiable, Codable {
         case .tur:           return [.beitYosef, .bach, .darkheiMoshe, .prishaDrisha]
         case .shulchanArukh: return [.mishnahBerurah, .biurHalakha]
         case .midrash:       return []
+        case .teshuvot:      return []
         }
     }
 
@@ -68,6 +72,7 @@ enum TextCategory: String, CaseIterable, Identifiable, Codable {
         case .tur:           return .sif
         case .shulchanArukh: return .sif
         case .midrash:       return .none
+        case .teshuvot:      return .none
         }
     }
 }
@@ -346,6 +351,198 @@ enum MidrashWork: String, CaseIterable, Identifiable, Codable {
 enum MidrashNavigationMode: String, Codable {
     case byVerse = "byVerse"
     case native  = "native"
+}
+
+// MARK: - Teshuvot (Responsa)
+
+enum TeshuvotSubcategory: String, CaseIterable, Codable {
+    case rishonim = "rishonim"
+    // .acharonim intentionally not added yet — no work list exists for it (2026-08-25); add a
+    // case here plus its own TeshuvotWork entries once that list is provided, following exactly
+    // the same shape as .rishonim below.
+
+    var displayName: String {
+        switch self {
+        case .rishonim: return "Teshuvot Rishonim"
+        }
+    }
+    var hebrewName: String {
+        switch self {
+        case .rishonim: return "שו״ת ראשונים"
+        }
+    }
+}
+
+/// Which community's rite this posek's teshuvot are associated with — informational only
+/// (shown as a small badge in the work picker), not used in any navigation/fetch logic.
+enum TeshuvotEdah: String, Codable {
+    case ashkenaz, sefarad
+    var abbreviation: String { self == .ashkenaz ? "A" : "S" }
+}
+
+/// **DRAFT DATA — unverified against live Sefaria content.** Built 2026-08-25 in a sandboxed
+/// session with no network access to sefaria.org; `sefariaBaseTitle`/`volumeLabel`/
+/// `volumeCount` below are best-effort bibliographic guesses, not confirmed Sefaria index
+/// titles or real siman counts. `simanCount` is a single generous placeholder (400) for every
+/// work/volume — same "generous range + graceful failure on overshoot" pattern already used
+/// for Midrash's native section wheel (`MidrashWork.swift`'s own doc comment), not a real count.
+/// Test each work on-device (real internet) against the reader's existing error/retry UI and
+/// report which ones fail to load — see CLAUDE.md's Teshuvot section for the full list and the
+/// specific ones flagged as least certain (Maharach Or Zarua, Mahari Weil, Mahari Bruna,
+/// Maharik's shoresh count, and which printed edition of Maharam MiRotenburg Sefaria carries,
+/// if any).
+///
+/// Declaration order is the corrected chronological order within each century (see CLAUDE.md
+/// for the two corrections made to the user's original ordering) — `allCases`/`works(for:)`
+/// preserve this order, which is what the work picker displays.
+enum TeshuvotWork: String, CaseIterable, Identifiable, Codable {
+    // 11th–12th century
+    case rashi, riMigash, rambamTeshuvot
+    // 13th century
+    case rashba, ritva, maharam, maharachOrZarua
+    // 14th century
+    case rosh, ran, rivash
+    // 15th century
+    case maharil, terumatHaDeshen, mahariWeil, mahariBruna, maharik
+    case seferHaTashbetz, teshuvotHaRashbash
+
+    var id: String { rawValue }
+    var subcategory: TeshuvotSubcategory { .rishonim }
+
+    var displayName: String {
+        switch self {
+        case .rashi:              return "Rashi"
+        case .riMigash:           return "Ri Migash"
+        case .rambamTeshuvot:     return "Rambam"
+        case .rashba:             return "Rashba"
+        case .ritva:              return "Ritva"
+        case .maharam:            return "Maharam"
+        case .maharachOrZarua:    return "Maharach Or Zarua"
+        case .rosh:               return "Rosh"
+        case .ran:                return "Ran"
+        case .rivash:             return "Rivash"
+        case .maharil:            return "Maharil"
+        case .terumatHaDeshen:    return "Terumat HaDeshen"
+        case .mahariWeil:         return "Mahari Weil"
+        case .mahariBruna:        return "Mahari Bruna"
+        case .maharik:            return "Maharik"
+        case .seferHaTashbetz:    return "Sefer HaTashbetz"
+        case .teshuvotHaRashbash: return "Teshuvot HaRashbash"
+        }
+    }
+
+    var hebrewName: String {
+        switch self {
+        case .rashi:              return "רש״י"
+        case .riMigash:           return "ר״י מיגאש"
+        case .rambamTeshuvot:     return "רמב״ם"
+        case .rashba:             return "רשב״א"
+        case .ritva:              return "ריטב״א"
+        case .maharam:            return "מהר״ם מרוטנבורג"
+        case .maharachOrZarua:    return "מהר״ח אור זרוע"
+        case .rosh:               return "רא״ש"
+        case .ran:                return "ר״ן"
+        case .rivash:             return "ריב״ש"
+        case .maharil:            return "מהרי״ל"
+        case .terumatHaDeshen:    return "תרומת הדשן"
+        case .mahariWeil:         return "מהר״י ווייל"
+        case .mahariBruna:        return "מהר״י ברונא"
+        case .maharik:            return "מהרי״ק"
+        case .seferHaTashbetz:    return "תשב״ץ"
+        case .teshuvotHaRashbash: return "רשב״ש"
+        }
+    }
+
+    var edah: TeshuvotEdah {
+        switch self {
+        case .rashi, .maharam, .maharachOrZarua, .maharil, .terumatHaDeshen,
+             .mahariWeil, .mahariBruna, .maharik:
+            return .ashkenaz
+        case .riMigash, .rambamTeshuvot, .rashba, .ritva, .rosh, .ran, .rivash,
+             .seferHaTashbetz, .teshuvotHaRashbash:
+            return .sefarad
+        }
+    }
+
+    /// Century grouping label shown as a section-like header in the work picker.
+    var century: String {
+        switch self {
+        case .rashi, .riMigash, .rambamTeshuvot:
+            return "11th–12th Century"
+        case .rashba, .ritva, .maharam, .maharachOrZarua:
+            return "13th Century"
+        case .rosh, .ran, .rivash:
+            return "14th Century"
+        case .maharil, .terumatHaDeshen, .mahariWeil, .mahariBruna, .maharik,
+             .seferHaTashbetz, .teshuvotHaRashbash:
+            return "15th Century"
+        }
+    }
+
+    /// DRAFT — see the enum's own doc comment. Label for the second-level ("volume") picker;
+    /// nil when the work is small enough that Sefaria most likely carries it as one
+    /// continuously-numbered collection (no separate volume wheel shown).
+    var volumeLabel: String? {
+        switch self {
+        case .rashba:          return "Part"
+        case .rosh:             return "Klal"
+        case .terumatHaDeshen:  return "Section"
+        case .maharik:          return "Shoresh"
+        case .seferHaTashbetz:  return "Chelek"
+        default:                return nil
+        }
+    }
+
+    /// DRAFT — see the enum's own doc comment.
+    var volumeCount: Int {
+        switch self {
+        case .rashba:          return 7
+        case .rosh:             return 108
+        case .terumatHaDeshen:  return 2
+        case .maharik:          return 193
+        case .seferHaTashbetz:  return 4
+        default:                return 1
+        }
+    }
+
+    /// DRAFT — see the enum's own doc comment. Placeholder ceiling for the siman wheel,
+    /// identical for every work/volume (not a real per-work count).
+    static let placeholderMaxSiman = 400
+
+    /// DRAFT — see the enum's own doc comment. Best-guess Sefaria index title.
+    var sefariaBaseTitle: String {
+        switch self {
+        case .rashi:              return "Teshuvot Rashi"
+        case .riMigash:           return "Teshuvot HaRi MiGash"
+        case .rambamTeshuvot:     return "Teshuvot HaRambam"
+        case .rashba:             return "Teshuvot HaRashba"
+        case .ritva:              return "Teshuvot HaRitva"
+        case .maharam:            return "Teshuvot Maharam MiRotenburg"
+        case .maharachOrZarua:    return "Teshuvot Chaim Or Zarua"
+        case .rosh:               return "Teshuvot HaRosh"
+        case .ran:                return "Teshuvot HaRan"
+        case .rivash:             return "Teshuvot HaRivash"
+        case .maharil:            return "Teshuvot Maharil"
+        case .terumatHaDeshen:    return "Terumat HaDeshen"
+        case .mahariWeil:         return "Teshuvot Mahari Weil"
+        case .mahariBruna:        return "Teshuvot Mahari Bruna"
+        case .maharik:            return "Teshuvot Maharik"
+        case .seferHaTashbetz:    return "Teshuvot HaTashbetz"
+        case .teshuvotHaRashbash: return "Teshuvot HaRashbash"
+        }
+    }
+
+    /// DRAFT — see the enum's own doc comment. `"{title} {volume}:{siman}"` when the work has
+    /// more than one volume, `"{title} {siman}"` otherwise — mirrors `MidrashWork.nativeRef`'s
+    /// own `numericTwo`/`numericOne` shape.
+    func sefariaRef(volume: Int, siman: Int) -> String {
+        volumeCount > 1 ? "\(sefariaBaseTitle) \(volume):\(siman)" : "\(sefariaBaseTitle) \(siman)"
+    }
+
+    /// All works for a given subcategory, in the corrected chronological order above.
+    static func works(for subcategory: TeshuvotSubcategory) -> [TeshuvotWork] {
+        allCases.filter { $0.subcategory == subcategory }
+    }
 }
 
 enum SegmentLabelStyle {

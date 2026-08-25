@@ -269,6 +269,97 @@ first book (`section.books.first`), same behavior the old wheel's `onChange` alr
 Hebrew-mode ordering (reversed indices, section on the visually-right side) mirrors `SAWheels`
 exactly.
 
+### Teshuvot Rishonim — new TextCategory, DRAFT ref data pending verification (2026-08-25)
+
+**A new top-level content type, not a subcategory of anything existing.** Unlike the Talmud/
+Mishnah/Midrash home-screen splits (which reuse one `TextCategory` + a subcategory enum),
+Teshuvot genuinely doesn't fit any of the other 7 categories, so this added
+`TextCategory.teshuvot` itself — the more invasive path the flat-home-screen work deliberately
+avoided for existing categories (see "Home screen — ten flat categories" above), unavoidable
+here since there was no existing category to lean on. Touches ~15 exhaustive `switch`/`when`
+sites per platform — every one of `TextCategory`'s existing `.midrash` handlers got a `.teshuvot`
+sibling; grep `case \.midrash` (iOS) / `TextCategory\.MIDRASH` (Android) to re-locate all of them
+if extending further.
+
+**Data model** (`TextModels.swift` / `TextModels.kt`), mirrors `MidrashWork`'s shape:
+- `TeshuvotSubcategory` — currently **one case, `.rishonim`/`RISHONIM`**. `.acharonim` was
+  deliberately not added — no work list exists for it yet; add it plus its own `TeshuvotWork`
+  entries later, following the exact same shape.
+- `TeshuvotEdah` — `.ashkenaz`/`.sefarad`, informational only (shown as an "(A)"/"(S)" badge
+  in the work picker), not used in any fetch/navigation logic.
+- `TeshuvotWork` — 17 cases for the Rishonim, in the **corrected chronological order** (see
+  below), each carrying `displayName`/`hebrewName`/`edah`/`century`/`volumeLabel`/
+  `volumeCount`/`sefariaBaseTitle`. `sefariaRef(volume:siman:)` builds `"{title}
+  {volume}:{siman}"` when `volumeCount > 1`, `"{title} {siman}"` otherwise — same shape as
+  `MidrashWork.nativeRef`'s `numericTwo`/`numericOne` cases.
+
+**Picker**: Work → Volume (shown only when `volumeLabel != nil`, labeled per-work — "Part"
+for Rashba, "Klal" for Rosh, "Shoresh" for Maharik, "Chelek" for Sefer HaTashbetz, "Section"
+for Terumat HaDeshen) → Siman. `TeshuvotWheels` (iOS `TextSelectorView.swift`, Android
+`TextSelectorScreen.kt`) — new struct/composable, not a variant of `MidrashWheels`, since the
+work list doesn't need the Halakha/Aggada-style nav-mode toggle. `load()`'s `.teshuvot` branch
+calls `SefariaTextClient.shared.fetchBoth(ref:)` directly (bypassing the `ref(category:...)`
+helper entirely, which has a `.teshuvot -> ""` "shouldn't be called" stub) — exactly the pattern
+Midrash's native-mode branch already uses.
+
+**⚠️ DRAFT REF DATA — NOT YET VERIFIED AGAINST LIVE SEFARIA CONTENT.** Built 2026-08-25 in a
+sandboxed session with no network egress to `sefaria.org` (confirmed blocked — `WebFetch`
+returned `EGRESS_BLOCKED` on every `sefaria.org/api/name/...` lookup attempted). Every
+`sefariaBaseTitle`/`volumeLabel`/`volumeCount` is a best-effort bibliographic guess, not a
+confirmed Sefaria index title or real siman count — `TeshuvotWork.placeholderMaxSiman` (400,
+iOS) / `PLACEHOLDER_MAX_SIMAN` (Android) is one generous placeholder shared by every work and
+volume, same "generous range + graceful failure on overshoot" pattern as Midrash's native
+section wheel (see that struct's own doc comment) — not a real count anywhere. **A wrong ref
+surfaces through the reader's existing error/Retry UI, not a crash** — this was a deliberate
+choice (see "How Sefaria ref accuracy was handled" below) over shipping only a work-picker
+shell with no fetch wired up.
+
+**Action needed**: test each of the 17 works on a device with real internet, and report which
+ones fail to load so the ref/volume data can be corrected. Confidence varies a lot by work:
+- **High confidence** (well-known, almost certainly on Sefaria under something close to the
+  guessed title): Rashba, Rosh, Rivash, Rambam, Rambam via Blau, Ritva, Ran.
+- **Genuinely uncertain, flag these first**: Maharach Or Zarua and Mahari Weil/Mahari Bruna
+  (niche 13th/15th-century Ashkenazi collections — may not be digitized on Sefaria at all);
+  Maharik's shoresh count (193 is a placeholder, not a confirmed count); Maharam MiRotenburg
+  (his responsa exist across several differently-numbered printed editions — Prague/Cremona/
+  Lvov/Berlin/Bloch — genuinely unclear which, if any, Sefaria indexes, or under what title);
+  Maharil (the guessed title `Teshuvot Maharil` needs to be distinguished from his much more
+  famous `Sefer Maharil`/`Minhagei Maharil`, a *different* work by the same author that's far
+  more likely to already be on Sefaria and could easily produce a false-positive match).
+
+**Chronological ordering — corrected from the user's original list, per their own request to
+verify it.** Century groupings are internally sub-grouped by edah (Sefarad-then-Ashkenaz in the
+13th century, Ashkenaz-then-Sefarad in the 15th) — verify chronology *within* each edah
+sub-group, not across the whole century flatly, or you'll flag false positives (an early
+Ashkenazi figure can legitimately sit after a later Sefaradi one in reading order). Two real
+fixes made:
+- **14th century**: Ran (b. ~1320) predates Rivash (b. 1326) — reordered from Rosh→Rivash→Ran
+  to **Rosh→Ran→Rivash**.
+- **15th century, Ashkenaz sub-group**: Maharil (b. ~1365) is the earliest of the five, but was
+  listed last — reordered from Terumat HaDeshen→Mahari Weil→Mahari Bruna→Maharik→Maharil to
+  **Maharil→Terumat HaDeshen→Mahari Weil→Mahari Bruna→Maharik**.
+- 11th–12th century and the rest of the 13th/15th groupings were already correct.
+
+**Home screen**: one button, "Teshuvot Rishonim" (`.navy`/`NAVY` — see the color-family note
+above), in the right/blue column. **Per explicit user decision, Rishonim and Acharonim will
+eventually be split into two separate home buttons** (matching the Talmud/Mishnah/Midrash
+pattern) once an Acharonim work list exists — this is *not* meant to become an in-selector
+toggle. Only Rishonim ships now since Acharonim has no data yet.
+
+**Bookmarks**: `teshuvotSubcategory`/`teshuvotWork`/`teshuvotVolume`/`teshuvotSiman` were added
+to `Bookmark` on both platforms *at the same time* as the category itself (nullable DTO fields
++ `?:` fallback on Android, `decodeIfPresent(...) ?? default` on iOS) — deliberately not left
+as a follow-up fix, unlike the Tur/Midrash bookmark gaps found and fixed earlier this session.
+
+**How Sefaria ref accuracy was handled — a deliberate choice, not an oversight.** Two options
+were on the table: (a) ship only the safe scaffolding (names/order/home button/work picker) and
+wait for the user to supply real Sefaria conventions before wiring up fetch, or (b) build the
+full picker now with draft refs, since a wrong ref just surfaces through the reader's existing
+error/Retry UI rather than crashing, and the user can test on-device (real internet, unlike this
+sandbox) and report back exactly which of the 17 fail. **The user explicitly chose (b)** when
+asked directly — recorded here so a future session doesn't mistake the draft data for an
+oversight or re-litigate the same tradeoff.
+
 ### State flow
 
 - `TextReaderViewModel` (`@Observable @MainActor`) — single source of truth for selection, segments, commentary, display mode.
@@ -322,10 +413,12 @@ exactly.
 ## Categories & Commentaries
 
 This section is about `TextCategory`/`contextKey` — the underlying data-model categories and
-their default commentary sets — which is a different count from the 10 home-screen category
-buttons (see "Home screen — ten flat categories" above); e.g. Talmud is one `TextCategory`
-here but two home buttons (Bavli/Yerushalmi), each inheriting the same default commentaries
-below since Yerushalmi's commentary pool isn't yet a separate concept.
+their default commentary sets — which is a different count from the 11 home-screen category
+buttons (see "Home screen — ten flat categories" above, and "Teshuvot Rishonim" for the 11th);
+e.g. Talmud is one `TextCategory` here but two home buttons (Bavli/Yerushalmi), each inheriting
+the same default commentaries below since Yerushalmi's commentary pool isn't yet a separate
+concept. Midrash and Teshuvot have no commentaries at all (`defaultCommentaries` returns `[]`
+for both), so neither appears in the table below.
 
 Five `TextCategory` cases with a selector UI, each contributing one or more `contextKey`s with
 their own default commentaries:
