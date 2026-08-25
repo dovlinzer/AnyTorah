@@ -185,8 +185,46 @@ private fun TanakhWheels(vm: TextReaderViewModel, yomiResults: YomiService.YomiR
     val currentBook = books.getOrNull(bookIndexInSection)
     val chapterCount = currentBook?.chapters ?: 1
 
+    // ── Section picker (Torah / Nevi'im / Ketuvim) — segmented row of buttons, same
+    // pattern as SAWheels' book picker (OH/YD/EH/CM). In Hebrew mode, iterate reversed so
+    // תורה is on the far right.
+    val sectionIndices = if (hebrewMode) sections.indices.reversed().toList() else sections.indices.toList()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .background(colors.cardBackground, RoundedCornerShape(8.dp)),
+        horizontalArrangement = Arrangement.SpaceEvenly
+    ) {
+        sectionIndices.forEach { index ->
+            val section = sections[index]
+            val isSelected = sectionIndex == index
+            val displayName = if (hebrewMode) section.hebrewName.strippingNikud() else section.name
+            androidx.compose.material3.TextButton(
+                onClick = {
+                    if (sectionIndex != index) {
+                        val firstBook = section.books.firstOrNull()
+                        if (firstBook != null) vm.setTanakhBook(firstBook.id)
+                    }
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = displayName,
+                    color = if (isSelected) colors.editorialColor else colors.appForeground.copy(alpha = 0.5f),
+                    fontSize = 11.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(10.dp))   // breathing room before column labels
+
     if (hebrewMode) {
-        // RTL: Chapter | Book | Section (section on far right)
+        // RTL: Chapter | Book (book on far right)
         SelectorLabel("פרק")
         WheelPicker(
             items = (1..chapterCount).map { SASimanNames.toHebrewNumeral(it) },
@@ -202,25 +240,7 @@ private fun TanakhWheels(vm: TextReaderViewModel, yomiResults: YomiService.YomiR
                 if (book != null) vm.setTanakhBook(book.id)
             }
         )
-        SelectorLabel("חלק")
-        WheelPicker(
-            items = sections.map { it.hebrewName.strippingNikud() },
-            selectedIndex = sectionIndex,
-            onIndexSelected = { newSec ->
-                val firstBook = sections.getOrNull(newSec)?.books?.firstOrNull()
-                if (firstBook != null) vm.setTanakhBook(firstBook.id)
-            }
-        )
     } else {
-        SelectorLabel("Section")
-        WheelPicker(
-            items = sections.map { it.name },
-            selectedIndex = sectionIndex,
-            onIndexSelected = { newSec ->
-                val firstBook = sections.getOrNull(newSec)?.books?.firstOrNull()
-                if (firstBook != null) vm.setTanakhBook(firstBook.id)
-            }
-        )
         SelectorLabel("Book")
         WheelPicker(
             items = books.map { it.name },

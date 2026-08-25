@@ -290,28 +290,6 @@ private struct TanakhWheels: View {
     }
 
     @ViewBuilder
-    private func sectionColumn() -> some View {
-        WheelColumn(fg: fg, label: hebrewMode ? "חלק" : "Section") {
-            Picker("", selection: Binding(
-                get: { sectionIndex },
-                set: { newVal in
-                    sectionIndex = newVal
-                    bookInSection = 0
-                    vm.tanakhChapter = 1
-                    syncBookIndex()
-                }
-            )) {
-                ForEach(sections.indices, id: \.self) { i in
-                    Text(hebrewMode ? sections[i].hebrewName.strippingNikud : sections[i].name)
-                        .foregroundStyle(i == sectionIndex ? fg : fg.opacity(0.35))
-                        .tag(i)
-                }
-            }
-            .pickerStyle(.wheel)
-        }
-    }
-
-    @ViewBuilder
     private func bookColumn() -> some View {
         let snap = currentSection
         WheelColumn(fg: fg, label: hebrewMode ? "ספר" : "Book") {
@@ -355,18 +333,40 @@ private struct TanakhWheels: View {
     }
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            // ── Section picker (Torah / Nevi'im / Ketuvim) — segmented row of buttons,
+            // same pattern as SAWheels' book picker (OH/YD/EH/CM). In Hebrew mode, iterate
+            // reversed so תורה is on the far right.
+            Picker("Section", selection: Binding(
+                get: { sectionIndex },
+                set: { newVal in
+                    sectionIndex = newVal
+                    bookInSection = 0
+                    vm.tanakhChapter = 1
+                    syncBookIndex()
+                }
+            )) {
+                ForEach(hebrewMode ? Array(sections.indices.reversed()) : Array(sections.indices), id: \.self) { i in
+                    Text(hebrewMode ? sections[i].hebrewName.strippingNikud : sections[i].name)
+                        .tag(i)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
+
+            Spacer().frame(height: 12)   // breathing room before column labels
+
             if hebrewMode {
-                // RTL: Chapter (left) | Book | Section (right)
+                // RTL: Chapter (left) | Book (right)
                 HStack(spacing: 0) {
                     chapterColumn()
                     bookColumn()
-                    sectionColumn()
                 }
             } else {
-                // LTR: Section (left) | Book | Chapter (right)
+                // LTR: Book (left) | Chapter (right)
                 HStack(spacing: 0) {
-                    sectionColumn()
                     bookColumn()
                     chapterColumn()
                 }

@@ -249,6 +249,21 @@ automatically by package directory.
 **Settings gear moved to the top-right on iOS home screen** (was top-left) to match the
 platform convention Android's `HomeScreen.kt` already followed.
 
+### Tanakh selector — Torah/Nevi'im/Ketuvim as a segmented row (2026-08-25)
+
+`TanakhWheels` (iOS `TextSelectorView.swift`, Android `TextSelectorScreen.kt`) already divided
+Tanakh into its three sections via `TextCatalog.tanakhSections`, but as a third scrollable
+wheel column alongside Book/Chapter — easy to miss, and inconsistent with how `SAWheels`
+divides Shulkhan Arukh into OH/YD/EH/CM (a segmented row of tap targets at the top, wheels for
+the finer-grained picks below). Per explicit user direction, `TanakhWheels` now uses that same
+pattern: a segmented row (iOS: `Picker(...).pickerStyle(.segmented)`; Android: a `Row` of
+`TextButton`s in a `cardBackground`-filled rounded rect, selected one bold + full-opacity,
+others dimmed — copied near-verbatim from `SAWheels`' book row) for Torah/Nevi'im/Ketuvim,
+with only Book + Chapter as wheel columns underneath. Selecting a section jumps straight to its
+first book (`section.books.first`), same behavior the old wheel's `onChange` already had.
+Hebrew-mode ordering (reversed indices, section on the visually-right side) mirrors `SAWheels`
+exactly.
+
 ### State flow
 
 - `TextReaderViewModel` (`@Observable @MainActor`) — single source of truth for selection, segments, commentary, display mode.
