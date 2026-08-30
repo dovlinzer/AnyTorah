@@ -357,20 +357,106 @@ enum MidrashNavigationMode: String, Codable {
 
 enum TeshuvotSubcategory: String, CaseIterable, Codable {
     case rishonim = "rishonim"
-    // .acharonim intentionally not added yet — no work list exists for it (2026-08-25); add a
-    // case here plus its own TeshuvotWork entries once that list is provided, following exactly
-    // the same shape as .rishonim below.
+    case acharonim = "acharonim"
+    /// PDF/scanned-page based, not Sefaria-based — see `ContemporaryTeshuvotWork`. The reader
+    /// takes a completely different rendering path for this subcategory (an image pager, like
+    /// Talmud's daf-image mode) rather than the Sefaria text pipeline every other subcategory
+    /// (and every other TextCategory) shares — see `TextReaderView`'s `contentWithCommentary`.
+    case contemporary = "contemporary"
 
     var displayName: String {
         switch self {
-        case .rishonim: return "Teshuvot Rishonim"
+        case .rishonim:     return "Teshuvot Rishonim"
+        case .acharonim:    return "Teshuvot Acharonim"
+        case .contemporary: return "Teshuvot Contemporary"
         }
     }
     var hebrewName: String {
         switch self {
-        case .rishonim: return "שו״ת ראשונים"
+        case .rishonim:     return "שו״ת ראשונים"
+        case .acharonim:    return "שו״ת אחרונים"
+        case .contemporary: return "שו״ת בני זמננו"
         }
     }
+}
+
+// MARK: - Contemporary Teshuvot (PDF/scanned-page based, not Sefaria)
+
+/// One volume of a Contemporary Teshuvot work — e.g. "Iggros Moshe, Even HaEzer II". Unlike
+/// `TeshuvotVolume` (Sefaria refs), navigation here is entirely page-image based: a siman
+/// resolves to a raw page NUMBER within that volume's page-image set (see
+/// `TeshuvotPageManager`), hand-indexed from the volume's own printed table of contents since
+/// no machine-readable siman/page data exists for these works — see CLAUDE.md's Contemporary
+/// Teshuvot section for the indexing methodology and accuracy caveats. `simanToPage` entries
+/// are a living, hand-maintained best-effort index: some are directly verified against the
+/// actual page image, others are estimated and expected to need correction as they're
+/// encountered — this is fine because the reader always allows manual forward/back paging
+/// regardless of whether a jump landed exactly on the right page.
+struct ContemporaryTeshuvotVolume: Identifiable, Equatable {
+    /// Matches both the Drive folder name and the key in teshuvot_pages.json/
+    /// teshuvot_siman_index.json, e.g. "IggrotMosheEH2".
+    let id: String
+    let label: String
+    let hebrewLabel: String
+    let simanCount: Int
+
+    static func == (lhs: ContemporaryTeshuvotVolume, rhs: ContemporaryTeshuvotVolume) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    /// The page number a siman starts on, or nil if not yet indexed. Falls back to page 1 in
+    /// the reader when nil, rather than failing outright -- the user can page forward manually.
+    func page(forSiman siman: Int) -> Int? {
+        TeshuvotPageManager.shared.page(volume: id, siman: siman)
+    }
+}
+
+/// A Contemporary Teshuvot work, e.g. Iggros Moshe. Parallel to `TeshuvotWork` but for
+/// PDF/scanned-page content rather than Sefaria-digitized text.
+struct ContemporaryTeshuvotWork: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let hebrewName: String
+    /// Common Hebrew abbreviation (e.g. "אג״מ" for אגרות משה), used everywhere Hebrew mode
+    /// would otherwise show `hebrewName` — header pill, book-picker rows — per explicit
+    /// request to abbreviate sefer names in Hebrew "to their common abbreviations when they
+    /// exist" (English work names are left unabbreviated; they're already short enough).
+    /// Falls back to `hebrewName` when nil, for a future work with no standard abbreviation.
+    let hebrewAbbreviation: String?
+    let volumes: [ContemporaryTeshuvotVolume]
+
+    /// Hebrew-mode display form — `hebrewAbbreviation` when set, else the full `hebrewName`.
+    var hebrewDisplayName: String { hebrewAbbreviation ?? hebrewName }
+
+    static func == (lhs: ContemporaryTeshuvotWork, rhs: ContemporaryTeshuvotWork) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    /// Iggros Moshe is the pilot work (2026-08-29) -- one volume (Even HaEzer II) indexed so
+    /// far, out of 14 downloadable PDF volumes (a 15th, Even HaEzer I, is 191MB and needs
+    /// re-splitting before it can be converted -- Google Drive's direct-download link returns
+    /// an HTML interstitial instead of the file past a certain size). Add volumes here as their
+    /// page images are uploaded to Drive and their siman index is built -- see
+    /// tools/build_teshuvot_pages.py and CLAUDE.md's Contemporary Teshuvot section.
+    static let works: [ContemporaryTeshuvotWork] = [
+        ContemporaryTeshuvotWork(
+            id: "iggrosMoshe",
+            name: "Iggros Moshe",
+            hebrewName: "אגרות משה",
+            hebrewAbbreviation: "אג״מ",
+            volumes: [
+                // "EH II" / "אה״ע ב" -- same abbreviation convention already used for Chatam
+                // Sofer's identically-shaped Even HaEzer II volume above (OC/YD/EH/CM,
+                // או״ח/יו״ד/אה״ע/חו״מ), not a new one invented for this work.
+                ContemporaryTeshuvotVolume(
+                    id: "IggrotMosheEH2",
+                    label: "EH II",
+                    hebrewLabel: "אה״ע ב",
+                    simanCount: 26
+                ),
+            ]
+        ),
+    ]
 }
 
 /// Which community's rite this posek's teshuvot are associated with — informational only
@@ -378,36 +464,138 @@ enum TeshuvotSubcategory: String, CaseIterable, Codable {
 enum TeshuvotEdah: String, Codable {
     case ashkenaz, sefarad
     var abbreviation: String { self == .ashkenaz ? "A" : "S" }
+    /// Hebrew-mode form of `abbreviation` — א (aleph) for Ashkenaz, ס (samekh) for Sefarad.
+    var hebrewAbbreviation: String { self == .ashkenaz ? "א" : "ס" }
 }
 
-/// **DRAFT DATA — unverified against live Sefaria content.** Built 2026-08-25 in a sandboxed
-/// session with no network access to sefaria.org; `sefariaBaseTitle`/`volumeLabel`/
-/// `volumeCount` below are best-effort bibliographic guesses, not confirmed Sefaria index
-/// titles or real siman counts. `simanCount` is a single generous placeholder (400) for every
-/// work/volume — same "generous range + graceful failure on overshoot" pattern already used
-/// for Midrash's native section wheel (`MidrashWork.swift`'s own doc comment), not a real count.
-/// Test each work on-device (real internet) against the reader's existing error/retry UI and
-/// report which ones fail to load — see CLAUDE.md's Teshuvot section for the full list and the
-/// specific ones flagged as least certain (Maharach Or Zarua, Mahari Weil, Mahari Bruna,
-/// Maharik's shoresh count, and which printed edition of Maharam MiRotenburg Sefaria carries,
-/// if any).
+/// One selectable entry in a Teshuvot work's second-level ("volume") picker. Introduced
+/// 2026-08-28 alongside the Acharonim work list, generalizing the original numeral-only
+/// volumeCount/volumeDisplayLabel scheme (the 13 Rishonim works below are re-expressed in this
+/// same shape, unchanged in behavior) — needed because several Acharonim works are structured
+/// by Sefaria as *named* Tur-order sections (Orach Chayim/Yoreh Deah/Even HaEzer/Choshen
+/// Mishpat), not sequential numbered volumes, and a few (Rav Pealim, Shoel uMeshiv) are three
+/// levels deep on Sefaria (Volume → Section → Siman, or Mahadura → Sub-volume → Siman) with no
+/// natural way to add a third wheel to this app's existing Work→Volume→Siman picker shape —
+/// those are flattened into one "volume" list of combined-label entries instead (e.g. "I,
+/// Orach Chayim"), the same flattening trick this app already used for the work-picker's
+/// century dividers. **`volumes` is never empty** — a flat work (no real volume level) is
+/// still exactly one `TeshuvotVolume` entry; `volumeLabel == nil` is what actually hides the
+/// volume pill/sheet in the UI, so `maxSiman(forVolume:)`/`sefariaRef`/`volumeDisplayLabel`
+/// can all index into `volumes` unconditionally with no separate flat-vs-multi-volume branch.
+struct TeshuvotVolume: Equatable {
+    /// English display label, shown in both the volume pill and the picker wheel.
+    let label: String
+    /// Hebrew display label, shown when saHebrewMode is on.
+    let hebrewLabel: String
+    /// Sefaria ref for this volume, with the literal placeholder `{siman}` substituted for the
+    /// actual siman number — see `ref(siman:)`.
+    let refTemplate: String
+    let maxSiman: Int
+
+    func ref(siman: Int) -> String {
+        refTemplate.replacingOccurrences(of: "{siman}", with: "\(siman)")
+    }
+}
+
+/// **Rishonim verified against live Sefaria content, 2026-08-24** (see CLAUDE.md's Teshuvot
+/// section for the full research trail). Several titles guessed in the original draft were
+/// wrong or structured very differently on Sefaria than assumed — corrected here:
+/// - Rashba is not one title with a numeric volume; Sefaria carries it as separately *titled*
+///   parts — only IV, V, VI, VII are included here. Part I was dropped entirely (2026-08-25):
+///   it's digitized for only 5 of its 413 simanim, so it's not usable content, not just a ref
+///   quirk — see the removed-works note below. Its wheel position doesn't equal the roman
+///   numeral (position 1 is part IV) — see the `.rashba` case of `volumes` below.
+/// - Sefer HaTashbetz (Rashbatz's responsa) is titled "Sefer HaTashbetz", not "Teshuvot
+///   HaTashbetz"; it has 4 parts as guessed, but Part IV carries one extra depth level
+///   (Section → Teshuva → Paragraph, vs. the other parts' Teshuva → Paragraph) that this
+///   picker's two-level Work→Volume→Siman shape can't address — a known gap, not a bug.
+/// - Maharach Or Zarua's responsa are titled "Maharach Or Zarua Responsa", not "Teshuvot Chaim
+///   Or Zarua" — the guessed title collided with his father Yitzchak's unrelated "Or Zarua".
+/// - Maharam MiRotenburg's responsa are NOT a single Sefaria title. Sefaria carries four
+///   separately-paginated printed editions (Cremona 1558, Prague 1608, Lemberg 1860, Berlin
+///   1891) as sibling nodes under "Teshuvot Maharam", with no shared siman numbering across
+///   them. This app defaults to the Cremona edition (earliest, and a simple flat siman list
+///   unlike Berlin's own internal Part I/II/III split) — a future enhancement could expose
+///   edition choice as its own picker level.
+/// - Maharik has no separate "Shoresh" volume level on Sefaria — it's one flat list of 197
+///   simanim (the traditional "Shoresh" numbering *is* Sefaria's Siman numbering here).
+/// - Rosh's Klal/Siman two-level structure and Terumat HaDeshen's two-part split were both
+///   correctly guessed in the original draft; only their exact siman counts are refined here
+///   where Sefaria's index reports them.
 ///
-/// Declaration order is the corrected chronological order within each century (see CLAUDE.md
-/// for the two corrections made to the user's original ordering) — `allCases`/`works(for:)`
-/// preserve this order, which is what the work picker displays.
+/// **Four entire Rishonim works removed, 2026-08-25 — not a ref bug, near-total lack of
+/// digitized content.** Ritva, Mahari Weil, Mahari Bruna, and HaRashbash were in the original
+/// 17-work list, but Sefaria's `/api/shape` endpoint (reports actual per-siman content length,
+/// unlike the index endpoint's schema, which only reports the nominal siman *count*) showed
+/// each has real text at only 1–2 simanim total (out of 111–1008 nominal) — Ritva: 1 of 122;
+/// Mahari Weil: 2 of 151; Mahari Bruna: 1 of 111; HaRashbash: 2 of 1008. Rashba's Part I is the
+/// same story (5 of 413) and was dropped rather than removing all of Rashba, since its other
+/// four parts (IV–VII) are fully digitized. Per explicit product decision, a work (or volume)
+/// with essentially no real content isn't worth surfacing in the picker at all, so these are
+/// gone rather than special-cased around. If Sefaria digitizes more of them later, re-run the
+/// same `/api/shape` check before re-adding.
+///
+/// **Acharonim added 2026-08-28**, verified the same way (live `/api/v2/index`, `/api/shape`,
+/// and `/api/texts` checks, not guesses) for all 32 works the user specified. Several needed a
+/// corrected Sefaria title or turned out structured very differently than a plain "Work +
+/// Siman" guess would assume — see `volumes` below for the exact per-work ref shape. One work
+/// was dropped entirely for the same near-total-emptiness reason as the four Rishonim above:
+/// **Mateh Levi** — only 1 of 19 nominal simanim (5.3%) has real content. Three more individual
+/// volumes/sections were dropped while keeping the rest of their parent work: Teshuvot Bayit
+/// Chadash's "Kuntres Acharon" (10 of 84 real, 11.9%, and only 10 simanim of actual text either
+/// way), Teshuvot Meshiv Davar's Volumes III and IV (both 0 real content — empty placeholders),
+/// and Teshuvot Maharit's Part II Even HaEzer (0 of 1 nominal — a one-siman stub). Every other
+/// work/volume/section listed below is real, browsable content, even where not 100% complete
+/// (e.g. Radbaz's Volumes II–VI range 12–30% real, but that's still hundreds of real simanim
+/// each, not a handful) — kept rather than dropped, since "incomplete" isn't the same problem
+/// as "near-empty"; see `maxSiman(forVolume:)`'s note on the generous-ceiling tradeoff.
+///
+/// Several Acharonim works are structured by Sefaria as named Tur-order sections (Orach
+/// Chayim/Yoreh Deah/Even HaEzer/Choshen Mishpat) rather than sequential numbered volumes, and
+/// a few (Rav Pealim, Shoel uMeshiv) are three levels deep on Sefaria with no natural way to
+/// add a third wheel to this app's existing Work→Volume→Siman shape — see `TeshuvotVolume`'s
+/// own doc comment for how those are flattened into one combined-label "volume" list instead.
+///
+/// Century/edah groupings for Acharonim preserve the order and rite classification the user
+/// supplied — unlike the Rishonim list, this wasn't independently re-verified against birth
+/// years or biographical sources; revisit if that turns out to matter.
+///
+/// `maxSiman(forVolume:)` returns Sefaria-confirmed ceilings where available and a generous
+/// placeholder (400) elsewhere — same "generous range + graceful failure on overshoot" pattern
+/// already used for Midrash's native section wheel (`MidrashWork.swift`'s own doc comment).
 enum TeshuvotWork: String, CaseIterable, Identifiable, Codable {
-    // 11th–12th century
+    // Rishonim — 11th–12th century
     case rashi, riMigash, rambamTeshuvot
-    // 13th century
-    case rashba, ritva, maharam, maharachOrZarua
-    // 14th century
+    // Rishonim — 13th century
+    case rashba, maharam, maharachOrZarua
+    // Rishonim — 14th century
     case rosh, ran, rivash
-    // 15th century
-    case maharil, terumatHaDeshen, mahariWeil, mahariBruna, maharik
-    case seferHaTashbetz, teshuvotHaRashbash
+    // Rishonim — 15th century
+    case maharil, terumatHaDeshen, maharik
+    case seferHaTashbetz
+
+    // Acharonim — 16th century
+    case avkatRokhel, divreiRivot, radbaz, maharamMiPadua, maharshal, maharshdam, rema
+    // Acharonim — 17th century
+    case bach, beerSheva, chakhamTzvi, halakhotKetanot, havotYair, maharit
+    // Acharonim — 18th century
+    case admatKodesh, nodaBiyehudah, rabbiAkivaEiger, sheilatYaavetz, toratNetanel
+    // Acharonim — 19th century
+    case beerYitzchak, binyanOlam, binyanTziyon, chatamSofer, chidusheiHaRim
+    case haElefLekhaShlomo, kerakhShelRomi, maharsham, meshivDavar, melammedLehoil
+    case ravPealim, shoelUmeshiv, teshuvaMeahava
 
     var id: String { rawValue }
-    var subcategory: TeshuvotSubcategory { .rishonim }
+
+    var subcategory: TeshuvotSubcategory {
+        switch self {
+        case .rashi, .riMigash, .rambamTeshuvot, .rashba, .maharam, .maharachOrZarua,
+             .rosh, .ran, .rivash, .maharil, .terumatHaDeshen, .maharik, .seferHaTashbetz:
+            return .rishonim
+        default:
+            return .acharonim
+        }
+    }
 
     var displayName: String {
         switch self {
@@ -415,7 +603,6 @@ enum TeshuvotWork: String, CaseIterable, Identifiable, Codable {
         case .riMigash:           return "Ri Migash"
         case .rambamTeshuvot:     return "Rambam"
         case .rashba:             return "Rashba"
-        case .ritva:              return "Ritva"
         case .maharam:            return "Maharam"
         case .maharachOrZarua:    return "Maharach Or Zarua"
         case .rosh:               return "Rosh"
@@ -423,11 +610,39 @@ enum TeshuvotWork: String, CaseIterable, Identifiable, Codable {
         case .rivash:             return "Rivash"
         case .maharil:            return "Maharil"
         case .terumatHaDeshen:    return "Terumat HaDeshen"
-        case .mahariWeil:         return "Mahari Weil"
-        case .mahariBruna:        return "Mahari Bruna"
         case .maharik:            return "Maharik"
         case .seferHaTashbetz:    return "Sefer HaTashbetz"
-        case .teshuvotHaRashbash: return "Teshuvot HaRashbash"
+        case .avkatRokhel:        return "Avkat Rokhel"
+        case .divreiRivot:        return "Divrei Rivot"
+        case .radbaz:             return "Radbaz"
+        case .maharamMiPadua:     return "Maharam miPadua"
+        case .maharshal:          return "Maharshal"
+        case .maharshdam:         return "Maharshdam"
+        case .rema:               return "Rema"
+        case .bach:               return "Bach"
+        case .beerSheva:          return "Be'er Sheva"
+        case .chakhamTzvi:        return "Chakham Tzvi"
+        case .halakhotKetanot:    return "Halakhot Ketanot"
+        case .havotYair:          return "Havot Yair"
+        case .maharit:            return "Maharit"
+        case .admatKodesh:        return "Admat Kodesh"
+        case .nodaBiyehudah:      return "Noda BiYehudah"
+        case .rabbiAkivaEiger:    return "Rabbi Akiva Eiger"
+        case .sheilatYaavetz:     return "Sheilat Yaavetz"
+        case .toratNetanel:       return "Torat Netanel"
+        case .beerYitzchak:       return "Be'er Yitzchak"
+        case .binyanOlam:         return "Binyan Olam"
+        case .binyanTziyon:       return "Binyan Tziyon"
+        case .chatamSofer:        return "Chatam Sofer"
+        case .chidusheiHaRim:     return "Chidushei HaRim"
+        case .haElefLekhaShlomo:  return "HaElef Lekha Shlomo"
+        case .kerakhShelRomi:     return "Kerakh shel Romi"
+        case .maharsham:          return "Maharsham"
+        case .meshivDavar:        return "Meshiv Davar"
+        case .melammedLehoil:     return "Melammed Lehoil"
+        case .ravPealim:          return "Rav Pealim"
+        case .shoelUmeshiv:       return "Shoel uMeshiv"
+        case .teshuvaMeahava:     return "Teshuva MeAhava"
         }
     }
 
@@ -437,7 +652,6 @@ enum TeshuvotWork: String, CaseIterable, Identifiable, Codable {
         case .riMigash:           return "ר״י מיגאש"
         case .rambamTeshuvot:     return "רמב״ם"
         case .rashba:             return "רשב״א"
-        case .ritva:              return "ריטב״א"
         case .maharam:            return "מהר״ם מרוטנבורג"
         case .maharachOrZarua:    return "מהר״ח אור זרוע"
         case .rosh:               return "רא״ש"
@@ -445,21 +659,54 @@ enum TeshuvotWork: String, CaseIterable, Identifiable, Codable {
         case .rivash:             return "ריב״ש"
         case .maharil:            return "מהרי״ל"
         case .terumatHaDeshen:    return "תרומת הדשן"
-        case .mahariWeil:         return "מהר״י ווייל"
-        case .mahariBruna:        return "מהר״י ברונא"
         case .maharik:            return "מהרי״ק"
         case .seferHaTashbetz:    return "תשב״ץ"
-        case .teshuvotHaRashbash: return "רשב״ש"
+        case .avkatRokhel:        return "אבקת רוכל"
+        case .divreiRivot:        return "דברי ריבות"
+        case .radbaz:             return "רדב״ז"
+        case .maharamMiPadua:     return "מהר״ם מפדובה"
+        case .maharshal:          return "מהרש״ל"
+        case .maharshdam:         return "מהרשד״ם"
+        case .rema:               return "רמ״א"
+        case .bach:               return "ב״ח"
+        case .beerSheva:          return "באר שבע"
+        case .chakhamTzvi:        return "חכם צבי"
+        case .halakhotKetanot:    return "הלכות קטנות"
+        case .havotYair:          return "חוות יאיר"
+        case .maharit:            return "מהרי״ט"
+        case .admatKodesh:        return "אדמת קודש"
+        case .nodaBiyehudah:      return "נודע ביהודה"
+        case .rabbiAkivaEiger:    return "רבי עקיבא איגר"
+        case .sheilatYaavetz:     return "שאילת יעב״ץ"
+        case .toratNetanel:       return "תורת נתנאל"
+        case .beerYitzchak:       return "באר יצחק"
+        case .binyanOlam:         return "בנין עולם"
+        case .binyanTziyon:       return "בנין ציון"
+        case .chatamSofer:        return "חתם סופר"
+        case .chidusheiHaRim:     return "חידושי הרי״ם"
+        case .haElefLekhaShlomo:  return "האלף לך שלמה"
+        case .kerakhShelRomi:     return "כרך של רומי"
+        case .maharsham:          return "מהרש״ם"
+        case .meshivDavar:        return "משיב דבר"
+        case .melammedLehoil:     return "מלמד להועיל"
+        case .ravPealim:          return "רב פעלים"
+        case .shoelUmeshiv:       return "שואל ומשיב"
+        case .teshuvaMeahava:     return "תשובה מאהבה"
         }
     }
 
+    /// Best-effort rite classification for the informational (A)/(S) badge — see `TeshuvotEdah`.
     var edah: TeshuvotEdah {
         switch self {
-        case .rashi, .maharam, .maharachOrZarua, .maharil, .terumatHaDeshen,
-             .mahariWeil, .mahariBruna, .maharik:
+        case .rashi, .maharam, .maharachOrZarua, .maharil, .terumatHaDeshen, .maharik,
+             .maharamMiPadua, .maharshal, .rema, .bach, .beerSheva, .chakhamTzvi, .havotYair,
+             .nodaBiyehudah, .rabbiAkivaEiger, .sheilatYaavetz, .toratNetanel, .beerYitzchak,
+             .binyanOlam, .binyanTziyon, .chatamSofer, .chidusheiHaRim, .haElefLekhaShlomo,
+             .maharsham, .meshivDavar, .melammedLehoil, .shoelUmeshiv, .teshuvaMeahava:
             return .ashkenaz
-        case .riMigash, .rambamTeshuvot, .rashba, .ritva, .rosh, .ran, .rivash,
-             .seferHaTashbetz, .teshuvotHaRashbash:
+        case .riMigash, .rambamTeshuvot, .rashba, .rosh, .ran, .rivash, .seferHaTashbetz,
+             .avkatRokhel, .divreiRivot, .radbaz, .maharshdam, .halakhotKetanot, .maharit,
+             .admatKodesh, .kerakhShelRomi, .ravPealim:
             return .sefarad
         }
     }
@@ -469,77 +716,376 @@ enum TeshuvotWork: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .rashi, .riMigash, .rambamTeshuvot:
             return "11th–12th Century"
-        case .rashba, .ritva, .maharam, .maharachOrZarua:
+        case .rashba, .maharam, .maharachOrZarua:
             return "13th Century"
         case .rosh, .ran, .rivash:
             return "14th Century"
-        case .maharil, .terumatHaDeshen, .mahariWeil, .mahariBruna, .maharik,
-             .seferHaTashbetz, .teshuvotHaRashbash:
+        case .maharil, .terumatHaDeshen, .maharik, .seferHaTashbetz:
             return "15th Century"
+        case .avkatRokhel, .divreiRivot, .radbaz, .maharamMiPadua, .maharshal, .maharshdam, .rema:
+            return "16th Century"
+        case .bach, .beerSheva, .chakhamTzvi, .halakhotKetanot, .havotYair, .maharit:
+            return "17th Century"
+        case .admatKodesh, .nodaBiyehudah, .rabbiAkivaEiger, .sheilatYaavetz, .toratNetanel:
+            return "18th Century"
+        case .beerYitzchak, .binyanOlam, .binyanTziyon, .chatamSofer, .chidusheiHaRim,
+             .haElefLekhaShlomo, .kerakhShelRomi, .maharsham, .meshivDavar, .melammedLehoil,
+             .ravPealim, .shoelUmeshiv, .teshuvaMeahava:
+            return "19th Century"
         }
     }
 
-    /// DRAFT — see the enum's own doc comment. Label for the second-level ("volume") picker;
-    /// nil when the work is small enough that Sefaria most likely carries it as one
-    /// continuously-numbered collection (no separate volume wheel shown).
+    /// Label for the second-level ("volume") picker; nil when the work is really just one
+    /// continuously-numbered collection (no separate volume wheel shown) — i.e. `volumes` has
+    /// exactly one entry. Non-nil words vary by how Sefaria actually splits the work: "Part" for
+    /// literal parts, "Section" for a bare Tur-order split, "Volume" for numbered volumes,
+    /// "Klal"/"Chelek" for Rosh/Sefer HaTashbetz's own terms, "Mahadura" for Shoel uMeshiv's
+    /// printed-edition split.
     var volumeLabel: String? {
         switch self {
-        case .rashba:          return "Part"
-        case .rosh:             return "Klal"
-        case .terumatHaDeshen:  return "Section"
-        case .maharik:          return "Shoresh"
-        case .seferHaTashbetz:  return "Chelek"
-        default:                return nil
+        case .rashba, .terumatHaDeshen, .bach, .halakhotKetanot, .maharit, .melammedLehoil:
+            return "Part"
+        case .rosh:
+            return "Klal"
+        case .seferHaTashbetz:
+            return "Chelek"
+        case .radbaz, .maharsham, .sheilatYaavetz, .meshivDavar, .rabbiAkivaEiger, .nodaBiyehudah, .ravPealim:
+            return "Volume"
+        case .maharshdam, .admatKodesh, .beerYitzchak, .binyanOlam, .chatamSofer, .chidusheiHaRim, .haElefLekhaShlomo:
+            return "Section"
+        case .shoelUmeshiv:
+            return "Mahadura"
+        default:
+            return nil
         }
     }
 
-    /// DRAFT — see the enum's own doc comment.
-    var volumeCount: Int {
+    /// Hebrew word for the volume-level label, shown in place of `volumeLabel` when
+    /// `saHebrewMode` is on. Mirrors `volumeLabel`'s cases exactly (nil in the same places).
+    var volumeLabelHebrew: String? {
         switch self {
-        case .rashba:          return 7
-        case .rosh:             return 108
-        case .terumatHaDeshen:  return 2
-        case .maharik:          return 193
-        case .seferHaTashbetz:  return 4
-        default:                return 1
+        case .rosh:
+            return "כלל"
+        case .shoelUmeshiv:
+            return "מהדורא"
+        default:
+            return volumeLabel == nil ? nil : "חלק"
         }
     }
 
-    /// DRAFT — see the enum's own doc comment. Placeholder ceiling for the siman wheel,
-    /// identical for every work/volume (not a real per-work count).
+    /// The second-level picker's entries — see `TeshuvotVolume`'s own doc comment. Never empty:
+    /// a flat work (`volumeLabel == nil`) is still exactly one entry, so `maxSiman(forVolume:)`/
+    /// `sefariaRef`/`volumeDisplayLabel(_:)` can all index into this unconditionally.
+    var volumes: [TeshuvotVolume] {
+        switch self {
+        // MARK: Rishonim — flat works (single dummy entry)
+        case .rashi:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Teshuvot Rashi {siman}", maxSiman: 382)]
+        case .riMigash:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Teshuvot HaRi Migash {siman}", maxSiman: 214)]
+        case .rambamTeshuvot:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Teshuvot HaRambam {siman}", maxSiman: 293)]
+        case .maharam:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Teshuvot Maharam, Cremona Edition {siman}", maxSiman: Self.placeholderMaxSiman)]
+        case .maharachOrZarua:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Maharach Or Zarua Responsa {siman}", maxSiman: 261)]
+        case .ran:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Teshuvot HaRan {siman}", maxSiman: 77)]
+        case .rivash:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Teshuvot HaRivash {siman}", maxSiman: 518)]
+        case .maharil:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Teshuvot Maharil {siman}", maxSiman: Self.placeholderMaxSiman)]
+        case .maharik:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Teshuvot Maharik {siman}", maxSiman: 197)]
+
+        // MARK: Rishonim — multi-volume works
+        case .rashba:
+            // Wheel positions 1–4 map to Sefaria parts IV–VII (I–III excluded — see enum doc).
+            let numerals = ["IV", "V", "VI", "VII"]
+            let counts = [330, 293, 286, 540]
+            return (0..<4).map { i in
+                TeshuvotVolume(label: numerals[i], hebrewLabel: toHebrewNumeral(i + 4),
+                               refTemplate: "Teshuvot haRashba part \(numerals[i]) {siman}", maxSiman: counts[i])
+            }
+        case .rosh:
+            return (1...108).map { n in
+                TeshuvotVolume(label: "\(n)", hebrewLabel: toHebrewNumeral(n),
+                               refTemplate: "Teshuvot HaRosh \(n):{siman}", maxSiman: Self.placeholderMaxSiman)
+            }
+        case .terumatHaDeshen:
+            let counts = [354, Self.placeholderMaxSiman]
+            return (0..<2).map { i in
+                let numeral = ["I", "II"][i]
+                return TeshuvotVolume(label: numeral, hebrewLabel: toHebrewNumeral(i + 1),
+                                       refTemplate: "Terumat HaDeshen, Part \(numeral) {siman}", maxSiman: counts[i])
+            }
+        case .seferHaTashbetz:
+            return (0..<4).map { i in
+                let numeral = ["I", "II", "III", "IV"][i]
+                return TeshuvotVolume(label: numeral, hebrewLabel: toHebrewNumeral(i + 1),
+                                       refTemplate: "Sefer HaTashbetz, Part \(numeral) {siman}", maxSiman: Self.placeholderMaxSiman)
+            }
+
+        // MARK: Acharonim — 16th century
+        case .avkatRokhel:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Avkat Rokhel {siman}", maxSiman: 217)]
+        case .divreiRivot:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Divrei Rivot {siman}", maxSiman: 430)]
+        case .radbaz:
+            let counts = [588, 842, 1571, 1372, 1700, 2341]
+            return (1...6).map { n in
+                TeshuvotVolume(label: "\(n)", hebrewLabel: toHebrewNumeral(n),
+                               refTemplate: "Teshuvot HaRadbaz Volume \(n) {siman}", maxSiman: counts[n - 1])
+            }
+        case .maharamMiPadua:
+            // NOT "Teshuvot Maharam" — that title is the unrelated Rishon Meir of Rothenburg.
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Responsa Maharam of Padua {siman}", maxSiman: 90)]
+        case .maharshal:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Teshuvot Maharshal {siman}", maxSiman: 101)]
+        case .maharshdam:
+            // "Laws of Slaughter" sub-node inside Yoreh Deah isn't separately addressable here —
+            // same known-gap tradeoff as Sefer HaTashbetz's Part IV above.
+            return [
+                TeshuvotVolume(label: "OC", hebrewLabel: "או״ח", refTemplate: "Responsa Maharashdam, Orach Chayim {siman}", maxSiman: 37),
+                TeshuvotVolume(label: "YD", hebrewLabel: "יו״ד", refTemplate: "Responsa Maharashdam, Yoreh Deah {siman}", maxSiman: 255),
+                TeshuvotVolume(label: "EH", hebrewLabel: "אה״ע", refTemplate: "Responsa Maharashdam, Even HaEzer {siman}", maxSiman: 244),
+                TeshuvotVolume(label: "CM", hebrewLabel: "חו״מ", refTemplate: "Responsa Maharashdam, Choshen Mishpat {siman}", maxSiman: 385),
+            ]
+        case .rema:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Responsa of Rema {siman}", maxSiman: 133)]
+
+        // MARK: Acharonim — 17th century
+        case .bach:
+            // Third Sefaria part, "Kuntres Acharon", dropped — see enum doc comment.
+            return [
+                TeshuvotVolume(label: "HaYeshanot", hebrewLabel: "הישנות", refTemplate: "Teshuvot Bayit Chadash, HaYeshanot {siman}", maxSiman: 158),
+                TeshuvotVolume(label: "HaChadashot", hebrewLabel: "החדשות", refTemplate: "Teshuvot Bayit Chadash, HaChadashot {siman}", maxSiman: 96),
+            ]
+        case .beerSheva:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Be'er Sheva {siman}", maxSiman: 75)]
+        case .chakhamTzvi:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Chakham Tzvi {siman}", maxSiman: 169)]
+        case .halakhotKetanot:
+            return [
+                TeshuvotVolume(label: "I", hebrewLabel: "א", refTemplate: "Halakhot Ketanot, Part I {siman}", maxSiman: 295),
+                TeshuvotVolume(label: "II", hebrewLabel: "ב", refTemplate: "Halakhot Ketanot, Part II {siman}", maxSiman: 318),
+            ]
+        case .havotYair:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Havot Yair {siman}", maxSiman: 238)]
+        case .maharit:
+            // Part II's Even HaEzer sub-section dropped — empty stub, see enum doc comment.
+            return [
+                TeshuvotVolume(label: "I", hebrewLabel: "א", refTemplate: "Teshuvot Maharit, I {siman}", maxSiman: 152),
+                TeshuvotVolume(label: "II, OC", hebrewLabel: "ב, או״ח", refTemplate: "Teshuvot Maharit, II, Orach Chayim {siman}", maxSiman: 8),
+                TeshuvotVolume(label: "II, YD", hebrewLabel: "ב, יו״ד", refTemplate: "Teshuvot Maharit, II, Yoreh Deah {siman}", maxSiman: 55),
+                TeshuvotVolume(label: "II, CM", hebrewLabel: "ב, חו״מ", refTemplate: "Teshuvot Maharit, II, Choshen Mishpat {siman}", maxSiman: 125),
+            ]
+
+        // MARK: Acharonim — 18th century
+        case .admatKodesh:
+            return [
+                TeshuvotVolume(label: "OC", hebrewLabel: "או״ח", refTemplate: "Admat Kodesh, Orach Chayim {siman}", maxSiman: 15),
+                TeshuvotVolume(label: "YD", hebrewLabel: "יו״ד", refTemplate: "Admat Kodesh, Yoreh Deah {siman}", maxSiman: 23),
+                TeshuvotVolume(label: "EH", hebrewLabel: "אה״ע", refTemplate: "Admat Kodesh, Even HaEzer {siman}", maxSiman: 54),
+                TeshuvotVolume(label: "CM", hebrewLabel: "חו״מ", refTemplate: "Admat Kodesh, Choshen Mishpat {siman}", maxSiman: 76),
+            ]
+        case .nodaBiyehudah:
+            // User-requested display labels "Kamma"/"Tinyana" — Sefaria's own titles are the
+            // bare "Noda BiYehudah I"/"II"; that real title still drives the ref.
+            let volumeNames: [(disp: String, dispHe: String, title: String)] = [
+                ("Kamma", "קמא", "Noda BiYehudah I"), ("Tinyana", "תניינא", "Noda BiYehudah II"),
+            ]
+            let sections: [(disp: String, dispHe: String, name: String, counts: [Int])] = [
+                ("OC", "או״ח", "Orach Chayim", [42, 141]),
+                ("YD", "יו״ד", "Yoreh Deah", [100, 215]),
+                ("EH", "אה״ע", "Even HaEzer", [95, 161]),
+                ("CM", "חו״מ", "Choshen Mishpat", [39, 62]),
+            ]
+            return volumeNames.indices.flatMap { vi -> [TeshuvotVolume] in
+                sections.map { s in
+                    TeshuvotVolume(label: "\(volumeNames[vi].disp), \(s.disp)",
+                                   hebrewLabel: "\(volumeNames[vi].dispHe), \(s.dispHe)",
+                                   refTemplate: "\(volumeNames[vi].title), \(s.name) {siman}",
+                                   maxSiman: s.counts[vi])
+                }
+            }
+        case .rabbiAkivaEiger:
+            return [
+                TeshuvotVolume(label: "Kamma", hebrewLabel: "קמא", refTemplate: "Teshuvot Rabbi Akiva Eiger {siman}", maxSiman: 222),
+                TeshuvotVolume(label: "Tinyana", hebrewLabel: "תניינא", refTemplate: "Teshuvot Rabbi Akiva Eiger Tinyana {siman}", maxSiman: 153),
+                TeshuvotVolume(label: "Chadashot", hebrewLabel: "חדשות", refTemplate: "Teshuvot Rabbi Akiva Eiger HaChadashot {siman}", maxSiman: 95),
+            ]
+        case .sheilatYaavetz:
+            return [
+                TeshuvotVolume(label: "I", hebrewLabel: "א", refTemplate: "Sheilat Yaavetz, Volume I {siman}", maxSiman: 172),
+                TeshuvotVolume(label: "II", hebrewLabel: "ב", refTemplate: "Sheilat Yaavetz, Volume II {siman}", maxSiman: 200),
+            ]
+        case .toratNetanel:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Torat Netanel {siman}", maxSiman: 39)]
+
+        // MARK: Acharonim — 19th century
+        case .beerYitzchak:
+            return [
+                TeshuvotVolume(label: "OC", hebrewLabel: "או״ח", refTemplate: "Be'er Yitzchak, Orach Chayim {siman}", maxSiman: 30),
+                TeshuvotVolume(label: "YD", hebrewLabel: "יו״ד", refTemplate: "Be'er Yitzchak, Yoreh Deah {siman}", maxSiman: 32),
+                TeshuvotVolume(label: "EH", hebrewLabel: "אה״ע", refTemplate: "Be'er Yitzchak, Even HaEzer {siman}", maxSiman: 18),
+                TeshuvotVolume(label: "CM", hebrewLabel: "חו״מ", refTemplate: "Be'er Yitzchak, Choshen Mishpat {siman}", maxSiman: 6),
+            ]
+        case .binyanOlam:
+            return [
+                TeshuvotVolume(label: "OC", hebrewLabel: "או״ח", refTemplate: "Binyan Olam, Orach Chayim {siman}", maxSiman: 36),
+                TeshuvotVolume(label: "YD", hebrewLabel: "יו״ד", refTemplate: "Binyan Olam, Yoreh Deah {siman}", maxSiman: 66),
+            ]
+        case .binyanTziyon:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Binyan Tziyon {siman}", maxSiman: 182)]
+        case .chatamSofer:
+            return [
+                TeshuvotVolume(label: "OC", hebrewLabel: "או״ח", refTemplate: "Responsa Chatam Sofer, Orach Chayim {siman}", maxSiman: 208),
+                TeshuvotVolume(label: "YD", hebrewLabel: "יו״ד", refTemplate: "Responsa Chatam Sofer, Yoreh Deah {siman}", maxSiman: 356),
+                TeshuvotVolume(label: "EH I", hebrewLabel: "אה״ע א", refTemplate: "Responsa Chatam Sofer, Even HaEzer 1:{siman}", maxSiman: 152),
+                TeshuvotVolume(label: "EH II", hebrewLabel: "אה״ע ב", refTemplate: "Responsa Chatam Sofer, Even HaEzer 2:{siman}", maxSiman: 175),
+                TeshuvotVolume(label: "CM", hebrewLabel: "חו״מ", refTemplate: "Responsa Chatam Sofer, Choshen Mishpat {siman}", maxSiman: 207),
+                TeshuvotVolume(label: "Collected", hebrewLabel: "קובץ תשובות", refTemplate: "Responsa Chatam Sofer, Collected Responsa {siman}", maxSiman: 104),
+            ]
+        case .chidusheiHaRim:
+            return [
+                TeshuvotVolume(label: "OC", hebrewLabel: "או״ח", refTemplate: "Chiddushei HaRim Responsa, Orach Chayim {siman}", maxSiman: 7),
+                TeshuvotVolume(label: "YD", hebrewLabel: "יו״ד", refTemplate: "Chiddushei HaRim Responsa, Yoreh Deah {siman}", maxSiman: 20),
+                TeshuvotVolume(label: "EH", hebrewLabel: "אה״ע", refTemplate: "Chiddushei HaRim Responsa, Even HaEzer {siman}", maxSiman: 43),
+                TeshuvotVolume(label: "CM", hebrewLabel: "חו״מ", refTemplate: "Chiddushei HaRim Responsa, Choshen Mishpat {siman}", maxSiman: 7),
+            ]
+        case .haElefLekhaShlomo:
+            return [
+                TeshuvotVolume(label: "OC", hebrewLabel: "או״ח", refTemplate: "HaElef Lekha Shlomo, Orach Chayim {siman}", maxSiman: 400),
+                TeshuvotVolume(label: "YD", hebrewLabel: "יו״ד", refTemplate: "HaElef Lekha Shlomo, Yoreh Deah {siman}", maxSiman: 342),
+                TeshuvotVolume(label: "EH", hebrewLabel: "אה״ע", refTemplate: "HaElef Lekha Shlomo, Even HaEzer {siman}", maxSiman: 226),
+                TeshuvotVolume(label: "CM", hebrewLabel: "חו״מ", refTemplate: "HaElef Lekha Shlomo, Choshen Mishpat {siman}", maxSiman: 23),
+            ]
+        case .kerakhShelRomi:
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Kerakh shel Romi {siman}", maxSiman: 26)]
+        case .maharsham:
+            let numerals = ["I", "II", "III"]
+            let counts = [230, 270, 378]
+            return (0..<3).map { i in
+                TeshuvotVolume(label: numerals[i], hebrewLabel: toHebrewNumeral(i + 1),
+                               refTemplate: "Teshuvot Maharsham Volume \(numerals[i]) {siman}", maxSiman: counts[i])
+            }
+        case .meshivDavar:
+            // Volumes III and IV dropped — empty on Sefaria, see enum doc comment.
+            let numerals = ["I", "II"]
+            let counts = [47, 108]
+            return (0..<2).map { i in
+                TeshuvotVolume(label: numerals[i], hebrewLabel: toHebrewNumeral(i + 1),
+                               refTemplate: "Teshuvot Meshiv Davar, Volume \(numerals[i]) {siman}", maxSiman: counts[i])
+            }
+        case .melammedLehoil:
+            let numerals = ["I", "II", "III"]
+            let counts = [122, 148, 103]
+            return (0..<3).map { i in
+                TeshuvotVolume(label: numerals[i], hebrewLabel: toHebrewNumeral(i + 1),
+                               refTemplate: "Melammed Lehoil Part \(numerals[i]) {siman}", maxSiman: counts[i])
+            }
+        case .ravPealim:
+            // 4 volumes × Tur order + a kabbalistic "Sod Yesharim" section, flattened — Volume I
+            // has no Choshen Mishpat on Sefaria, so its combo is simply omitted below.
+            let volumeNames = ["I", "II", "III", "IV"]
+            let volumeNamesHe = ["א", "ב", "ג", "ד"]
+            let sections: [(disp: String, dispHe: String, name: String)] = [
+                ("OC", "או״ח", "Orach Chayim"), ("YD", "יו״ד", "Yoreh Deah"),
+                ("EH", "אה״ע", "Even HaEzer"), ("CM", "חו״מ", "Choshen Mishpat"),
+                ("Sod Yesharim", "סוד ישרים", "Sod Yesharim"),
+            ]
+            let counts: [String: Int] = [
+                "I-OC": 35, "I-YD": 57, "I-EH": 13, "I-Sod Yesharim": 17,
+                "II-OC": 65, "II-YD": 41, "II-EH": 34, "II-CM": 15, "II-Sod Yesharim": 14,
+                "III-OC": 45, "III-YD": 32, "III-EH": 12, "III-CM": 8, "III-Sod Yesharim": 13,
+                "IV-OC": 43, "IV-YD": 39, "IV-EH": 13, "IV-CM": 8, "IV-Sod Yesharim": 20,
+            ]
+            return volumeNames.indices.flatMap { vi -> [TeshuvotVolume] in
+                sections.compactMap { s in
+                    guard let maxS = counts["\(volumeNames[vi])-\(s.disp)"] else { return nil }
+                    return TeshuvotVolume(label: "\(volumeNames[vi]), \(s.disp)",
+                                           hebrewLabel: "\(volumeNamesHe[vi]), \(s.dispHe)",
+                                           refTemplate: "Responsa Rav Pealim, Volume \(volumeNames[vi]), \(s.name) {siman}",
+                                           maxSiman: maxS)
+                }
+            }
+        case .shoelUmeshiv:
+            // 6 Mahadura (printed-edition) volumes; I–IV are further subdivided into 3–4
+            // sub-volumes each on Sefaria — flattened here into one combined-label list, same
+            // trick as Rav Pealim/Noda BiYehudah above.
+            let subCounts: [[Int]] = [[313, 194, 223], [97, 86, 137, 190], [473, 203, 165], [61, 226, 153]]
+            let mahaduraNumerals = ["I", "II", "III", "IV"]
+            let mahaduraHe = ["א", "ב", "ג", "ד"]
+            var vols: [TeshuvotVolume] = []
+            for m in 0..<4 {
+                for (si, maxS) in subCounts[m].enumerated() {
+                    let sub = si + 1
+                    vols.append(TeshuvotVolume(
+                        label: "\(mahaduraNumerals[m]).\(sub)", hebrewLabel: "\(mahaduraHe[m]).\(sub)",
+                        refTemplate: "Shoel uMeshiv Mahadura \(mahaduraNumerals[m]) \(sub):{siman}", maxSiman: maxS))
+                }
+            }
+            vols.append(TeshuvotVolume(label: "V", hebrewLabel: "ה", refTemplate: "Shoel uMeshiv Mahadura V {siman}", maxSiman: 92))
+            vols.append(TeshuvotVolume(label: "VI", hebrewLabel: "ו", refTemplate: "Shoel uMeshiv Mahadura VI {siman}", maxSiman: 63))
+            return vols
+        case .teshuvaMeahava:
+            // Only Part I exists on Sefaria — Parts II/III were never digitized.
+            return [TeshuvotVolume(label: "1", hebrewLabel: "1", refTemplate: "Teshuva MeAhava Part I {siman}", maxSiman: 211)]
+        }
+    }
+
+    var volumeCount: Int { volumes.count }
+
+    /// True when every volume's `label` is a plain number/roman numeral (e.g. Radbaz's "1"–"6",
+    /// Rosh's "1"–"108", Rashba's "IV"–"VII") rather than a name/abbreviation (e.g. Rabbi Akiva
+    /// Eiger's "Kamma"/"Tinyana"/"Chadashot", or "OC"/"EH I"). Per explicit user direction, the
+    /// volume-picker wheel row only shows the generic word ("Part"/"Volume"/"Klal"/"Chelek")
+    /// alongside a bare number — a named label already reads fine on its own, and prefixing a
+    /// word onto e.g. "Kamma" or "EH I" is just noise. Computed from `volumes` itself (not a
+    /// separate per-work switch) so it can't drift out of sync with the label data.
+    var volumeLabelIsNumeric: Bool {
+        let romanDigits = Set("IVXLCDM")
+        func isNumeric(_ s: String) -> Bool {
+            !s.isEmpty && s.allSatisfy { $0.isNumber || romanDigits.contains($0) }
+        }
+        return volumes.allSatisfy { isNumeric($0.label) }
+    }
+
+    /// Legacy display-only fallback ceiling for volumes without an individually-verified count.
     static let placeholderMaxSiman = 400
 
-    /// DRAFT — see the enum's own doc comment. Best-guess Sefaria index title.
-    var sefariaBaseTitle: String {
-        switch self {
-        case .rashi:              return "Teshuvot Rashi"
-        case .riMigash:           return "Teshuvot HaRi MiGash"
-        case .rambamTeshuvot:     return "Teshuvot HaRambam"
-        case .rashba:             return "Teshuvot HaRashba"
-        case .ritva:              return "Teshuvot HaRitva"
-        case .maharam:            return "Teshuvot Maharam MiRotenburg"
-        case .maharachOrZarua:    return "Teshuvot Chaim Or Zarua"
-        case .rosh:               return "Teshuvot HaRosh"
-        case .ran:                return "Teshuvot HaRan"
-        case .rivash:             return "Teshuvot HaRivash"
-        case .maharil:            return "Teshuvot Maharil"
-        case .terumatHaDeshen:    return "Terumat HaDeshen"
-        case .mahariWeil:         return "Teshuvot Mahari Weil"
-        case .mahariBruna:        return "Teshuvot Mahari Bruna"
-        case .maharik:            return "Teshuvot Maharik"
-        case .seferHaTashbetz:    return "Teshuvot HaTashbetz"
-        case .teshuvotHaRashbash: return "Teshuvot HaRashbash"
-        }
+    /// Verified per-work/per-volume siman ceiling where Sefaria's index reports an exact count;
+    /// a generous placeholder (400) is retained elsewhere. See the enum's own doc comment.
+    func maxSiman(forVolume volume: Int) -> Int {
+        let vols = volumes
+        let idx = min(max(0, volume - 1), vols.count - 1)
+        return vols[idx].maxSiman
     }
 
-    /// DRAFT — see the enum's own doc comment. `"{title} {volume}:{siman}"` when the work has
-    /// more than one volume, `"{title} {siman}"` otherwise — mirrors `MidrashWork.nativeRef`'s
-    /// own `numericTwo`/`numericOne` shape.
+    /// Display label for a 1-based volume-wheel position.
+    func volumeDisplayLabel(_ volume: Int) -> String {
+        let vols = volumes
+        let idx = min(max(0, volume - 1), vols.count - 1)
+        return vols[idx].label
+    }
+
+    /// Hebrew-mode display label for a 1-based volume-wheel position. Never used for
+    /// `sefariaRef` — that must stay in Sefaria's own form.
+    func volumeDisplayLabelHebrew(_ volume: Int) -> String {
+        let vols = volumes
+        let idx = min(max(0, volume - 1), vols.count - 1)
+        return vols[idx].hebrewLabel
+    }
+
+    /// Builds the real Sefaria ref for a 1-based volume position and siman number.
     func sefariaRef(volume: Int, siman: Int) -> String {
-        volumeCount > 1 ? "\(sefariaBaseTitle) \(volume):\(siman)" : "\(sefariaBaseTitle) \(siman)"
+        let vols = volumes
+        let idx = min(max(0, volume - 1), vols.count - 1)
+        return vols[idx].ref(siman: siman)
     }
 
-    /// All works for a given subcategory, in the corrected chronological order above.
+    /// All works for a given subcategory, in declaration order (chronological within century).
     static func works(for subcategory: TeshuvotSubcategory) -> [TeshuvotWork] {
         allCases.filter { $0.subcategory == subcategory }
     }

@@ -11,9 +11,10 @@
 		06836AD8E3F709C6183F6D45 /* NotoSerifHebrew-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E339DE91CA373FC06E790ED7 /* NotoSerifHebrew-Regular.ttf */; };
 		0706DF980CB1AE8E477F40E0 /* CommentaryPanelViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDD864AA5726C51F90A02A1F /* CommentaryPanelViewModel.swift */; };
 		093844CD4612B31EC589810D /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2174BC073154809126EC534 /* ContentView.swift */; };
-		1744EB89592D13B40B0AFA87 /* BrandGradients.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89138ED931F5B286C80F5D7B /* BrandGradients.swift */; };
+		104543102BFACC642F34CB14 /* teshuvot_siman_index.json in Resources */ = {isa = PBXBuildFile; fileRef = 9122583F0F3DADC2194BA211 /* teshuvot_siman_index.json */; };
 		1B2A5F4452B8FFCB0118B1A3 /* yct_splash.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = F77E3B0CA152ADB575234DA8 /* yct_splash.mp4 */; };
 		281EB0F0A6A3B8A7E9D7B80A /* ein_ayah.json in Resources */ = {isa = PBXBuildFile; fileRef = F04E84E17B5834D221B5387F /* ein_ayah.json */; };
+		2905807620D145DFD84AB64E /* TeshuvotPageManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB876CE0DBD0962DC0D3A498 /* TeshuvotPageManager.swift */; };
 		29C24733DF15588DF6864AFC /* yct_splash_landscape.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 2FBDE4F605AEDC8D2A3F2F0A /* yct_splash_landscape.mp4 */; };
 		2A70A67DF930B4BD8090E57D /* TextModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1720454524DF8C31EBC9631 /* TextModels.swift */; };
 		2B3CA79DE1107F97DC0ED977 /* Bookmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4650825B67A9D77A997AA710 /* Bookmark.swift */; };
@@ -27,6 +28,7 @@
 		63EAFEAE8E6ADB8A3B704413 /* pages.json in Resources */ = {isa = PBXBuildFile; fileRef = 97BFCBD509B727A823273EF3 /* pages.json */; };
 		6926043A2585F5F86872AF50 /* TextReaderViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90D0084EA7A9E2C5650A7747 /* TextReaderViewModel.swift */; };
 		759CBA97869668705CD1C121 /* TextSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11D0250468495D9ACB4FCA34 /* TextSelectorView.swift */; };
+		78AE3119825986339A9B1023 /* BrandGradients.swift in Sources */ = {isa = PBXBuildFile; fileRef = 439F6135515EECD222C34577 /* BrandGradients.swift */; };
 		8391ECDB8D64B00E11F2BFA6 /* DedicationBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8971E52FB06D211090609113 /* DedicationBannerView.swift */; };
 		87EBFB75F65879AA05E8DC8B /* SASimanNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44F9986F9840643005A9A474 /* SASimanNames.swift */; };
 		8CFCB2F577A34412E3A9348E /* BookmarkEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1182F1CB42D4E6F332A21D76 /* BookmarkEditSheet.swift */; };
@@ -34,6 +36,7 @@
 		9D04B72771B07FDF9C328A29 /* TextContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DE575F1FA5EEE563E0EABBC /* TextContentView.swift */; };
 		A42A7162070A8524F7D9D49C /* HebrewUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD1EBCB8D17D927227C6FBE5 /* HebrewUtils.swift */; };
 		A899789D4EC41BE773FD28B4 /* SelectableTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 567113EA5D31701C9F2936BC /* SelectableTextView.swift */; };
+		ABF5A4982D876A769937D364 /* teshuvot_pages.json in Resources */ = {isa = PBXBuildFile; fileRef = 31ED26E14F164311652CD3EA /* teshuvot_pages.json */; };
 		B223D09FDE0A48AF79F1DBDD /* AudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9F99A8A9F70A7258CAD1EBF /* AudioPlayer.swift */; };
 		B22E237171405D204B832955 /* FrankRuhlLibre-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FD1883E5DFF90AEAD8F4E32E /* FrankRuhlLibre-Regular.ttf */; };
 		B410D48468FC8169FF0C89B8 /* EinAyahLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8868CCAF5BDE2EAFCB3E68ED /* EinAyahLoader.swift */; };
@@ -44,6 +47,7 @@
 		CA618EE046866E666E6D0A18 /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51843B948C0B1422A968C504 /* SplashView.swift */; };
 		D763D920A87154A36DEF165F /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 985DF0DB3464786C42B4558A /* SettingsView.swift */; };
 		D7A4C69E10298365317E5F7B /* TextCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B36F6B827D293F0E9ACAFBF /* TextCatalog.swift */; };
+		E197A7D4A2B6A249DCDA95A7 /* ContemporaryTeshuvotPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00BD61A149183EBE0C441EB /* ContemporaryTeshuvotPageView.swift */; };
 		ED62B89CFC5035E354AF506B /* HomeCombinedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A7A9EF7EF165B48C320562 /* HomeCombinedView.swift */; };
 		F109813E5BFBF22E28B85DF3 /* DedicationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2304B35C5BB332EA2F7C8E4 /* DedicationService.swift */; };
 		F5D983355821C456CDF19891 /* CategoryMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E4556E61538888E6C341DD9 /* CategoryMenuView.swift */; };
@@ -70,9 +74,11 @@
 		1407717DD3E83F4E86199C40 /* RambamIntroductions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RambamIntroductions.swift; sourceTree = "<group>"; };
 		298C6693258F77878D0AFED1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		2FBDE4F605AEDC8D2A3F2F0A /* yct_splash_landscape.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = yct_splash_landscape.mp4; sourceTree = "<group>"; };
+		31ED26E14F164311652CD3EA /* teshuvot_pages.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = teshuvot_pages.json; sourceTree = "<group>"; };
 		3B36F6B827D293F0E9ACAFBF /* TextCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextCatalog.swift; sourceTree = "<group>"; };
 		3DE575F1FA5EEE563E0EABBC /* TextContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextContentView.swift; sourceTree = "<group>"; };
 		3EDD2177BE2C97B68E1056DF /* SefariaTextClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SefariaTextClient.swift; sourceTree = "<group>"; };
+		439F6135515EECD222C34577 /* BrandGradients.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandGradients.swift; sourceTree = "<group>"; };
 		44F9986F9840643005A9A474 /* SASimanNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SASimanNames.swift; sourceTree = "<group>"; };
 		4650825B67A9D77A997AA710 /* Bookmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bookmark.swift; sourceTree = "<group>"; };
 		51843B948C0B1422A968C504 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
@@ -84,14 +90,15 @@
 		6B5D3890DE3DA6F49C1BB9BF /* Rashi.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Rashi.ttf; sourceTree = "<group>"; };
 		8868CCAF5BDE2EAFCB3E68ED /* EinAyahLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EinAyahLoader.swift; sourceTree = "<group>"; };
 		8971E52FB06D211090609113 /* DedicationBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DedicationBannerView.swift; sourceTree = "<group>"; };
-		89138ED931F5B286C80F5D7B /* BrandGradients.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandGradients.swift; sourceTree = "<group>"; };
 		90D0084EA7A9E2C5650A7747 /* TextReaderViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextReaderViewModel.swift; sourceTree = "<group>"; };
+		9122583F0F3DADC2194BA211 /* teshuvot_siman_index.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = teshuvot_siman_index.json; sourceTree = "<group>"; };
 		97BFCBD509B727A823273EF3 /* pages.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = pages.json; sourceTree = "<group>"; };
 		985DF0DB3464786C42B4558A /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		9AB4EE1C8500B44CEA98EA04 /* TalmudAudioService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalmudAudioService.swift; sourceTree = "<group>"; };
 		A0FF8DC97327A81E10C297D0 /* TextReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextReaderView.swift; sourceTree = "<group>"; };
 		A21FE02B4AAAD50249556A48 /* AnyTorah.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AnyTorah.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A5400738FE43CDDCA1148BD8 /* AnyTorahApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnyTorahApp.swift; sourceTree = "<group>"; };
+		B00BD61A149183EBE0C441EB /* ContemporaryTeshuvotPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContemporaryTeshuvotPageView.swift; sourceTree = "<group>"; };
 		B1720454524DF8C31EBC9631 /* TextModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextModels.swift; sourceTree = "<group>"; };
 		B2174BC073154809126EC534 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		B30E555492B61741604F2B7F /* CommentaryPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentaryPanelView.swift; sourceTree = "<group>"; };
@@ -103,6 +110,7 @@
 		E148EF34371DD5299E6EE7F8 /* DafPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DafPageView.swift; sourceTree = "<group>"; };
 		E339DE91CA373FC06E790ED7 /* NotoSerifHebrew-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "NotoSerifHebrew-Regular.ttf"; sourceTree = "<group>"; };
 		EAFA95217EEA034B2D27FBFD /* TurParagraphEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurParagraphEngineTests.swift; sourceTree = "<group>"; };
+		EB876CE0DBD0962DC0D3A498 /* TeshuvotPageManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeshuvotPageManager.swift; sourceTree = "<group>"; };
 		F04E84E17B5834D221B5387F /* ein_ayah.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = ein_ayah.json; sourceTree = "<group>"; };
 		F77E3B0CA152ADB575234DA8 /* yct_splash.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = yct_splash.mp4; sourceTree = "<group>"; };
 		FCAB1E421BC1DA808AD4F5F9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -121,6 +129,8 @@
 				F04E84E17B5834D221B5387F /* ein_ayah.json */,
 				FCAB1E421BC1DA808AD4F5F9 /* Info.plist */,
 				97BFCBD509B727A823273EF3 /* pages.json */,
+				31ED26E14F164311652CD3EA /* teshuvot_pages.json */,
+				9122583F0F3DADC2194BA211 /* teshuvot_siman_index.json */,
 				2FBDE4F605AEDC8D2A3F2F0A /* yct_splash_landscape.mp4 */,
 				F77E3B0CA152ADB575234DA8 /* yct_splash.mp4 */,
 				A18D4F4F01C488A5A1B3900B /* API */,
@@ -144,11 +154,12 @@
 		660F6E9B5D322776D75F4FEA /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				89138ED931F5B286C80F5D7B /* BrandGradients.swift */,
 				1182F1CB42D4E6F332A21D76 /* BookmarkEditSheet.swift */,
 				0D1A091DE272567481681DA2 /* BookmarkListView.swift */,
+				439F6135515EECD222C34577 /* BrandGradients.swift */,
 				0E4556E61538888E6C341DD9 /* CategoryMenuView.swift */,
 				B30E555492B61741604F2B7F /* CommentaryPanelView.swift */,
+				B00BD61A149183EBE0C441EB /* ContemporaryTeshuvotPageView.swift */,
 				B2174BC073154809126EC534 /* ContentView.swift */,
 				E148EF34371DD5299E6EE7F8 /* DafPageView.swift */,
 				8971E52FB06D211090609113 /* DedicationBannerView.swift */,
@@ -179,6 +190,7 @@
 				3EDD2177BE2C97B68E1056DF /* SefariaTextClient.swift */,
 				9AB4EE1C8500B44CEA98EA04 /* TalmudAudioService.swift */,
 				FFF104CACB9B3F1FF79D7819 /* TalmudPageManager.swift */,
+				EB876CE0DBD0962DC0D3A498 /* TeshuvotPageManager.swift */,
 				52DD8CDAE7EC2E40A50B3BC4 /* TurParagraphEngine.swift */,
 				63287C9C4B340ECC4D610E59 /* YomiService.swift */,
 			);
@@ -316,6 +328,8 @@
 				2B442BB4FB89CFC33C9A1E94 /* Rashi.ttf in Resources */,
 				281EB0F0A6A3B8A7E9D7B80A /* ein_ayah.json in Resources */,
 				63EAFEAE8E6ADB8A3B704413 /* pages.json in Resources */,
+				ABF5A4982D876A769937D364 /* teshuvot_pages.json in Resources */,
+				104543102BFACC642F34CB14 /* teshuvot_siman_index.json in Resources */,
 				1B2A5F4452B8FFCB0118B1A3 /* yct_splash.mp4 in Resources */,
 				29C24733DF15588DF6864AFC /* yct_splash_landscape.mp4 in Resources */,
 			);
@@ -338,14 +352,15 @@
 			files = (
 				3B48880E9BE842A262F59FEE /* AnyTorahApp.swift in Sources */,
 				B223D09FDE0A48AF79F1DBDD /* AudioPlayer.swift in Sources */,
-				1744EB89592D13B40B0AFA87 /* BrandGradients.swift in Sources */,
 				2B3CA79DE1107F97DC0ED977 /* Bookmark.swift in Sources */,
 				8CFCB2F577A34412E3A9348E /* BookmarkEditSheet.swift in Sources */,
 				B41FC958ED052C2CCAF0668F /* BookmarkListView.swift in Sources */,
 				B4379258D23E4718031E0BE7 /* BookmarkManager.swift in Sources */,
+				78AE3119825986339A9B1023 /* BrandGradients.swift in Sources */,
 				F5D983355821C456CDF19891 /* CategoryMenuView.swift in Sources */,
 				45F89A1F6F6A72930180F3E4 /* CommentaryPanelView.swift in Sources */,
 				0706DF980CB1AE8E477F40E0 /* CommentaryPanelViewModel.swift in Sources */,
+				E197A7D4A2B6A249DCDA95A7 /* ContemporaryTeshuvotPageView.swift in Sources */,
 				093844CD4612B31EC589810D /* ContentView.swift in Sources */,
 				389CC5867F7045F009A2DBDB /* DafPageView.swift in Sources */,
 				8391ECDB8D64B00E11F2BFA6 /* DedicationBannerView.swift in Sources */,
@@ -361,6 +376,7 @@
 				CA618EE046866E666E6D0A18 /* SplashView.swift in Sources */,
 				FCE16F47EDC82EAC1341F8B1 /* TalmudAudioService.swift in Sources */,
 				2FA3E9EA02D6D72936159E4D /* TalmudPageManager.swift in Sources */,
+				2905807620D145DFD84AB64E /* TeshuvotPageManager.swift in Sources */,
 				D7A4C69E10298365317E5F7B /* TextCatalog.swift in Sources */,
 				9D04B72771B07FDF9C328A29 /* TextContentView.swift in Sources */,
 				2A70A67DF930B4BD8090E57D /* TextModels.swift in Sources */,

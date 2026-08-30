@@ -59,16 +59,21 @@ struct TextReaderView: View {
     // Single enum drives all sheet presentations — multiple .sheet(isPresented:) modifiers
     // on the same view interfere with each other in SwiftUI, causing the wrong sheet to show.
     private enum ActiveSheet: String, Identifiable {
-        case selector, settings, bookmarks, bookmarkEdit, chapterPicker, bookPicker
+        case selector, settings, bookmarks, bookmarkEdit, chapterPicker, bookPicker, volumePicker
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet? = nil
 
     @AppStorage("saHebrewMode") private var saHebrewMode: Bool = false
+    @AppStorage("teshuvotAlphabeticalOrder") private var teshuvotAlphabeticalOrder: Bool = false
     @AppStorage("reverseNavDirection") private var reverseNavDirection: Bool = false
     @AppStorage("bottomPanelFraction") private var bottomPanelFraction: Double = 0.40
     @State private var liveBottomFraction: Double? = nil
     @State private var mainTextSelectionMode: Bool = false
+    /// Transient UI-only siman-wheel selection for Contemporary Teshuvot's siman picker — see
+    /// its `.teshuvot` branch in `chapterPickerWheel`. Not persisted; `contemporaryPage` (the
+    /// resolved page, which IS persisted) is the real state.
+    @State private var contemporarySimanSelection: Int = 1
 
     private var cardFill: Color { appFg.opacity(0.08) }
 
@@ -77,7 +82,11 @@ struct TextReaderView: View {
             VStack(spacing: 0) {
                 readerHeader
 
-                if vm.isLoading {
+                if vm.category == .teshuvot && vm.teshuvotSubcategory == .contemporary {
+                    // Bypasses the whole Sefaria text/commentary pipeline below — see
+                    // load()'s early-return guard and ContemporaryTeshuvotPageView.
+                    contemporaryTeshuvotContent
+                } else if vm.isLoading {
                     loadingView
                 } else if let error = vm.error {
                     errorView(error)
@@ -150,6 +159,8 @@ struct TextReaderView: View {
                 chapterPickerSheet
             case .bookPicker:
                 bookPickerSheet
+            case .volumePicker:
+                volumePickerSheet
             }
         }
         .task {
@@ -161,10 +172,51 @@ struct TextReaderView: View {
 
     private var readerHeader: some View {
         VStack(spacing: 0) {
-            // Row 1: [bookmark][bookmarks][list] (far left) | centered title | Gear (far right)
-            // The HStack gets .frame(maxWidth:.infinity) so it always spans the full width
-            // regardless of ZStack sizing, keeping the right-icon cluster truly at the edge.
-            ZStack {
+            // Row 1: [bookmark][bookmarks][list] (far left) | pills (fill remaining width) | Gear (far right).
+            // A single flat HStack, not a ZStack of two overlaid rows — the pills cluster gets
+            // every point of space the two icon clusters don't need, rather than a guessed
+            // symmetric inset (previously a flat 88pt each side, which under- or over-estimated
+            // the icon clusters' real width depending on device/content and just wasted room
+            // that a long work title (e.g. "Teshuvot Rabbi Akiva Eiger") could have used).
+            HStack(spacing: 8) {
+                // Left-side cluster — always together at the leading edge. The bookmark-edit and
+                // bookmarks-list icons are grouped in their own tight-spaced HStack (4pt) since
+                // they're functionally related; the selector icon (unrelated — opens the full
+                // book/chapter picker) keeps a bit more breathing room (10pt) from that pair.
+                HStack(spacing: 10) {
+                    HStack(spacing: 4) {
+                        Button { activeSheet = .bookmarkEdit } label: {
+                            Image(systemName: bookmarkManager.isCurrentLocationBookmarked(vm: vm)
+                                  ? "bookmark.fill" : "bookmark")
+                                .foregroundStyle(appFg)
+                                .font(.body)
+                        }
+                        // "list.bullet" (not the "bookmarks" ribbon-stack glyph) — a plain bullet
+                        // list reads unambiguously as "list of my bookmarks", which is what this
+                        // button opens (BookmarkListView: search + tap-to-navigate + swipe-to-
+                        // delete). Previously this glyph sat on the *selector* button instead,
+                        // which made that unrelated full book/chapter picker look like the
+                        // bookmarks list and got tapped by mistake.
+                        Button { activeSheet = .bookmarks } label: {
+                            Image(systemName: "list.bullet")
+                                .foregroundStyle(appFg)
+                                .font(.body)
+                        }
+                    }
+                    // Teshuvot's book/volume/siman pills already give full navigation on their
+                    // own (tap any pill to jump straight to that level) — the separate combined
+                    // selector sheet (TeshuvotWheels) is redundant for it, per explicit request,
+                    // and was never wired up for the Contemporary subcategory in the first place.
+                    if vm.category != .teshuvot {
+                        Button { activeSheet = .selector } label: {
+                            Image(systemName: "text.book.closed")
+                                .foregroundStyle(appFg)
+                                .font(.body)
+                        }
+                    }
+                }
+                .environment(\.layoutDirection, .leftToRight)  // always LTR regardless of system locale
+
                 // Navigation pills — tap book to open full selector, tap chapter for quick chapter pick.
                 // In Hebrew mode the layout flips RTL so the book name sits on the right.
                 // In Talmud daf-image mode the amud A/B picker also lives here.
@@ -174,9 +226,24 @@ struct TextReaderView: View {
                             .font(vm.category == .talmud ? .title3.weight(.bold) : .callout.weight(.semibold))
                             .foregroundStyle(appFg)
                             .lineLimit(1)
+                            .layoutPriority(1)  // claim space before the volume/chapter pills so it isn't the one truncated
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
                             .background(RoundedRectangle(cornerRadius: 8).fill(appFg.opacity(0.12)))
+                    }
+                    // Teshuvot only, and only for works with a volume level (Rashba's Part,
+                    // Rosh's Klal, etc.) — a dedicated step between the work pill and the siman
+                    // pill, rather than requiring the separate full selector sheet to reach it.
+                    if vm.category == .teshuvot, let navVolumeTitle = vm.navVolumeTitle {
+                        Button { activeSheet = .volumePicker } label: {
+                            Text(navVolumeTitle)
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(appFg)
+                                .lineLimit(1)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(appFg.opacity(0.12)))
+                        }
                     }
                     Button { activeSheet = .chapterPicker } label: {
                         Text(vm.navChapterTitle)
@@ -199,40 +266,22 @@ struct TextReaderView: View {
                     }
                 }
                 .environment(\.layoutDirection, saHebrewMode ? .rightToLeft : .leftToRight)
-                .padding(.horizontal, 88)
-                .frame(maxWidth: .infinity, alignment: .center)
+                // Claim every point of width the two icon clusters don't need — previously a
+                // Spacer(minLength: 8) sat between this HStack and the gear, so it (not the
+                // pills) absorbed any leftover room and pills stayed at their compressed
+                // ideal width even when the row had space to spare. Anchoring this frame's
+                // alignment to the reading direction also satisfies Hebrew mode: with the
+                // pills HStack's own layoutDirection flipped RTL above, the book pill is the
+                // rightmost child in that flip, so trailing-aligning the frame docks it right
+                // next to the gear.
+                .frame(maxWidth: .infinity, alignment: saHebrewMode ? .trailing : .leading)
 
-                HStack {
-                    // Left-side cluster — always together at the leading edge
-                    HStack(spacing: 14) {
-                        Button { activeSheet = .bookmarkEdit } label: {
-                            Image(systemName: bookmarkManager.isCurrentLocationBookmarked(vm: vm)
-                                  ? "bookmark.fill" : "bookmark")
-                                .foregroundStyle(appFg)
-                                .font(.body)
-                        }
-                        Button { activeSheet = .bookmarks } label: {
-                            Image(systemName: "bookmarks")
-                                .foregroundStyle(appFg)
-                                .font(.body)
-                        }
-                        Button { activeSheet = .selector } label: {
-                            Image(systemName: "list.bullet")
-                                .foregroundStyle(appFg)
-                                .font(.body)
-                        }
-                    }
-
-                    Spacer()
-
-                    // Settings gear — top-right, matching the home screen convention
-                    Button { activeSheet = .settings } label: {
-                        Image(systemName: "gear")
-                            .foregroundStyle(appFg)
-                            .font(.body)
-                    }
+                // Settings gear — top-right, matching the home screen convention
+                Button { activeSheet = .settings } label: {
+                    Image(systemName: "gear")
+                        .foregroundStyle(appFg)
+                        .font(.body)
                 }
-                .frame(maxWidth: .infinity)   // guarantee full-width HStack in ZStack
                 .environment(\.layoutDirection, .leftToRight)  // always LTR regardless of system locale
             }
             .padding(.horizontal, 16)
@@ -691,6 +740,82 @@ struct TextReaderView: View {
         )
     }
 
+    // MARK: - Contemporary Teshuvot content (image pager, bypasses the Sefaria pipeline)
+
+    /// Page image + forward/back paging by raw page number — edge tap zones rather than a
+    /// swipe gesture, since `ContemporaryTeshuvotPageView` already uses a drag gesture for
+    /// pan-when-zoomed and a competing outer swipe would fight it for the same gesture.
+    private var contemporaryTeshuvotContent: some View {
+        let pageCount = TeshuvotPageManager.shared.pageCount(volume: vm.contemporaryVolume.id)
+        // reverseNavDirection (an existing app-wide setting — see its other call sites above,
+        // e.g. the Talmud swipe handler) swaps which edge moves forward vs. back, for readers
+        // who expect the left edge to advance (natural for RTL/Hebrew reading direction).
+        let leftGoesForward = reverseNavDirection
+        func goLeft() {
+            if leftGoesForward {
+                if vm.contemporaryPage < pageCount { vm.contemporaryPage += 1 }
+            } else {
+                if vm.contemporaryPage > 1 { vm.contemporaryPage -= 1 }
+            }
+        }
+        func goRight() {
+            if leftGoesForward {
+                if vm.contemporaryPage > 1 { vm.contemporaryPage -= 1 }
+            } else {
+                if vm.contemporaryPage < pageCount { vm.contemporaryPage += 1 }
+            }
+        }
+        let leftEnabled = leftGoesForward ? vm.contemporaryPage < pageCount : vm.contemporaryPage > 1
+        let rightEnabled = leftGoesForward ? vm.contemporaryPage > 1 : vm.contemporaryPage < pageCount
+
+        return ZStack {
+            ContemporaryTeshuvotPageView(
+                volume: vm.contemporaryVolume.id,
+                page: vm.contemporaryPage,
+                fg: appFg
+            )
+
+            // Edge tap zones only claim the outer ~18% of the width each (plain Color.clear
+            // with no contentShape in the middle), leaving the center free for the pinch/pan/
+            // double-tap-zoom gestures on the image itself underneath.
+            GeometryReader { geo in
+                HStack(spacing: 0) {
+                    Color.clear
+                        .frame(width: geo.size.width * 0.18)
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: goLeft)
+                    Spacer(minLength: 0)
+                    Color.clear
+                        .frame(width: geo.size.width * 0.18)
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: goRight)
+                }
+            }
+
+            VStack {
+                Spacer()
+                HStack {
+                    if leftEnabled {
+                        Image(systemName: "chevron.left.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(appFg.opacity(0.35))
+                            .padding(.leading, 12)
+                    }
+                    Spacer()
+                    if rightEnabled {
+                        Image(systemName: "chevron.right.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(appFg.opacity(0.35))
+                            .padding(.trailing, 12)
+                    }
+                }
+                .padding(.bottom, 16)
+                .allowsHitTesting(false)
+            }
+        }
+        .background(appBg)
+    }
+
     // MARK: - Content with commentary (routes to the correct layout)
 
     @ViewBuilder
@@ -1020,8 +1145,9 @@ struct TextReaderView: View {
     private var regularChapterPickerSheet: some View {
         let label: String = {
             switch vm.category {
-            case .talmud: return "Select Daf"
-            default:      return "Select Chapter"
+            case .talmud:   return "Select Daf"
+            case .teshuvot: return "Select Siman"
+            default:        return "Select Chapter"
             }
         }()
         return VStack(spacing: 0) {
@@ -1116,15 +1242,141 @@ struct TextReaderView: View {
             }
             .pickerStyle(.wheel)
         case .teshuvot:
-            // Quick pill only changes siman within the current volume — switching volume
-            // needs the full selector's TeshuvotWheels (tap the work pill, not the chapter pill).
-            Picker("", selection: $vm.teshuvotSiman) {
-                ForEach(1...TeshuvotWork.placeholderMaxSiman, id: \.self) { s in
-                    Text(saHebrewMode ? SASimanNames.toHebrewNumeral(s) : "\(s)").tag(s)
+            if vm.teshuvotSubcategory == .contemporary {
+                // Selecting a siman jumps `contemporaryPage` to that siman's indexed page (see
+                // ContemporaryTeshuvotVolume.page(forSiman:)) rather than storing the siman
+                // itself — page, not siman, is Contemporary's real navigable unit, since the
+                // index is a hand-maintained best-effort lookup, not guaranteed page-perfect.
+                Picker("", selection: Binding(
+                    get: { contemporarySimanSelection },
+                    set: { newValue in
+                        contemporarySimanSelection = newValue
+                        if let page = vm.contemporaryVolume.page(forSiman: newValue) {
+                            vm.contemporaryPage = page
+                        }
+                    }
+                )) {
+                    ForEach(1...max(1, vm.contemporaryVolume.simanCount), id: \.self) { s in
+                        Text(saHebrewMode ? SASimanNames.toHebrewNumeral(s) : "\(s)").tag(s)
+                    }
+                }
+                .pickerStyle(.wheel)
+            } else {
+                // Siman only — volume (when the work has one) gets its own pill/sheet, see
+                // volumePickerSheet.
+                Picker("", selection: $vm.teshuvotSiman) {
+                    ForEach(1...vm.teshuvotWork.maxSiman(forVolume: vm.teshuvotVolume), id: \.self) { s in
+                        Text(saHebrewMode ? SASimanNames.toHebrewNumeral(s) : "\(s)").tag(s)
+                    }
+                }
+                .pickerStyle(.wheel)
+            }
+        }
+    }
+
+    // MARK: - Teshuvot volume picker sheet
+
+    /// A dedicated step between the work pill and the siman pill for Teshuvot works that have
+    /// a volume level (Rashba's Part, Rosh's Klal, Terumat HaDeshen's Part, Sefer HaTashbetz's
+    /// Chelek). Mirrors `regularChapterPickerSheet`'s shape but shows each volume's real display
+    /// label (`TeshuvotWork.volumeDisplayLabel`) rather than a bare wheel position, since that
+    /// position doesn't always equal the label (Rashba's wheel position 2 is Part IV, not II).
+    private var volumePickerSheet: some View {
+        if vm.teshuvotSubcategory == .contemporary {
+            return AnyView(contemporaryVolumePickerSheet)
+        }
+        return AnyView(regularVolumePickerSheet)
+    }
+
+    private var contemporaryVolumePickerSheet: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Select Volume")
+                    .font(.headline)
+                    .foregroundStyle(appFg)
+                Spacer()
+                Button("Done") { activeSheet = nil }
+                    .foregroundStyle(appFg)
+            }
+            .padding()
+
+            Divider().background(appFg.opacity(0.25))
+
+            List {
+                ForEach(vm.contemporaryWork.volumes) { volume in
+                    Button {
+                        vm.contemporaryVolume = volume
+                        activeSheet = nil
+                    } label: {
+                        HStack {
+                            Text(saHebrewMode ? volume.hebrewLabel : volume.label)
+                                .foregroundStyle(appFg)
+                            Spacer()
+                            if volume.id == vm.contemporaryVolume.id {
+                                Image(systemName: "checkmark").foregroundStyle(appFg)
+                            }
+                        }
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+        }
+        .background(appBg)
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+    }
+
+    private var regularVolumePickerSheet: some View {
+        let englishLabel = vm.teshuvotWork.volumeLabel ?? "Volume"
+        let label = saHebrewMode ? (vm.teshuvotWork.volumeLabelHebrew ?? englishLabel) : englishLabel
+        let count = vm.teshuvotWork.volumeCount
+        let selVol = min(max(1, vm.teshuvotVolume), count)
+        return VStack(spacing: 0) {
+            HStack {
+                Text("Select \(label)")
+                    .font(.headline)
+                    .foregroundStyle(appFg)
+                Spacer()
+                Button("Done") {
+                    activeSheet = nil
+                    Task { await vm.load() }
+                }
+                .foregroundStyle(appFg)
+            }
+            .padding()
+
+            Divider().background(appFg.opacity(0.25))
+
+            Picker("", selection: Binding(
+                get: { selVol },
+                set: { vm.teshuvotVolume = $0 }
+            )) {
+                ForEach(1...count, id: \.self) { v in
+                    // The wheel row's own bidi resolution doesn't reorder this the way plain
+                    // RTL text would — verified on-device the numeral stays visually on the
+                    // right unless it's placed first in typed order. So for Hebrew mode the
+                    // numeral is typed before the label ("ד חלק"), landing it on the left,
+                    // where English types the label first ("Part IV"). The generic word is
+                    // dropped entirely when the volume labels aren't plain numbers — "Kamma"/
+                    // "EH I" already read fine on their own; only "Part IV"-style needs it.
+                    let numeral = saHebrewMode
+                        ? vm.teshuvotWork.volumeDisplayLabelHebrew(v)
+                        : vm.teshuvotWork.volumeDisplayLabel(v)
+                    let text = vm.teshuvotWork.volumeLabelIsNumeric
+                        ? (saHebrewMode ? "\(numeral) \(label)" : "\(label) \(numeral)")
+                        : numeral
+                    Text(text).tag(v)
                 }
             }
             .pickerStyle(.wheel)
+            .foregroundStyle(appFg)
+
+            Spacer()
         }
+        .background(appBg)
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
     }
 
     // MARK: - SA siman picker (full list with names + topic-section grouping)
@@ -1324,6 +1576,88 @@ struct TextReaderView: View {
 
     // MARK: - Book picker sheet
 
+    /// Groups `works` (already declared in chronological order) into consecutive same-century
+    /// runs, keyed by `TeshuvotWork.century`, for the book-picker sheet's `Section` headers.
+    private func teshuvotCenturyGroups(_ works: [TeshuvotWork]) -> [(century: String, workIndices: [Int])] {
+        var groups: [(century: String, workIndices: [Int])] = []
+        for idx in works.indices {
+            let century = works[idx].century
+            if groups.last?.century == century {
+                groups[groups.count - 1].workIndices.append(idx)
+            } else {
+                groups.append((century: century, workIndices: [idx]))
+            }
+        }
+        return groups
+    }
+
+    /// `works`' indices sorted alphabetically (by displayName in English, hebrewName in Hebrew
+    /// mode) rather than the chronological declaration order — for the "Alphabetical Order"
+    /// setting, which drops century grouping entirely on both the book-picker sheet and the
+    /// work wheel.
+    private func teshuvotAlphabeticalIndices(_ works: [TeshuvotWork]) -> [Int] {
+        works.indices.sorted { lhs, rhs in
+            let a = saHebrewMode ? works[lhs].hebrewName : works[lhs].displayName
+            let b = saHebrewMode ? works[rhs].hebrewName : works[rhs].displayName
+            return a.localizedStandardCompare(b) == .orderedAscending
+        }
+    }
+
+    /// One row of the Teshuvot book-picker sheet, shared by both the century-grouped and
+    /// alphabetical display orders (see `teshuvotAlphabeticalOrder`) — pulled out to a real
+    /// method rather than a closure-local func, which `ViewBuilder` doesn't allow.
+    @ViewBuilder
+    private func teshuvotBookRow(_ idx: Int, works: [TeshuvotWork]) -> some View {
+        let work = works[idx]
+        let isSelected = vm.teshuvotWork == work
+        Button {
+            vm.teshuvotWork = work
+            if work.volumeLabel != nil {
+                // Chain straight into the volume picker — see volumePickerSheet — instead of
+                // loading Volume 1 first and making the user separately discover that pill.
+                activeSheet = .volumePicker
+            } else {
+                activeSheet = nil
+                Task { await vm.load() }
+            }
+        } label: {
+            HStack {
+                Text(saHebrewMode ? work.hebrewName : work.displayName).foregroundStyle(appFg)
+                Text("(\(saHebrewMode ? work.edah.hebrewAbbreviation : work.edah.abbreviation))").foregroundStyle(appFg.opacity(0.5)).font(.caption)
+                Spacer()
+                if isSelected { Image(systemName: "checkmark").foregroundStyle(appFg).font(.caption.weight(.semibold)) }
+            }.contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Color.clear)
+        .listRowSeparatorTint(appFg.opacity(0.12))
+        .id("book_teshuvot_\(idx)")
+    }
+
+    /// One row of the Contemporary Teshuvot book-picker sheet. Only one work (Iggros Moshe)
+    /// exists as of 2026-08-29, but built as a real list, not a special case, since more are
+    /// planned — see CLAUDE.md's Contemporary Teshuvot section.
+    @ViewBuilder
+    private func contemporaryBookRow(_ work: ContemporaryTeshuvotWork) -> some View {
+        let isSelected = vm.contemporaryWork.id == work.id
+        Button {
+            vm.contemporaryWork = work
+            // Chain straight into the volume picker, same reasoning as teshuvotBookRow —
+            // every Contemporary work has a real volume level worth surfacing immediately.
+            activeSheet = .volumePicker
+        } label: {
+            HStack {
+                Text(saHebrewMode ? work.hebrewDisplayName : work.name).foregroundStyle(appFg)
+                Spacer()
+                if isSelected { Image(systemName: "checkmark").foregroundStyle(appFg).font(.caption.weight(.semibold)) }
+            }.contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Color.clear)
+        .listRowSeparatorTint(appFg.opacity(0.12))
+        .id("book_contemp_\(work.id)")
+    }
+
     private var bookPickerSheet: some View {
         ScrollViewReader { proxy in
             List {
@@ -1511,26 +1845,30 @@ struct TextReaderView: View {
                         .id("book_midrash_\(idx)")
                     }
                 case .teshuvot:
-                    let works = TeshuvotWork.works(for: vm.teshuvotSubcategory)
-                    ForEach(works.indices, id: \.self) { idx in
-                        let work = works[idx]
-                        let isSelected = vm.teshuvotWork == work
-                        Button {
-                            vm.teshuvotWork = work
-                            activeSheet = nil
-                            Task { await vm.load() }
-                        } label: {
-                            HStack {
-                                Text(saHebrewMode ? work.hebrewName : work.displayName).foregroundStyle(appFg)
-                                Text("(\(work.edah.abbreviation))").foregroundStyle(appFg.opacity(0.5)).font(.caption)
-                                Spacer()
-                                if isSelected { Image(systemName: "checkmark").foregroundStyle(appFg).font(.caption.weight(.semibold)) }
-                            }.contentShape(Rectangle())
+                    if vm.teshuvotSubcategory == .contemporary {
+                        ForEach(ContemporaryTeshuvotWork.works) { work in
+                            contemporaryBookRow(work)
                         }
-                        .buttonStyle(.plain)
-                        .listRowBackground(Color.clear)
-                        .listRowSeparatorTint(appFg.opacity(0.12))
-                        .id("book_teshuvot_\(idx)")
+                    } else {
+                        let works = TeshuvotWork.works(for: vm.teshuvotSubcategory)
+                        if teshuvotAlphabeticalOrder {
+                            ForEach(teshuvotAlphabeticalIndices(works), id: \.self) { idx in
+                                teshuvotBookRow(idx, works: works)
+                            }
+                        } else {
+                            ForEach(teshuvotCenturyGroups(works), id: \.century) { group in
+                                Section {
+                                    ForEach(group.workIndices, id: \.self) { idx in
+                                        teshuvotBookRow(idx, works: works)
+                                    }
+                                } header: {
+                                    Text(group.century)
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(appFg.opacity(0.5))
+                                        .textCase(nil)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1552,6 +1890,9 @@ struct TextReaderView: View {
                         let idx = works.firstIndex(of: vm.midrashWork) ?? 0
                         return "book_midrash_\(idx)"
                     case .teshuvot:
+                        if vm.teshuvotSubcategory == .contemporary {
+                            return "book_contemp_\(vm.contemporaryWork.id)"
+                        }
                         let works = TeshuvotWork.works(for: vm.teshuvotSubcategory)
                         let idx = works.firstIndex(of: vm.teshuvotWork) ?? 0
                         return "book_teshuvot_\(idx)"

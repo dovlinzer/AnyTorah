@@ -260,10 +260,13 @@ enum class MidrashNavigationMode(val id: String) {
 // MARK: - Teshuvot (Responsa)
 
 enum class TeshuvotSubcategory(val id: String, val displayName: String, val hebrewName: String) {
-    RISHONIM("rishonim", "Teshuvot Rishonim", "שו״ת ראשונים");
-    // ACHARONIM intentionally not added yet — no work list exists for it (2026-08-25); add a
-    // case here plus its own TeshuvotWork entries once that list is provided, following exactly
-    // the same shape as RISHONIM below.
+    RISHONIM("rishonim", "Teshuvot Rishonim", "שו״ת ראשונים"),
+    ACHARONIM("acharonim", "Teshuvot Acharonim", "שו״ת אחרונים"),
+    // PDF/scanned-page based, not Sefaria-based -- see ContemporaryTeshuvotWork. The reader
+    // takes a completely different rendering path for this subcategory (an image pager, like
+    // Talmud's daf-image mode on iOS) rather than the Sefaria text pipeline every other
+    // subcategory shares -- see TextReaderScreen's main-content branch.
+    CONTEMPORARY("contemporary", "Teshuvot Contemporary", "שו״ת בני זמננו");
 
     companion object {
         fun fromId(id: String?) = values().firstOrNull { it.id == id } ?: RISHONIM
@@ -272,64 +275,448 @@ enum class TeshuvotSubcategory(val id: String, val displayName: String, val hebr
 
 /** Which community's rite this posek's teshuvot are associated with — informational only
  *  (shown as a small badge in the work picker), not used in any navigation/fetch logic. */
-enum class TeshuvotEdah(val abbreviation: String) {
-    ASHKENAZ("A"), SEFARAD("S")
+enum class TeshuvotEdah(val abbreviation: String, val hebrewAbbreviation: String) {
+    ASHKENAZ("A", "א"), SEFARAD("S", "ס")
 }
 
-/** **DRAFT DATA — unverified against live Sefaria content.** Built 2026-08-25 in a sandboxed
- *  session with no network access to sefaria.org; `sefariaBaseTitle`/`volumeLabel`/
- *  `volumeCount` below are best-effort bibliographic guesses, not confirmed Sefaria index
- *  titles or real siman counts. `PLACEHOLDER_MAX_SIMAN` is a single generous placeholder for
- *  every work/volume — same "generous range + graceful failure on overshoot" pattern already
- *  used for Midrash's native section wheel, not a real count. Test each work on-device (real
- *  internet) against the reader's existing error/retry UI and report which ones fail to load —
- *  see CLAUDE.md's Teshuvot section for the full list and the specific ones flagged as least
- *  certain (Maharach Or Zarua, Mahari Weil, Mahari Bruna, Maharik's shoresh count, and which
- *  printed edition of Maharam MiRotenburg Sefaria carries, if any).
+/** One selectable entry in a Teshuvot work's second-level ("volume") picker. Introduced
+ *  2026-08-28 alongside the Acharonim work list, generalizing the original numeral-only
+ *  volumeCount/volumeDisplayLabel scheme (the 13 Rishonim works are re-expressed in this same
+ *  shape, unchanged in behavior) — needed because several Acharonim works are structured by
+ *  Sefaria as *named* Tur-order sections (Orach Chayim/Yoreh Deah/Even HaEzer/Choshen Mishpat),
+ *  not sequential numbered volumes, and a few (Rav Pealim, Shoel uMeshiv) are three levels deep
+ *  on Sefaria (Volume → Section → Siman, or Mahadura → Sub-volume → Siman) with no natural way
+ *  to add a third wheel to this app's existing Work→Volume→Siman picker shape — those are
+ *  flattened into one "volume" list of combined-label entries instead (e.g. "I, Orach Chayim").
+ *  [volumes] is never empty — a flat work (no real volume level) is still exactly one
+ *  [TeshuvotVolume] entry; `volumeLabel == null` is what actually hides the volume pill/sheet
+ *  in the UI. */
+data class TeshuvotVolume(
+    val label: String,
+    val hebrewLabel: String,
+    /** Sefaria ref with the literal placeholder `{siman}` substituted for the actual number. */
+    val refTemplate: String,
+    val maxSiman: Int
+) {
+    fun ref(siman: Int): String = refTemplate.replace("{siman}", "$siman")
+}
+
+// MARK: - Contemporary Teshuvot (PDF/scanned-page based, not Sefaria)
+// Mirrors TextModels.swift's copy exactly -- see its doc comments (kept in sync) and
+// CLAUDE.md's Contemporary Teshuvot section for the indexing methodology and accuracy caveats.
+
+/** One volume of a Contemporary Teshuvot work -- e.g. "Iggros Moshe, EH II". Unlike
+ *  [TeshuvotVolume] (Sefaria refs), navigation here is entirely page-image based: a siman
+ *  resolves to a raw page NUMBER within that volume's page-image set (see
+ *  `TeshuvotPageManager`), hand-indexed from the volume's own printed table of contents. */
+// Deliberately no page(siman)/imageUrl(page) convenience methods here, unlike the Swift copy
+// -- TeshuvotPageManager needs an Android Context to read the bundled asset (see its own doc
+// comment), and this model layer stays plain-data / framework-free. Call
+// TeshuvotPageManager.page(context, volume.id, siman) directly at the Composable/ViewModel call
+// site instead, where LocalContext.current is already available.
+data class ContemporaryTeshuvotVolume(
+    /** Matches both the Drive folder name and the key in teshuvot_pages.json/
+     *  teshuvot_siman_index.json, e.g. "IggrotMosheEH2". */
+    val id: String,
+    val label: String,
+    val hebrewLabel: String,
+    val simanCount: Int
+)
+
+/** A Contemporary Teshuvot work, e.g. Iggros Moshe. Parallel to [TeshuvotWork] but for
+ *  PDF/scanned-page content rather than Sefaria-digitized text. */
+data class ContemporaryTeshuvotWork(
+    val id: String,
+    val name: String,
+    val hebrewName: String,
+    /** Common Hebrew abbreviation (e.g. "אג״מ" for אגרות משה) -- see the Swift copy's doc
+     *  comment for why this exists and why English names aren't abbreviated. Null falls back
+     *  to [hebrewName]. */
+    val hebrewAbbreviation: String?,
+    val volumes: List<ContemporaryTeshuvotVolume>
+) {
+    val hebrewDisplayName: String get() = hebrewAbbreviation ?: hebrewName
+
+    companion object {
+        /** Iggros Moshe is the pilot work (2026-08-29) -- see the Swift copy's doc comment for
+         *  the full status (14 of 15 volumes downloadable, indexing methodology, etc.). Add
+         *  volumes here as their page images are uploaded to Drive and their siman index is
+         *  built -- see tools/build_teshuvot_pages.py and CLAUDE.md. */
+        val works: List<ContemporaryTeshuvotWork> = listOf(
+            ContemporaryTeshuvotWork(
+                id = "iggrosMoshe",
+                name = "Iggros Moshe",
+                hebrewName = "אגרות משה",
+                hebrewAbbreviation = "אג״מ",
+                volumes = listOf(
+                    ContemporaryTeshuvotVolume(
+                        id = "IggrotMosheEH2",
+                        label = "EH II",
+                        hebrewLabel = "אה״ע ב",
+                        simanCount = 26
+                    )
+                )
+            )
+        )
+    }
+}
+
+/** **Rishonim verified against live Sefaria content, 2026-08-24**; **Acharonim added
+ *  2026-08-28**, verified the same way. See `TextModels.swift`'s copy of this doc comment (kept
+ *  in sync) and CLAUDE.md's Teshuvot section for the full research trail, title corrections,
+ *  and the list of dropped near-empty works/volumes (Ritva/Mahari Weil/Mahari Bruna/HaRashbash/
+ *  Rashba-part-I among Rishonim; Mateh Levi/Bach's Kuntres Acharon/Meshiv Davar's Volumes III–IV/
+ *  Maharit's Part II Even HaEzer among Acharonim).
  *
- *  Declaration order is the corrected chronological order within each century (see CLAUDE.md
- *  for the two corrections made to the user's original ordering) — `values()`/`worksFor`
- *  preserve this order, which is what the work picker displays. */
+ *  `maxSiman(volume)` returns Sefaria-confirmed ceilings where available and a generous
+ *  placeholder (`PLACEHOLDER_MAX_SIMAN`) elsewhere — same "generous range + graceful failure on
+ *  overshoot" pattern already used for Midrash's native section wheel. */
 enum class TeshuvotWork(
     val id: String,
     val displayName: String,
     val hebrewName: String,
     val edah: TeshuvotEdah,
-    val century: String,
-    val volumeLabel: String?,
-    val volumeCount: Int,
-    val sefariaBaseTitle: String
+    val century: String
 ) {
-    // 11th–12th century
-    RASHI("rashi", "Rashi", "רש״י", TeshuvotEdah.ASHKENAZ, "11th–12th Century", null, 1, "Teshuvot Rashi"),
-    RI_MIGASH("riMigash", "Ri Migash", "ר״י מיגאש", TeshuvotEdah.SEFARAD, "11th–12th Century", null, 1, "Teshuvot HaRi MiGash"),
-    RAMBAM("rambamTeshuvot", "Rambam", "רמב״ם", TeshuvotEdah.SEFARAD, "11th–12th Century", null, 1, "Teshuvot HaRambam"),
-    // 13th century
-    RASHBA("rashba", "Rashba", "רשב״א", TeshuvotEdah.SEFARAD, "13th Century", "Part", 7, "Teshuvot HaRashba"),
-    RITVA("ritva", "Ritva", "ריטב״א", TeshuvotEdah.SEFARAD, "13th Century", null, 1, "Teshuvot HaRitva"),
-    MAHARAM("maharam", "Maharam", "מהר״ם מרוטנבורג", TeshuvotEdah.ASHKENAZ, "13th Century", null, 1, "Teshuvot Maharam MiRotenburg"),
-    MAHARACH_OR_ZARUA("maharachOrZarua", "Maharach Or Zarua", "מהר״ח אור זרוע", TeshuvotEdah.ASHKENAZ, "13th Century", null, 1, "Teshuvot Chaim Or Zarua"),
-    // 14th century
-    ROSH("rosh", "Rosh", "רא״ש", TeshuvotEdah.SEFARAD, "14th Century", "Klal", 108, "Teshuvot HaRosh"),
-    RAN("ran", "Ran", "ר״ן", TeshuvotEdah.SEFARAD, "14th Century", null, 1, "Teshuvot HaRan"),
-    RIVASH("rivash", "Rivash", "ריב״ש", TeshuvotEdah.SEFARAD, "14th Century", null, 1, "Teshuvot HaRivash"),
-    // 15th century
-    MAHARIL("maharil", "Maharil", "מהרי״ל", TeshuvotEdah.ASHKENAZ, "15th Century", null, 1, "Teshuvot Maharil"),
-    TERUMAT_HA_DESHEN("terumatHaDeshen", "Terumat HaDeshen", "תרומת הדשן", TeshuvotEdah.ASHKENAZ, "15th Century", "Section", 2, "Terumat HaDeshen"),
-    MAHARI_WEIL("mahariWeil", "Mahari Weil", "מהר״י ווייל", TeshuvotEdah.ASHKENAZ, "15th Century", null, 1, "Teshuvot Mahari Weil"),
-    MAHARI_BRUNA("mahariBruna", "Mahari Bruna", "מהר״י ברונא", TeshuvotEdah.ASHKENAZ, "15th Century", null, 1, "Teshuvot Mahari Bruna"),
-    MAHARIK("maharik", "Maharik", "מהרי״ק", TeshuvotEdah.ASHKENAZ, "15th Century", "Shoresh", 193, "Teshuvot Maharik"),
-    SEFER_HA_TASHBETZ("seferHaTashbetz", "Sefer HaTashbetz", "תשב״ץ", TeshuvotEdah.SEFARAD, "15th Century", "Chelek", 4, "Teshuvot HaTashbetz"),
-    TESHUVOT_HA_RASHBASH("teshuvotHaRashbash", "Teshuvot HaRashbash", "רשב״ש", TeshuvotEdah.SEFARAD, "15th Century", null, 1, "Teshuvot HaRashbash");
+    // Rishonim — 11th–12th century
+    RASHI("rashi", "Rashi", "רש״י", TeshuvotEdah.ASHKENAZ, "11th–12th Century"),
+    RI_MIGASH("riMigash", "Ri Migash", "ר״י מיגאש", TeshuvotEdah.SEFARAD, "11th–12th Century"),
+    RAMBAM("rambamTeshuvot", "Rambam", "רמב״ם", TeshuvotEdah.SEFARAD, "11th–12th Century"),
+    // Rishonim — 13th century
+    RASHBA("rashba", "Rashba", "רשב״א", TeshuvotEdah.SEFARAD, "13th Century"),
+    MAHARAM("maharam", "Maharam", "מהר״ם מרוטנבורג", TeshuvotEdah.ASHKENAZ, "13th Century"),
+    MAHARACH_OR_ZARUA("maharachOrZarua", "Maharach Or Zarua", "מהר״ח אור זרוע", TeshuvotEdah.ASHKENAZ, "13th Century"),
+    // Rishonim — 14th century
+    ROSH("rosh", "Rosh", "רא״ש", TeshuvotEdah.SEFARAD, "14th Century"),
+    RAN("ran", "Ran", "ר״ן", TeshuvotEdah.SEFARAD, "14th Century"),
+    RIVASH("rivash", "Rivash", "ריב״ש", TeshuvotEdah.SEFARAD, "14th Century"),
+    // Rishonim — 15th century
+    MAHARIL("maharil", "Maharil", "מהרי״ל", TeshuvotEdah.ASHKENAZ, "15th Century"),
+    TERUMAT_HA_DESHEN("terumatHaDeshen", "Terumat HaDeshen", "תרומת הדשן", TeshuvotEdah.ASHKENAZ, "15th Century"),
+    MAHARIK("maharik", "Maharik", "מהרי״ק", TeshuvotEdah.ASHKENAZ, "15th Century"),
+    SEFER_HA_TASHBETZ("seferHaTashbetz", "Sefer HaTashbetz", "תשב״ץ", TeshuvotEdah.SEFARAD, "15th Century"),
 
-    val subcategory: TeshuvotSubcategory get() = TeshuvotSubcategory.RISHONIM
+    // Acharonim — 16th century
+    AVKAT_ROKHEL("avkatRokhel", "Avkat Rokhel", "אבקת רוכל", TeshuvotEdah.SEFARAD, "16th Century"),
+    DIVREI_RIVOT("divreiRivot", "Divrei Rivot", "דברי ריבות", TeshuvotEdah.SEFARAD, "16th Century"),
+    RADBAZ("radbaz", "Radbaz", "רדב״ז", TeshuvotEdah.SEFARAD, "16th Century"),
+    MAHARAM_MI_PADUA("maharamMiPadua", "Maharam miPadua", "מהר״ם מפדובה", TeshuvotEdah.ASHKENAZ, "16th Century"),
+    MAHARSHAL("maharshal", "Maharshal", "מהרש״ל", TeshuvotEdah.ASHKENAZ, "16th Century"),
+    MAHARSHDAM("maharshdam", "Maharshdam", "מהרשד״ם", TeshuvotEdah.SEFARAD, "16th Century"),
+    REMA("rema", "Rema", "רמ״א", TeshuvotEdah.ASHKENAZ, "16th Century"),
+    // Acharonim — 17th century
+    BACH("bach", "Bach", "ב״ח", TeshuvotEdah.ASHKENAZ, "17th Century"),
+    BEER_SHEVA("beerSheva", "Be'er Sheva", "באר שבע", TeshuvotEdah.ASHKENAZ, "17th Century"),
+    CHAKHAM_TZVI("chakhamTzvi", "Chakham Tzvi", "חכם צבי", TeshuvotEdah.ASHKENAZ, "17th Century"),
+    HALAKHOT_KETANOT("halakhotKetanot", "Halakhot Ketanot", "הלכות קטנות", TeshuvotEdah.SEFARAD, "17th Century"),
+    HAVOT_YAIR("havotYair", "Havot Yair", "חוות יאיר", TeshuvotEdah.ASHKENAZ, "17th Century"),
+    MAHARIT("maharit", "Maharit", "מהרי״ט", TeshuvotEdah.SEFARAD, "17th Century"),
+    // Acharonim — 18th century
+    ADMAT_KODESH("admatKodesh", "Admat Kodesh", "אדמת קודש", TeshuvotEdah.SEFARAD, "18th Century"),
+    NODA_BIYEHUDAH("nodaBiyehudah", "Noda BiYehudah", "נודע ביהודה", TeshuvotEdah.ASHKENAZ, "18th Century"),
+    RABBI_AKIVA_EIGER("rabbiAkivaEiger", "Rabbi Akiva Eiger", "רבי עקיבא איגר", TeshuvotEdah.ASHKENAZ, "18th Century"),
+    SHEILAT_YAAVETZ("sheilatYaavetz", "Sheilat Yaavetz", "שאילת יעב״ץ", TeshuvotEdah.ASHKENAZ, "18th Century"),
+    TORAT_NETANEL("toratNetanel", "Torat Netanel", "תורת נתנאל", TeshuvotEdah.ASHKENAZ, "18th Century"),
+    // Acharonim — 19th century
+    BEER_YITZCHAK("beerYitzchak", "Be'er Yitzchak", "באר יצחק", TeshuvotEdah.ASHKENAZ, "19th Century"),
+    BINYAN_OLAM("binyanOlam", "Binyan Olam", "בנין עולם", TeshuvotEdah.ASHKENAZ, "19th Century"),
+    BINYAN_TZIYON("binyanTziyon", "Binyan Tziyon", "בנין ציון", TeshuvotEdah.ASHKENAZ, "19th Century"),
+    CHATAM_SOFER("chatamSofer", "Chatam Sofer", "חתם סופר", TeshuvotEdah.ASHKENAZ, "19th Century"),
+    CHIDUSHEI_HA_RIM("chidusheiHaRim", "Chidushei HaRim", "חידושי הרי״ם", TeshuvotEdah.ASHKENAZ, "19th Century"),
+    HA_ELEF_LEKHA_SHLOMO("haElefLekhaShlomo", "HaElef Lekha Shlomo", "האלף לך שלמה", TeshuvotEdah.ASHKENAZ, "19th Century"),
+    KERAKH_SHEL_ROMI("kerakhShelRomi", "Kerakh shel Romi", "כרך של רומי", TeshuvotEdah.SEFARAD, "19th Century"),
+    MAHARSHAM("maharsham", "Maharsham", "מהרש״ם", TeshuvotEdah.ASHKENAZ, "19th Century"),
+    MESHIV_DAVAR("meshivDavar", "Meshiv Davar", "משיב דבר", TeshuvotEdah.ASHKENAZ, "19th Century"),
+    MELAMMED_LEHOIL("melammedLehoil", "Melammed Lehoil", "מלמד להועיל", TeshuvotEdah.ASHKENAZ, "19th Century"),
+    RAV_PEALIM("ravPealim", "Rav Pealim", "רב פעלים", TeshuvotEdah.SEFARAD, "19th Century"),
+    SHOEL_UMESHIV("shoelUmeshiv", "Shoel uMeshiv", "שואל ומשיב", TeshuvotEdah.ASHKENAZ, "19th Century"),
+    TESHUVA_MEAHAVA("teshuvaMeahava", "Teshuva MeAhava", "תשובה מאהבה", TeshuvotEdah.ASHKENAZ, "19th Century");
 
-    /** `"{title} {volume}:{siman}"` when the work has more than one volume, `"{title} {siman}"`
-     *  otherwise — mirrors `MidrashWork.nativeRef`'s own `NumericTwo`/`NumericOne` shape. */
-    fun sefariaRef(volume: Int, siman: Int): String =
-        if (volumeCount > 1) "$sefariaBaseTitle $volume:$siman" else "$sefariaBaseTitle $siman"
+    val subcategory: TeshuvotSubcategory get() = when (this) {
+        RASHI, RI_MIGASH, RAMBAM, RASHBA, MAHARAM, MAHARACH_OR_ZARUA, ROSH, RAN, RIVASH,
+        MAHARIL, TERUMAT_HA_DESHEN, MAHARIK, SEFER_HA_TASHBETZ -> TeshuvotSubcategory.RISHONIM
+        else -> TeshuvotSubcategory.ACHARONIM
+    }
+
+    /** Label for the second-level ("volume") picker; null when the work is really just one
+     *  continuously-numbered collection (no separate volume wheel shown) — i.e. [volumes] has
+     *  exactly one entry. */
+    val volumeLabel: String? get() = when (this) {
+        RASHBA, TERUMAT_HA_DESHEN, BACH, HALAKHOT_KETANOT, MAHARIT, MELAMMED_LEHOIL -> "Part"
+        ROSH -> "Klal"
+        SEFER_HA_TASHBETZ -> "Chelek"
+        RADBAZ, MAHARSHAM, SHEILAT_YAAVETZ, MESHIV_DAVAR, RABBI_AKIVA_EIGER, NODA_BIYEHUDAH, RAV_PEALIM -> "Volume"
+        MAHARSHDAM, ADMAT_KODESH, BEER_YITZCHAK, BINYAN_OLAM, CHATAM_SOFER, CHIDUSHEI_HA_RIM, HA_ELEF_LEKHA_SHLOMO -> "Section"
+        SHOEL_UMESHIV -> "Mahadura"
+        else -> null
+    }
+
+    /** Hebrew word for the volume-level label, shown in place of [volumeLabel] when
+     *  saHebrewMode is on. Mirrors [volumeLabel]'s cases exactly (null in the same places). */
+    val volumeLabelHebrew: String? get() = when (this) {
+        ROSH -> "כלל"
+        SHOEL_UMESHIV -> "מהדורא"
+        else -> if (volumeLabel == null) null else "חלק"
+    }
+
+    /** The second-level picker's entries — see [TeshuvotVolume]'s own doc comment. Never empty:
+     *  a flat work ([volumeLabel] null) is still exactly one entry, so [maxSiman]/[sefariaRef]/
+     *  [volumeDisplayLabel] can all index into this unconditionally. */
+    val volumes: List<TeshuvotVolume> get() = when (this) {
+        // Rishonim — flat works (single dummy entry)
+        RASHI -> listOf(TeshuvotVolume("1", "1", "Teshuvot Rashi {siman}", 382))
+        RI_MIGASH -> listOf(TeshuvotVolume("1", "1", "Teshuvot HaRi Migash {siman}", 214))
+        RAMBAM -> listOf(TeshuvotVolume("1", "1", "Teshuvot HaRambam {siman}", 293))
+        MAHARAM -> listOf(TeshuvotVolume("1", "1", "Teshuvot Maharam, Cremona Edition {siman}", PLACEHOLDER_MAX_SIMAN))
+        MAHARACH_OR_ZARUA -> listOf(TeshuvotVolume("1", "1", "Maharach Or Zarua Responsa {siman}", 261))
+        RAN -> listOf(TeshuvotVolume("1", "1", "Teshuvot HaRan {siman}", 77))
+        RIVASH -> listOf(TeshuvotVolume("1", "1", "Teshuvot HaRivash {siman}", 518))
+        MAHARIL -> listOf(TeshuvotVolume("1", "1", "Teshuvot Maharil {siman}", PLACEHOLDER_MAX_SIMAN))
+        MAHARIK -> listOf(TeshuvotVolume("1", "1", "Teshuvot Maharik {siman}", 197))
+
+        // Rishonim — multi-volume works
+        RASHBA -> {
+            // Wheel positions 1-4 map to Sefaria parts IV-VII (I-III excluded — see enum doc).
+            val numerals = listOf("IV", "V", "VI", "VII")
+            val counts = listOf(330, 293, 286, 540)
+            (0..3).map { i ->
+                TeshuvotVolume(numerals[i], toHebrewNumeral(i + 4), "Teshuvot haRashba part ${numerals[i]} {siman}", counts[i])
+            }
+        }
+        ROSH -> (1..108).map { n -> TeshuvotVolume("$n", toHebrewNumeral(n), "Teshuvot HaRosh $n:{siman}", PLACEHOLDER_MAX_SIMAN) }
+        TERUMAT_HA_DESHEN -> {
+            val counts = listOf(354, PLACEHOLDER_MAX_SIMAN)
+            (0..1).map { i ->
+                val numeral = listOf("I", "II")[i]
+                TeshuvotVolume(numeral, toHebrewNumeral(i + 1), "Terumat HaDeshen, Part $numeral {siman}", counts[i])
+            }
+        }
+        SEFER_HA_TASHBETZ -> (0..3).map { i ->
+            val numeral = listOf("I", "II", "III", "IV")[i]
+            TeshuvotVolume(numeral, toHebrewNumeral(i + 1), "Sefer HaTashbetz, Part $numeral {siman}", PLACEHOLDER_MAX_SIMAN)
+        }
+
+        // Acharonim — 16th century
+        AVKAT_ROKHEL -> listOf(TeshuvotVolume("1", "1", "Avkat Rokhel {siman}", 217))
+        DIVREI_RIVOT -> listOf(TeshuvotVolume("1", "1", "Divrei Rivot {siman}", 430))
+        RADBAZ -> {
+            val counts = listOf(588, 842, 1571, 1372, 1700, 2341)
+            (1..6).map { n -> TeshuvotVolume("$n", toHebrewNumeral(n), "Teshuvot HaRadbaz Volume $n {siman}", counts[n - 1]) }
+        }
+        // NOT "Teshuvot Maharam" — that title is the unrelated Rishon Meir of Rothenburg.
+        MAHARAM_MI_PADUA -> listOf(TeshuvotVolume("1", "1", "Responsa Maharam of Padua {siman}", 90))
+        MAHARSHAL -> listOf(TeshuvotVolume("1", "1", "Teshuvot Maharshal {siman}", 101))
+        MAHARSHDAM -> listOf(
+            TeshuvotVolume("OC", "או״ח", "Responsa Maharashdam, Orach Chayim {siman}", 37),
+            TeshuvotVolume("YD", "יו״ד", "Responsa Maharashdam, Yoreh Deah {siman}", 255),
+            TeshuvotVolume("EH", "אה״ע", "Responsa Maharashdam, Even HaEzer {siman}", 244),
+            TeshuvotVolume("CM", "חו״מ", "Responsa Maharashdam, Choshen Mishpat {siman}", 385)
+        )
+        REMA -> listOf(TeshuvotVolume("1", "1", "Responsa of Rema {siman}", 133))
+
+        // Acharonim — 17th century
+        // Third Sefaria part, "Kuntres Acharon", dropped — see enum doc comment.
+        BACH -> listOf(
+            TeshuvotVolume("HaYeshanot", "הישנות", "Teshuvot Bayit Chadash, HaYeshanot {siman}", 158),
+            TeshuvotVolume("HaChadashot", "החדשות", "Teshuvot Bayit Chadash, HaChadashot {siman}", 96)
+        )
+        BEER_SHEVA -> listOf(TeshuvotVolume("1", "1", "Be'er Sheva {siman}", 75))
+        CHAKHAM_TZVI -> listOf(TeshuvotVolume("1", "1", "Chakham Tzvi {siman}", 169))
+        HALAKHOT_KETANOT -> listOf(
+            TeshuvotVolume("I", "א", "Halakhot Ketanot, Part I {siman}", 295),
+            TeshuvotVolume("II", "ב", "Halakhot Ketanot, Part II {siman}", 318)
+        )
+        HAVOT_YAIR -> listOf(TeshuvotVolume("1", "1", "Havot Yair {siman}", 238))
+        // Part II's Even HaEzer sub-section dropped — empty stub, see enum doc comment.
+        MAHARIT -> listOf(
+            TeshuvotVolume("I", "א", "Teshuvot Maharit, I {siman}", 152),
+            TeshuvotVolume("II, OC", "ב, או״ח", "Teshuvot Maharit, II, Orach Chayim {siman}", 8),
+            TeshuvotVolume("II, YD", "ב, יו״ד", "Teshuvot Maharit, II, Yoreh Deah {siman}", 55),
+            TeshuvotVolume("II, CM", "ב, חו״מ", "Teshuvot Maharit, II, Choshen Mishpat {siman}", 125)
+        )
+
+        // Acharonim — 18th century
+        ADMAT_KODESH -> listOf(
+            TeshuvotVolume("OC", "או״ח", "Admat Kodesh, Orach Chayim {siman}", 15),
+            TeshuvotVolume("YD", "יו״ד", "Admat Kodesh, Yoreh Deah {siman}", 23),
+            TeshuvotVolume("EH", "אה״ע", "Admat Kodesh, Even HaEzer {siman}", 54),
+            TeshuvotVolume("CM", "חו״מ", "Admat Kodesh, Choshen Mishpat {siman}", 76)
+        )
+        // User-requested display labels "Kamma"/"Tinyana" — Sefaria's own titles are the bare
+        // "Noda BiYehudah I"/"II"; that real title still drives the ref.
+        NODA_BIYEHUDAH -> {
+            val volDisp = listOf("Kamma", "Tinyana")
+            val volDispHe = listOf("קמא", "תניינא")
+            val volTitle = listOf("Noda BiYehudah I", "Noda BiYehudah II")
+            val secDisp = listOf("OC", "YD", "EH", "CM")
+            val secDispHe = listOf("או״ח", "יו״ד", "אה״ע", "חו״מ")
+            val secName = listOf("Orach Chayim", "Yoreh Deah", "Even HaEzer", "Choshen Mishpat")
+            val secCounts = listOf(listOf(42, 141), listOf(100, 215), listOf(95, 161), listOf(39, 62))
+            volDisp.indices.flatMap { vi ->
+                secDisp.indices.map { si ->
+                    TeshuvotVolume(
+                        "${volDisp[vi]}, ${secDisp[si]}", "${volDispHe[vi]}, ${secDispHe[si]}",
+                        "${volTitle[vi]}, ${secName[si]} {siman}", secCounts[si][vi]
+                    )
+                }
+            }
+        }
+        RABBI_AKIVA_EIGER -> listOf(
+            TeshuvotVolume("Kamma", "קמא", "Teshuvot Rabbi Akiva Eiger {siman}", 222),
+            TeshuvotVolume("Tinyana", "תניינא", "Teshuvot Rabbi Akiva Eiger Tinyana {siman}", 153),
+            TeshuvotVolume("Chadashot", "חדשות", "Teshuvot Rabbi Akiva Eiger HaChadashot {siman}", 95)
+        )
+        SHEILAT_YAAVETZ -> listOf(
+            TeshuvotVolume("I", "א", "Sheilat Yaavetz, Volume I {siman}", 172),
+            TeshuvotVolume("II", "ב", "Sheilat Yaavetz, Volume II {siman}", 200)
+        )
+        TORAT_NETANEL -> listOf(TeshuvotVolume("1", "1", "Torat Netanel {siman}", 39))
+
+        // Acharonim — 19th century
+        BEER_YITZCHAK -> listOf(
+            TeshuvotVolume("OC", "או״ח", "Be'er Yitzchak, Orach Chayim {siman}", 30),
+            TeshuvotVolume("YD", "יו״ד", "Be'er Yitzchak, Yoreh Deah {siman}", 32),
+            TeshuvotVolume("EH", "אה״ע", "Be'er Yitzchak, Even HaEzer {siman}", 18),
+            TeshuvotVolume("CM", "חו״מ", "Be'er Yitzchak, Choshen Mishpat {siman}", 6)
+        )
+        BINYAN_OLAM -> listOf(
+            TeshuvotVolume("OC", "או״ח", "Binyan Olam, Orach Chayim {siman}", 36),
+            TeshuvotVolume("YD", "יו״ד", "Binyan Olam, Yoreh Deah {siman}", 66)
+        )
+        BINYAN_TZIYON -> listOf(TeshuvotVolume("1", "1", "Binyan Tziyon {siman}", 182))
+        CHATAM_SOFER -> listOf(
+            TeshuvotVolume("OC", "או״ח", "Responsa Chatam Sofer, Orach Chayim {siman}", 208),
+            TeshuvotVolume("YD", "יו״ד", "Responsa Chatam Sofer, Yoreh Deah {siman}", 356),
+            TeshuvotVolume("EH I", "אה״ע א", "Responsa Chatam Sofer, Even HaEzer 1:{siman}", 152),
+            TeshuvotVolume("EH II", "אה״ע ב", "Responsa Chatam Sofer, Even HaEzer 2:{siman}", 175),
+            TeshuvotVolume("CM", "חו״מ", "Responsa Chatam Sofer, Choshen Mishpat {siman}", 207),
+            TeshuvotVolume("Collected", "קובץ תשובות", "Responsa Chatam Sofer, Collected Responsa {siman}", 104)
+        )
+        CHIDUSHEI_HA_RIM -> listOf(
+            TeshuvotVolume("OC", "או״ח", "Chiddushei HaRim Responsa, Orach Chayim {siman}", 7),
+            TeshuvotVolume("YD", "יו״ד", "Chiddushei HaRim Responsa, Yoreh Deah {siman}", 20),
+            TeshuvotVolume("EH", "אה״ע", "Chiddushei HaRim Responsa, Even HaEzer {siman}", 43),
+            TeshuvotVolume("CM", "חו״מ", "Chiddushei HaRim Responsa, Choshen Mishpat {siman}", 7)
+        )
+        HA_ELEF_LEKHA_SHLOMO -> listOf(
+            TeshuvotVolume("OC", "או״ח", "HaElef Lekha Shlomo, Orach Chayim {siman}", 400),
+            TeshuvotVolume("YD", "יו״ד", "HaElef Lekha Shlomo, Yoreh Deah {siman}", 342),
+            TeshuvotVolume("EH", "אה״ע", "HaElef Lekha Shlomo, Even HaEzer {siman}", 226),
+            TeshuvotVolume("CM", "חו״מ", "HaElef Lekha Shlomo, Choshen Mishpat {siman}", 23)
+        )
+        KERAKH_SHEL_ROMI -> listOf(TeshuvotVolume("1", "1", "Kerakh shel Romi {siman}", 26))
+        MAHARSHAM -> {
+            val numerals = listOf("I", "II", "III")
+            val counts = listOf(230, 270, 378)
+            (0..2).map { i -> TeshuvotVolume(numerals[i], toHebrewNumeral(i + 1), "Teshuvot Maharsham Volume ${numerals[i]} {siman}", counts[i]) }
+        }
+        // Volumes III and IV dropped — empty on Sefaria, see enum doc comment.
+        MESHIV_DAVAR -> {
+            val numerals = listOf("I", "II")
+            val counts = listOf(47, 108)
+            (0..1).map { i -> TeshuvotVolume(numerals[i], toHebrewNumeral(i + 1), "Teshuvot Meshiv Davar, Volume ${numerals[i]} {siman}", counts[i]) }
+        }
+        MELAMMED_LEHOIL -> {
+            val numerals = listOf("I", "II", "III")
+            val counts = listOf(122, 148, 103)
+            (0..2).map { i -> TeshuvotVolume(numerals[i], toHebrewNumeral(i + 1), "Melammed Lehoil Part ${numerals[i]} {siman}", counts[i]) }
+        }
+        // 4 volumes x Tur order + a kabbalistic "Sod Yesharim" section, flattened — Volume I has
+        // no Choshen Mishpat on Sefaria, so its combo is simply omitted below.
+        RAV_PEALIM -> {
+            val volumeNames = listOf("I", "II", "III", "IV")
+            val volumeNamesHe = listOf("א", "ב", "ג", "ד")
+            val secDisp = listOf("OC", "YD", "EH", "CM", "Sod Yesharim")
+            val secDispHe = listOf("או״ח", "יו״ד", "אה״ע", "חו״מ", "סוד ישרים")
+            val secName = listOf("Orach Chayim", "Yoreh Deah", "Even HaEzer", "Choshen Mishpat", "Sod Yesharim")
+            val counts = mapOf(
+                "I-OC" to 35, "I-YD" to 57, "I-EH" to 13, "I-Sod Yesharim" to 17,
+                "II-OC" to 65, "II-YD" to 41, "II-EH" to 34, "II-CM" to 15, "II-Sod Yesharim" to 14,
+                "III-OC" to 45, "III-YD" to 32, "III-EH" to 12, "III-CM" to 8, "III-Sod Yesharim" to 13,
+                "IV-OC" to 43, "IV-YD" to 39, "IV-EH" to 13, "IV-CM" to 8, "IV-Sod Yesharim" to 20
+            )
+            volumeNames.indices.flatMap { vi ->
+                secDisp.indices.mapNotNull { si ->
+                    val maxS = counts["${volumeNames[vi]}-${secDisp[si]}"] ?: return@mapNotNull null
+                    TeshuvotVolume(
+                        "${volumeNames[vi]}, ${secDisp[si]}", "${volumeNamesHe[vi]}, ${secDispHe[si]}",
+                        "Responsa Rav Pealim, Volume ${volumeNames[vi]}, ${secName[si]} {siman}", maxS
+                    )
+                }
+            }
+        }
+        // 6 Mahadura (printed-edition) volumes; I-IV are further subdivided into 3-4 sub-volumes
+        // each on Sefaria — flattened here into one combined-label list, same trick as Rav
+        // Pealim/Noda BiYehudah above.
+        SHOEL_UMESHIV -> {
+            val subCounts = listOf(listOf(313, 194, 223), listOf(97, 86, 137, 190), listOf(473, 203, 165), listOf(61, 226, 153))
+            val mahaduraNumerals = listOf("I", "II", "III", "IV")
+            val mahaduraHe = listOf("א", "ב", "ג", "ד")
+            val vols = mutableListOf<TeshuvotVolume>()
+            for (m in 0..3) {
+                for ((si, maxS) in subCounts[m].withIndex()) {
+                    val sub = si + 1
+                    vols.add(TeshuvotVolume(
+                        "${mahaduraNumerals[m]}.$sub", "${mahaduraHe[m]}.$sub",
+                        "Shoel uMeshiv Mahadura ${mahaduraNumerals[m]} $sub:{siman}", maxS
+                    ))
+                }
+            }
+            vols.add(TeshuvotVolume("V", "ה", "Shoel uMeshiv Mahadura V {siman}", 92))
+            vols.add(TeshuvotVolume("VI", "ו", "Shoel uMeshiv Mahadura VI {siman}", 63))
+            vols
+        }
+        // Only Part I exists on Sefaria — Parts II/III were never digitized.
+        TESHUVA_MEAHAVA -> listOf(TeshuvotVolume("1", "1", "Teshuva MeAhava Part I {siman}", 211))
+    }
+
+    val volumeCount: Int get() = volumes.size
+
+    /** True when every volume's `label` is a plain number/roman numeral (e.g. Radbaz's "1"-"6",
+     *  Rosh's "1"-"108", Rashba's "IV"-"VII") rather than a name/abbreviation (e.g. Rabbi Akiva
+     *  Eiger's "Kamma"/"Tinyana"/"Chadashot", or "OC"/"EH I"). Per explicit user direction, the
+     *  volume-picker wheel row only shows the generic word ("Part"/"Volume"/"Klal"/"Chelek")
+     *  alongside a bare number — a named label already reads fine on its own. Computed from
+     *  [volumes] itself (not a separate per-work switch) so it can't drift out of sync with the
+     *  label data. */
+    val volumeLabelIsNumeric: Boolean get() {
+        val romanDigits = setOf('I', 'V', 'X', 'L', 'C', 'D', 'M')
+        fun isNumeric(s: String) = s.isNotEmpty() && s.all { it.isDigit() || it in romanDigits }
+        return volumes.all { isNumeric(it.label) }
+    }
+
+    /** Verified per-work/per-volume siman ceiling where Sefaria's index reports an exact count;
+     *  a generous placeholder is retained elsewhere. See the enum's own doc comment. */
+    fun maxSiman(volume: Int): Int {
+        val vols = volumes
+        val idx = (volume - 1).coerceIn(0, vols.size - 1)
+        return vols[idx].maxSiman
+    }
+
+    /** Display label for a 1-based volume-wheel position. */
+    fun volumeDisplayLabel(volume: Int): String {
+        val vols = volumes
+        val idx = (volume - 1).coerceIn(0, vols.size - 1)
+        return vols[idx].label
+    }
+
+    /** Hebrew-mode display label for a 1-based volume-wheel position. Never used for
+     *  [sefariaRef] — that must stay in Sefaria's own form. */
+    fun volumeDisplayLabelHebrew(volume: Int): String {
+        val vols = volumes
+        val idx = (volume - 1).coerceIn(0, vols.size - 1)
+        return vols[idx].hebrewLabel
+    }
+
+    /** Builds the real Sefaria ref for a 1-based volume position and siman number. */
+    fun sefariaRef(volume: Int, siman: Int): String {
+        val vols = volumes
+        val idx = (volume - 1).coerceIn(0, vols.size - 1)
+        return vols[idx].ref(siman)
+    }
 
     companion object {
+        /** Legacy display-only fallback ceiling for volumes without an individually-verified count. */
         const val PLACEHOLDER_MAX_SIMAN = 400
         fun fromId(id: String?) = values().firstOrNull { it.id == id } ?: RASHI
         fun worksFor(subcategory: TeshuvotSubcategory) = values().filter { it.subcategory == subcategory }

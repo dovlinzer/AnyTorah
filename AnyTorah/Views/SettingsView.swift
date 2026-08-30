@@ -10,6 +10,7 @@ struct SettingsView: View {
     @AppStorage("sidePanelContrast") private var sidePanelContrast: Bool = false
     @AppStorage("useRashiFont") private var useRashiFont: Bool = false
     @AppStorage("saTextMode") private var saTextModeRaw: String = SATextMode.commentary.rawValue
+    @AppStorage("teshuvotAlphabeticalOrder") private var teshuvotAlphabeticalOrder: Bool = false
 
     private var fontSizeName: String {
         switch Int(fontSizeLevel) {
@@ -132,6 +133,14 @@ struct SettingsView: View {
                         Toggle("Light commentary panel", isOn: $sidePanelContrast)
                     }
                     Toggle("Rashi script for Rashi commentary", isOn: $useRashiFont)
+                }
+                Section("Teshuvot") {
+                    Toggle("Alphabetical Order", isOn: $teshuvotAlphabeticalOrder)
+                    Text(teshuvotAlphabeticalOrder
+                         ? "The Rishonim and Acharonim work pickers list poskim alphabetically by name, with no century grouping."
+                         : "The Rishonim and Acharonim work pickers group poskim by century, in chronological order.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 Section("Shulchan Arukh Text") {
                     Picker("Edition", selection: $saTextModeRaw) {

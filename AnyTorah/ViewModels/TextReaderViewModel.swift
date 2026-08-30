@@ -136,9 +136,24 @@ final class TextReaderViewModel {
     /// 1-based scroll target set after by-verse load; consumed by TextContentView scrollToVerse binding.
     var midrashScrollToIndex: Int? = nil
 
-    // Teshuvot — subcategory → work → volume → siman. See TeshuvotWork's own doc comment:
-    // volume/siman navigation uses draft, unverified Sefaria ref data.
-    var teshuvotSubcategory: TeshuvotSubcategory = .rishonim
+    // Teshuvot — subcategory → work → volume → siman. See TeshuvotWork's own doc comment.
+    var teshuvotSubcategory: TeshuvotSubcategory = .rishonim {
+        didSet {
+            // `oldValue != teshuvotSubcategory` matters, not just `!isRestoring`: the Home
+            // screen's Rishonim/Acharonim buttons call `restoreState(for: .teshuvot)` (which
+            // correctly restores the last-used work/volume/siman under `isRestoring`) and THEN
+            // `applySelection` sets `teshuvotSubcategory` again explicitly — even when it's
+            // re-setting the SAME subcategory the user was already on. A plain stored
+            // property's didSet fires on every assignment regardless of whether the value
+            // actually changed, so without this check the reset below ran unconditionally on
+            // every Home-button tap, discarding the just-restored state and always landing on
+            // the first work/siman — the reported bug. Only reset when the subcategory
+            // genuinely changed (e.g. Rishonim -> Acharonim), which is the actual case that
+            // needs it: the new subcategory's work list doesn't contain the old work at all.
+            guard !isRestoring, oldValue != teshuvotSubcategory else { return }
+            teshuvotWork = TeshuvotWork.works(for: teshuvotSubcategory).first ?? .rashi
+        }
+    }
     var teshuvotWork: TeshuvotWork = .rashi {
         didSet { if !isRestoring { teshuvotVolume = 1; teshuvotSiman = 1 } }
     }
@@ -146,6 +161,32 @@ final class TextReaderViewModel {
         didSet { if !isRestoring { teshuvotSiman = 1 } }
     }
     var teshuvotSiman: Int = 1
+
+    // Contemporary Teshuvot — parallel state to the block above, not reused, since navigation
+    // is page-image based (see ContemporaryTeshuvotWork) rather than Sefaria-fetch based.
+    // `contemporaryPage` (not siman) is the actual navigable unit — the siman picker just jumps
+    // it via `contemporaryVolume.page(forSiman:)`; forward/back moves it by raw page number.
+    var contemporaryWork: ContemporaryTeshuvotWork = ContemporaryTeshuvotWork.works.first! {
+        didSet {
+            guard !isRestoring else { return }
+            contemporaryVolume = contemporaryWork.volumes.first!
+            contemporaryPage = 1
+            saveState(for: .teshuvot)
+        }
+    }
+    var contemporaryVolume: ContemporaryTeshuvotVolume = ContemporaryTeshuvotWork.works.first!.volumes.first! {
+        didSet {
+            guard !isRestoring else { return }
+            contemporaryPage = 1
+            saveState(for: .teshuvot)
+        }
+    }
+    // Contemporary's reader (an image pager, not the Sefaria text pipeline) never calls
+    // load(), which is where every other category's state normally gets persisted -- this
+    // didSet is the only place contemporaryPage changes get saved.
+    var contemporaryPage: Int = 1 {
+        didSet { if !isRestoring { saveState(for: .teshuvot) } }
+    }
 
     // MARK: - Display state
 
@@ -284,6 +325,17 @@ final class TextReaderViewModel {
             }
             teshuvotVolume = d.object(forKey: "sel_teshuvot_volume") as? Int ?? 1
             teshuvotSiman  = d.object(forKey: "sel_teshuvot_siman")  as? Int ?? 1
+            if teshuvotSubcategory == .contemporary {
+                if let workId = d.string(forKey: "sel_contemp_work"),
+                   let w = ContemporaryTeshuvotWork.works.first(where: { $0.id == workId }) {
+                    contemporaryWork = w
+                }
+                if let volId = d.string(forKey: "sel_contemp_volume"),
+                   let v = contemporaryWork.volumes.first(where: { $0.id == volId }) {
+                    contemporaryVolume = v
+                }
+                contemporaryPage = d.object(forKey: "sel_contemp_page") as? Int ?? 1
+            }
         }
     }
 
@@ -335,6 +387,11 @@ final class TextReaderViewModel {
             d.set(teshuvotWork.rawValue,        forKey: "sel_teshuvot_work")
             d.set(teshuvotVolume,               forKey: "sel_teshuvot_volume")
             d.set(teshuvotSiman,                forKey: "sel_teshuvot_siman")
+            if teshuvotSubcategory == .contemporary {
+                d.set(contemporaryWork.id,   forKey: "sel_contemp_work")
+                d.set(contemporaryVolume.id, forKey: "sel_contemp_volume")
+                d.set(contemporaryPage,      forKey: "sel_contemp_page")
+            }
         }
     }
 
@@ -773,7 +830,7 @@ final class TextReaderViewModel {
             return "\(midrashWork.displayName), \(bookName) \(midrashChapter):\(midrashVerse)"
         case .teshuvot:
             if let label = teshuvotWork.volumeLabel {
-                return "\(teshuvotWork.displayName), \(label) \(teshuvotVolume):\(teshuvotSiman)"
+                return "\(teshuvotWork.displayName), \(label) \(teshuvotWork.volumeDisplayLabel(teshuvotVolume)):\(teshuvotSiman)"
             }
             return "\(teshuvotWork.displayName) §\(teshuvotSiman)"
         }
@@ -811,8 +868,32 @@ final class TextReaderViewModel {
         case .midrash:
             return useHe ? midrashWork.hebrewName : midrashWork.displayName
         case .teshuvot:
+            if teshuvotSubcategory == .contemporary {
+                return useHe ? contemporaryWork.hebrewDisplayName : contemporaryWork.name
+            }
             return useHe ? teshuvotWork.hebrewName : teshuvotWork.displayName
         }
+    }
+
+    /// Short title for the dedicated "volume" navigation pill (Teshuvot only, and only for
+    /// works with a volume level — see `TeshuvotWork.volumeLabel`); nil hides the pill. Kept
+    /// deliberately compact — the pill sits between the (now wider) book pill and the siman
+    /// pill, so it doesn't need to spell out "Part"/"Klal"/"Chelek" to be understood in context:
+    /// just the bare numeral, Hebrew-letter in Hebrew mode (the roman numeral already reads as
+    /// a volume number in English, no prefix needed there either).
+    var navVolumeTitle: String? {
+        guard category == .teshuvot else { return nil }
+        let useHe = UserDefaults.standard.value(forKey: "saHebrewMode") as? Bool ?? false
+        if teshuvotSubcategory == .contemporary {
+            // Always shown (unlike Rishonim/Acharonim, gated on volumeLabel != nil) — every
+            // Contemporary work has a real, always-relevant volume level.
+            return useHe ? contemporaryVolume.hebrewLabel : contemporaryVolume.label
+        }
+        guard teshuvotWork.volumeLabel != nil else { return nil }
+        if useHe {
+            return teshuvotWork.volumeDisplayLabelHebrew(teshuvotVolume)
+        }
+        return teshuvotWork.volumeDisplayLabel(teshuvotVolume)
     }
 
     /// Short title for the "chapter" navigation pill in the reader header.
@@ -849,16 +930,37 @@ final class TextReaderViewModel {
             let bookName = TextCatalog.allTanakhBooks.first(where: { $0.id == midrashBookIndex })?.name ?? "?"
             return "\(bookName) \(midrashChapter):\(midrashVerse)"
         case .teshuvot:
-            if teshuvotWork.volumeLabel != nil {
-                return "\(teshuvotVolume):\(teshuvotSiman)"
+            if teshuvotSubcategory == .contemporary {
+                // Reverse-looks-up which siman the current page falls within (via a floor
+                // lookup against the siman->page index — see TeshuvotPageManager.siman(volume:
+                // page:)) so this pill reads as "you're on siman N", matching what the siman
+                // picker actually navigates by — not the underlying page number, which is an
+                // implementation detail. No descriptor/label, bare numeral only, per explicit
+                // request — falls back to the page number only if literally nothing is indexed
+                // yet for this volume.
+                let siman = TeshuvotPageManager.shared.siman(volume: contemporaryVolume.id, page: contemporaryPage)
+                    ?? contemporaryPage
+                return useHe ? SASimanNames.toHebrewNumeral(siman) : "\(siman)"
             }
-            return "§\(teshuvotSiman)"
+            // Volume (when present) has its own pill — see navVolumeTitle — so this stays
+            // siman-only rather than repeating it here. Hebrew mode drops the "סי׳" symbol too
+            // — bare numeral, matching the volume pill's compact style.
+            return useHe ? SASimanNames.toHebrewNumeral(teshuvotSiman) : "§\(teshuvotSiman)"
         }
     }
 
     // MARK: - Fetch
 
     func load() async {
+        // Contemporary Teshuvot's reader is a plain image pager (TeshuvotPageManager,
+        // ContemporaryTeshuvotPageView) — there's no Sefaria text to fetch, and every other
+        // branch below assumes `teshuvotWork`/Sefaria refs that don't apply here.
+        if category == .teshuvot && teshuvotSubcategory == .contemporary {
+            isLoading = false
+            error = nil
+            return
+        }
+
         loadGeneration += 1
         isLoading = true
         error = nil
@@ -968,9 +1070,9 @@ final class TextReaderViewModel {
                     midrashScrollToIndex = scrollIdx + 1  // 1-based for scrollToVerse compat
                 }
             case .teshuvot:
-                // DRAFT ref — see TeshuvotWork's own doc comment. Same generic-ref fetch
-                // pattern as Midrash's native-mode branch above; a wrong ref surfaces via the
-                // existing "Error loading text" / Retry UI, not a crash.
+                // Same generic-ref fetch pattern as Midrash's native-mode branch above; an
+                // occasional bad ref (e.g. an unverified per-volume siman ceiling overshooting
+                // the real count) surfaces via the existing "Error loading text" / Retry UI.
                 let ref = teshuvotWork.sefariaRef(volume: teshuvotVolume, siman: teshuvotSiman)
                 currentRef = ref
                 let (he, en) = try await SefariaTextClient.shared.fetchBoth(ref: ref)
@@ -1456,7 +1558,7 @@ final class TextReaderViewModel {
                 }
             }
         case .teshuvot:
-            if teshuvotSiman < TeshuvotWork.placeholderMaxSiman {
+            if teshuvotSiman < teshuvotWork.maxSiman(forVolume: teshuvotVolume) {
                 teshuvotSiman += 1
             } else if teshuvotWork.volumeLabel != nil && teshuvotVolume < teshuvotWork.volumeCount {
                 teshuvotVolume += 1

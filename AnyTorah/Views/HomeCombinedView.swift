@@ -40,12 +40,36 @@ struct HomeCombinedView: View {
                 }
                 .frame(maxWidth: 600)
                 .padding(.horizontal, 16)
+
+                teshuvotSection
             }
             .padding(.bottom, 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(appBg.ignoresSafeArea())
         .sheet(isPresented: $showSettings) { SettingsView() }
+    }
+
+    /// Teshuvot gets its own row below the two-column grid, not a slot inside it — per explicit
+    /// product direction, it's conceptually a third tier (rite/era of the responsa literature),
+    /// not just another sibling pair like Mishnah/Tosefta. A horizontal divider + "Teshuvot"
+    /// label separates it from the grid above, then three equal tiles: Rishonim, Acharonim
+    /// (both Sefaria-based), and Contemporary (PDF/scanned-page based — enabled 2026-08-29,
+    /// see `ContemporaryTeshuvotWork` and CLAUDE.md's Contemporary Teshuvot section).
+    private var teshuvotSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Divider().background(appFg.opacity(0.2))
+            Text("Teshuvot")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(appFg)
+            HStack(spacing: 12) {
+                ForEach(HomeCategoryEntry.teshuvotRow) { entry in
+                    categoryButton(entry)
+                }
+            }
+        }
+        .frame(maxWidth: 600)
+        .padding(.horizontal, 16)
     }
 
     private var header: some View {
@@ -68,8 +92,10 @@ struct HomeCombinedView: View {
     private func categoryButton(_ entry: HomeCategoryEntry) -> some View {
         Button { select(entry) } label: {
             CategoryTile(entry: entry)
+                .opacity(entry.isEnabled ? 1 : 0.4)
         }
         .buttonStyle(.plain)
+        .disabled(!entry.isEnabled)
     }
 
     private func select(_ entry: HomeCategoryEntry) {
@@ -87,16 +113,29 @@ private struct CategoryTile: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: entry.icon)
-                .font(.title3)
+            // Teshuvot row tiles skip the icon entirely — three tiles share one row (vs. one
+            // tile per full-width row in the two-column grid), so every point of width matters
+            // for showing the full label ("Contemporary" in particular).
+            if !entry.compact {
+                Image(systemName: entry.icon)
+                    .font(.title3)
+            }
             Text(entry.label)
-                .font(.subheadline.weight(.semibold))
+                // Same reasoning as dropping the icon — a smaller weight lets longer labels
+                // fit in the Teshuvot row's narrower per-tile width without wrapping.
+                .font(entry.compact ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
                 .lineLimit(2)
+                .minimumScaleFactor(entry.compact ? 0.8 : 1)
             Spacer(minLength: 0)
         }
         .foregroundStyle(.white)
-        .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+        .padding(entry.compact ? 10 : 14)
+        // maxHeight pinned to the same value as minHeight (not just a floor) so the three
+        // Teshuvot row tiles come out identically tall regardless of whether their label
+        // happens to wrap to a second line — an HStack doesn't equalize sibling heights on its
+        // own, so before this fix "Contemporary" (longer than "Rishonim"/"Acharonim") could
+        // wrap and grow taller than its neighbors.
+        .frame(maxWidth: .infinity, minHeight: entry.compact ? 52 : 64, maxHeight: entry.compact ? 52 : 64, alignment: .leading)
         .background(entry.colorFamily.gradient)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
@@ -114,6 +153,16 @@ private struct HomeCategoryEntry: Identifiable {
     /// subcategory concept (Tanakh, Rambam, Tur, Shulkhan Arukh). `@MainActor`-annotated
     /// because `TextReaderViewModel` itself is `@MainActor` — without this, the closures
     /// below can't mutate its properties.
+    /// False for the "Contemporary" Teshuvot placeholder — not a real category yet, so its tile
+    /// renders dimmed and doesn't respond to taps. Every other entry defaults to enabled.
+    var isEnabled: Bool = true
+    /// True for the Teshuvot row tiles — three tiles share one row there (vs. one tile per
+    /// full-width row in the two-column grid above), so `CategoryTile` drops the icon and uses
+    /// a smaller label font to leave room for the full name.
+    var compact: Bool = false
+    // Kept last: trailing-closure call sites below rely on this being the final parameter (the
+    // same ordering rule that applies on the Kotlin/Android side, for the same reason — see
+    // CLAUDE.md's Teshuvot section).
     let applySelection: @MainActor (TextReaderViewModel) -> Void
 
     static let leftColumn: [HomeCategoryEntry] = [
@@ -140,7 +189,21 @@ private struct HomeCategoryEntry: Identifiable {
                            colorFamily: .royalBlue, category: .shulchanArukh) { _ in },
         HomeCategoryEntry(id: "rambam", label: "Rambam", icon: "star.circle",
                            colorFamily: .skyBlue, category: .rambam) { _ in },
-        HomeCategoryEntry(id: "teshuvotRishonim", label: "Teshuvot Rishonim", icon: "envelope",
-                           colorFamily: .navy, category: .teshuvot) { $0.teshuvotSubcategory = .rishonim },
+    ]
+
+    /// A third row below the two-column grid, not part of either column — see `teshuvotSection`.
+    /// All three share the navy family (just different shades) so the row reads as one group,
+    /// and all three are `compact` (no icon, smaller font) since three tiles split one row's
+    /// width instead of each getting a full-width row like the grid above.
+    static let teshuvotRow: [HomeCategoryEntry] = [
+        HomeCategoryEntry(id: "teshuvotRishonim", label: "Rishonim", icon: "envelope",
+                           colorFamily: .navy, category: .teshuvot, compact: true) { $0.teshuvotSubcategory = .rishonim },
+        HomeCategoryEntry(id: "teshuvotAcharonim", label: "Acharonim", icon: "envelope",
+                           colorFamily: .navySteel, category: .teshuvot, compact: true) { $0.teshuvotSubcategory = .acharonim },
+        // "Contemp." not "Contemporary" — the full word is prone to wrapping to a second line
+        // at this tile's width/font, which (before the tile's maxHeight fix above) made this
+        // tile visibly taller than Rishonim/Acharonim.
+        HomeCategoryEntry(id: "teshuvotContemporary", label: "Contemp.", icon: "envelope",
+                           colorFamily: .navyDeep, category: .teshuvot, compact: true) { $0.teshuvotSubcategory = .contemporary },
     ]
 }

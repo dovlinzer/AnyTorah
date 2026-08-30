@@ -42,6 +42,22 @@ Android local unit tests (`testDebugUnitTest`) run against the Android SDK's `or
 jar, which throws "not mocked" for every real method — add `testImplementation("org.json:json:...")`
 to pull in the real implementation for any test that parses JSON.
 
+**The cached-gradle-distribution fallback above runs but produces unreliable results — confirmed
+2026-08-28, don't trust it even when it "works".** Invoking `:app:compileDebugKotlin` directly via
+the cached `gradle-8.9-bin` distribution + Android Studio's JRE (as described above) completes
+without a build-system error, but silently fails to resolve any type declared in
+`TextModels.kt` from *other* files (`Unresolved reference 'TeshuvotWork'`, etc.) while reporting
+*zero* diagnostics against `TextModels.kt` itself — reproduced identically even against the
+untouched git-HEAD version of that file (i.e. it's not a regression from any particular edit),
+even after deleting both `AnyTorahAndroid/app/build` and `AnyTorahAndroid/.gradle` and running
+`--no-daemon`. Root cause not identified (plausibly a version mismatch between this ad hoc
+Gradle 8.9 invocation and what the project's own wrapper/AGP actually expect, given the real
+wrapper jar is the thing documented as missing above) — but the practical upshot is that a
+"clean" result from this fallback path is not evidence the Kotlin actually compiles. Treat
+Android changes as hand-review-only in this environment, per the verification-workflow section
+above, rather than trusting this fallback as a substitute for the user's real Android Studio
+build.
+
 ---
 
 ## Architecture
@@ -269,7 +285,7 @@ first book (`section.books.first`), same behavior the old wheel's `onChange` alr
 Hebrew-mode ordering (reversed indices, section on the visually-right side) mirrors `SAWheels`
 exactly.
 
-### Teshuvot Rishonim — new TextCategory, DRAFT ref data pending verification (2026-08-25)
+### Teshuvot — new TextCategory, Rishonim (2026-08-24) + Acharonim (2026-08-28), Sefaria ref data verified
 
 **A new top-level content type, not a subcategory of anything existing.** Unlike the Talmud/
 Mishnah/Midrash home-screen splits (which reuse one `TextCategory` + a subcategory enum),
@@ -282,50 +298,123 @@ sibling; grep `case \.midrash` (iOS) / `TextCategory\.MIDRASH` (Android) to re-l
 if extending further.
 
 **Data model** (`TextModels.swift` / `TextModels.kt`), mirrors `MidrashWork`'s shape:
-- `TeshuvotSubcategory` — currently **one case, `.rishonim`/`RISHONIM`**. `.acharonim` was
-  deliberately not added — no work list exists for it yet; add it plus its own `TeshuvotWork`
-  entries later, following the exact same shape.
+- `TeshuvotSubcategory` — `.rishonim`/`RISHONIM` (13 works) and `.acharonim`/`ACHARONIM` (31
+  works, added 2026-08-28 — see its own subsection below).
 - `TeshuvotEdah` — `.ashkenaz`/`.sefarad`, informational only (shown as an "(A)"/"(S)" badge
   in the work picker), not used in any fetch/navigation logic.
-- `TeshuvotWork` — 17 cases for the Rishonim, in the **corrected chronological order** (see
-  below), each carrying `displayName`/`hebrewName`/`edah`/`century`/`volumeLabel`/
-  `volumeCount`/`sefariaBaseTitle`. `sefariaRef(volume:siman:)` builds `"{title}
-  {volume}:{siman}"` when `volumeCount > 1`, `"{title} {siman}"` otherwise — same shape as
-  `MidrashWork.nativeRef`'s `numericTwo`/`numericOne` cases.
+- `TeshuvotVolume` (Swift `struct` / Kotlin `data class`, added 2026-08-28) — one entry in a
+  work's second-level ("volume") picker: `label`/`hebrewLabel` (display), `refTemplate` (a
+  Sefaria ref with a literal `{siman}` placeholder), `maxSiman`. **Every `TeshuvotWork` has a
+  non-empty `volumes` list — even a flat work is one dummy entry** — so `maxSiman(forVolume:)`/
+  `sefariaRef(volume:siman:)`/`volumeDisplayLabel(_:)`/`volumeDisplayLabelHebrew(_:)` all index
+  into it unconditionally, with no separate flat-vs-multi-volume branch anywhere. `volumeLabel`/
+  `volumeLabelHebrew` (nil for flat works) is what actually hides the volume pill/sheet in the
+  UI — not `volumes.count`. This replaced an earlier numeral-only scheme (`volumeCount` +
+  `volumeDisplayLabel(_:)` switching on roman numerals) that could only express sequential
+  numbered volumes — insufficient once Acharonim works arrived with named Tur-order sections
+  and, in a few cases, structures three levels deep on Sefaria flattened into one combined-label
+  "volume" list (e.g. Rav Pealim's "I, Orach Chayim", Shoel uMeshiv's "II.3") — see the Acharonim
+  subsection below for why. `sefariaRef(volume:siman:)`/`maxSiman(forVolume:)`/
+  `volumeDisplayLabel(_:)`/`volumeDisplayLabelHebrew(_:)` are still the call sites everything
+  else uses; only their internals changed.
+- `TeshuvotWork` — 44 cases total (13 Rishonim + 31 Acharonim), in the **corrected chronological
+  order** (see below — Rishonim's order was independently re-verified against birth years;
+  Acharonim's preserves the order/century placement the user supplied, not independently
+  re-verified), each carrying `displayName`/`hebrewName`/`edah`/`century`/`volumeLabel`/
+  `volumeLabelHebrew`/`volumes`/`volumeCount`.
 
 **Picker**: Work → Volume (shown only when `volumeLabel != nil`, labeled per-work — "Part"
-for Rashba, "Klal" for Rosh, "Shoresh" for Maharik, "Chelek" for Sefer HaTashbetz, "Section"
-for Terumat HaDeshen) → Siman. `TeshuvotWheels` (iOS `TextSelectorView.swift`, Android
-`TextSelectorScreen.kt`) — new struct/composable, not a variant of `MidrashWheels`, since the
-work list doesn't need the Halakha/Aggada-style nav-mode toggle. `load()`'s `.teshuvot` branch
-calls `SefariaTextClient.shared.fetchBoth(ref:)` directly (bypassing the `ref(category:...)`
-helper entirely, which has a `.teshuvot -> ""` "shouldn't be called" stub) — exactly the pattern
-Midrash's native-mode branch already uses.
+for Rashba and Terumat HaDeshen, "Klal" for Rosh, "Chelek" for Sefer HaTashbetz; Maharik has
+no volume level at all, see below) → Siman. `TeshuvotWheels` (iOS `TextSelectorView.swift`,
+Android `TextSelectorScreen.kt`) — new struct/composable, not a variant of `MidrashWheels`,
+since the work list doesn't need the Halakha/Aggada-style nav-mode toggle. `load()`'s
+`.teshuvot` branch calls `SefariaTextClient.shared.fetchBoth(ref:)` directly (bypassing the
+`ref(category:...)` helper entirely, which has a `.teshuvot -> ""` "shouldn't be called" stub)
+— exactly the pattern Midrash's native-mode branch already uses.
 
-**⚠️ DRAFT REF DATA — NOT YET VERIFIED AGAINST LIVE SEFARIA CONTENT.** Built 2026-08-25 in a
-sandboxed session with no network egress to `sefaria.org` (confirmed blocked — `WebFetch`
-returned `EGRESS_BLOCKED` on every `sefaria.org/api/name/...` lookup attempted). Every
-`sefariaBaseTitle`/`volumeLabel`/`volumeCount` is a best-effort bibliographic guess, not a
-confirmed Sefaria index title or real siman count — `TeshuvotWork.placeholderMaxSiman` (400,
-iOS) / `PLACEHOLDER_MAX_SIMAN` (Android) is one generous placeholder shared by every work and
-volume, same "generous range + graceful failure on overshoot" pattern as Midrash's native
-section wheel (see that struct's own doc comment) — not a real count anywhere. **A wrong ref
-surfaces through the reader's existing error/Retry UI, not a crash** — this was a deliberate
-choice (see "How Sefaria ref accuracy was handled" below) over shipping only a work-picker
-shell with no fetch wired up.
+**Century dividers in the Work wheel, and the "Alphabetical Order" setting (2026-08-28).** Per
+explicit user request, the Work wheel (both platforms) groups its rows visually by century by
+default. A native wheel picker (`UIPickerView` on iOS, the app's own `WheelPicker` on Android)
+has no non-selectable section-header concept — every row must be a real, selectable item — so
+each century boundary gets an inert divider row ("— 13th Century —") inserted into the flat
+item list; picking one snaps forward to the next real work rather than selecting nothing. The
+book-picker *sheet* reachable from the header pill (a `List`/`LazyColumn`, not a wheel) uses
+real `Section`/`BookPickerSectionHeader` grouping instead, since that surface natively supports
+it — same pattern already used there for Rambam's sefer grouping.
 
-**Action needed**: test each of the 17 works on a device with real internet, and report which
-ones fail to load so the ref/volume data can be corrected. Confidence varies a lot by work:
-- **High confidence** (well-known, almost certainly on Sefaria under something close to the
-  guessed title): Rashba, Rosh, Rivash, Rambam, Rambam via Blau, Ritva, Ran.
-- **Genuinely uncertain, flag these first**: Maharach Or Zarua and Mahari Weil/Mahari Bruna
-  (niche 13th/15th-century Ashkenazi collections — may not be digitized on Sefaria at all);
-  Maharik's shoresh count (193 is a placeholder, not a confirmed count); Maharam MiRotenburg
-  (his responsa exist across several differently-numbered printed editions — Prague/Cremona/
-  Lvov/Berlin/Bloch — genuinely unclear which, if any, Sefaria indexes, or under what title);
-  Maharil (the guessed title `Teshuvot Maharil` needs to be distinguished from his much more
-  famous `Sefer Maharil`/`Minhagei Maharil`, a *different* work by the same author that's far
-  more likely to already be on Sefaria and could easily produce a false-positive match).
+A Settings toggle, "Teshuvot Alphabetical Order" (`@AppStorage("teshuvotAlphabeticalOrder")` /
+`SharedPreferences` key of the same name, default off), switches **both** the Rishonim and
+Acharonim pickers — on both surfaces, both platforms — from century-grouped/chronological to a
+flat alphabetical list (by `displayName`, or `hebrewName` in Hebrew mode) with no century
+dividers at all. `TextReaderView.swift`'s `teshuvotAlphabeticalIndices(_:)` / Android's inline
+`sortedBy` in `TextReaderScreen.kt`'s book-picker branch and `TextSelectorScreen.kt`'s
+`TeshuvotWheels` all read this same flag independently — there's no shared "ordered works" helper
+across the three call sites (book-picker sheet, work wheel) per platform, just the same branching
+pattern repeated, mirroring how century-grouping itself was already duplicated across those same
+call sites before this setting existed.
+
+**Ref data verified against live Sefaria content (2026-08-24).** An earlier session built this
+category with no network egress to `sefaria.org` and shipped best-effort bibliographic guesses
+for every title/volume/count, flagged DRAFT with an explicit action item to verify on-device.
+That verification happened directly against the Sefaria API (`/api/name/...`, `/api/v2/index/
+...`) instead, and turned up several guesses that were wrong or structured very differently
+than assumed:
+- **Rashba is not one title with a numeric volume.** Sefaria carries it as five *separately
+  titled* top-level indices — "Teshuvot haRashba part I/IV/V/VI/VII" — parts II and III were
+  never digitized. Part I was later dropped from the app entirely (see the removed-content note
+  below); `volumeCount` covers IV–VII (4 volumes), and the volume-wheel position doesn't equal
+  the roman numeral (position 1 is part IV) — `volumeDisplayLabel(_:)` handles the mapping, and
+  `sefariaRef` builds the whole part title rather than appending `:volume`.
+- **Sefer HaTashbetz** (Rashbatz's responsa) is titled "Sefer HaTashbetz", not "Teshuvot
+  HaTashbetz". It has 4 parts as guessed, but Part IV alone carries one extra depth level
+  (Section → Teshuva → Paragraph, vs. the other parts' Teshuva → Paragraph) that this picker's
+  two-level Work→Volume→Siman shape can't address — a known gap; Part IV's siman wheel will
+  overshoot into the wrong content for some numbers, surfacing via the existing error/Retry UI.
+- **Maharach Or Zarua's** responsa are titled "Maharach Or Zarua Responsa" — the original guess
+  ("Teshuvot Chaim Or Zarua") collided with his father Yitzchak's unrelated `Or Zarua`, which is
+  why the earlier name-search-based check missed it.
+- **Maharam MiRotenburg is not a single Sefaria title.** Sefaria carries four separately-
+  paginated printed editions (Cremona 1558, Prague 1608, Lemberg 1860, Berlin 1891) as sibling
+  nodes under "Teshuvot Maharam", with no shared siman numbering across them and no single
+  canonical one. This app defaults to Cremona (earliest, and a simple flat siman list — unlike
+  Berlin, which has its own internal Part I/II/III split). Exposing edition choice as its own
+  picker level is a reasonable future enhancement, not done here.
+- **Maharik has no separate "Shoresh" volume level on Sefaria** — it's one flat list of 197
+  simanim; the traditional "Shoresh" numbering *is* Sefaria's Siman numbering here. The
+  originally-guessed `volumeLabel`/`volumeCount` (193) were removed entirely.
+- Rosh's Klal/Siman two-level structure and Terumat HaDeshen's two-part split were both
+  correctly guessed in the original draft; only exact siman/klal counts were refined.
+
+`maxSiman(forVolume:)` (iOS) / `maxSiman(volume:)` (Android) returns the Sefaria-confirmed
+ceiling where the index reports an exact count, and falls back to a generous placeholder (400)
+elsewhere — same "generous range + graceful failure on overshoot" pattern as Midrash's native
+section wheel. Per-klal siman counts for Rosh and per-part counts for Sefer HaTashbetz and
+Maharam weren't individually verified (only the klal/part *counts* themselves were); those still
+use the placeholder. **A wrong ref surfaces through the reader's existing error/Retry UI, not a
+crash** — same deliberate tradeoff as before (see "How Sefaria ref accuracy was handled" below),
+now covering only the handful of genuinely-unverified per-volume counts rather than all 17 works.
+
+**Five works/volumes were sparsely digitized, not just individually unverified — found
+2026-08-25, fixed by removal same day.** After the ref-accuracy pass above shipped, live testing
+reported "No text found" for Rashba vol. 1, Ritva, Mahari Weil, Mahari Bruna, and HaRashbash
+specifically. Checked against Sefaria's `/api/shape/{title}` endpoint, which reports actual
+per-siman content length (unlike the index endpoint's schema, which only reports the nominal
+siman *count*): these five have real digitized text at only a tiny fraction of their nominal
+range — Rashba part I claims 413 simanim but only 5 have any content (98, 150, 253, 395, 413);
+Ritva has exactly 1 (of 122); Mahari Weil 2 (of 151); Mahari Bruna 1 (of 111); Rashbash 2 (of
+1008). Every other work in the picker — including Rashba parts IV–VII — was confirmed via the
+same endpoint to be fully or near-fully digitized, so this isn't a systemic issue, just these
+five specific titles/volumes on Sefaria's side.
+
+The first fix attempt kept all 17 works and added `TeshuvotWork.availableSimanim(forVolume:)`
+to constrain the siman wheel to only the handful of real simanim per sparse work. **Superseded
+same day per explicit user decision**: a work (or volume) with only 1–2 real simanim out of
+hundreds isn't worth surfacing at all, so `availableSimanim` and every call site that consulted
+it were removed again, and instead Ritva, Mahari Weil, Mahari Bruna, and HaRashbash were deleted
+from the `TeshuvotWork` enum outright (13 works remain), with Rashba's `volumeCount` dropped
+from 5 to 4 (parts IV–VII only, Part I gone). If Sefaria digitizes more of these later, re-run
+the same `/api/shape` check before reintroducing them — nothing suggests today's coverage is
+permanent, just that it was the state as of 2026-08-25.
 
 **Chronological ordering — corrected from the user's original list, per their own request to
 verify it.** Century groupings are internally sub-grouped by edah (Sefarad-then-Ashkenaz in the
@@ -340,11 +429,144 @@ fixes made:
   **Maharil→Terumat HaDeshen→Mahari Weil→Mahari Bruna→Maharik**.
 - 11th–12th century and the rest of the 13th/15th groupings were already correct.
 
-**Home screen**: one button, "Teshuvot Rishonim" (`.navy`/`NAVY` — see the color-family note
-above), in the right/blue column. **Per explicit user decision, Rishonim and Acharonim will
-eventually be split into two separate home buttons** (matching the Talmud/Mishnah/Midrash
-pattern) once an Acharonim work list exists — this is *not* meant to become an in-selector
-toggle. Only Rishonim ships now since Acharonim has no data yet.
+**Home screen — its own row below the two-column grid, not a slot inside it (2026-08-28,
+same-day revision).** Briefly shipped as two tiles inside the ordinary two-column grid
+(Rishonim in the blue column, Acharonim in the purple column, just to keep both columns at six
+tiles each) — the user asked for this changed within the same session: Teshuvot isn't just
+another sibling pair like Mishnah/Tosefta, it's conceptually a third tier below the grid
+entirely. Current shape, both platforms: the two-column grid returns to its original 5/5 split
+(no Teshuvot tiles in either column), followed by a `Divider`/`HorizontalDivider`, a "Teshuvot"
+section label, and one row of three equal tiles — Rishonim (`.navy`/`NAVY`), Acharonim
+(`.lavender`/`LAVENDER`, restored 2026-08-25 for this feature — see `BrandGradients.swift`/
+`.kt`'s own doc comment), and a disabled "Contemporary" placeholder (40% opacity, non-clickable,
+`isEnabled: Bool`/`Boolean` on `HomeCategoryEntry`) for a future era this app doesn't cover yet.
+Both home screens are now scrollable (`ScrollView` / a `verticalScroll` `Box`) — they weren't
+before, since the grid alone always fit on screen, but the added row can push total content
+height past some devices' viewport.
+
+**Kotlin gotcha hit while adding `isEnabled`**: `HomeCategoryEntry`'s Kotlin `data class` must
+keep `applySelection: (TextReaderViewModel) -> Unit` as its literal LAST constructor parameter
+for the existing trailing-lambda call sites (`HomeCategoryEntry(...) { vm -> ... }`) to keep
+compiling — Kotlin's trailing lambda syntax binds strictly to the last declared parameter (unlike
+Swift's trailing-closure resolution, which tolerates trailing defaulted non-closure parameters
+after the closure one — confirmed by iOS building successfully with `isEnabled` declared *after*
+`applySelection` in the equivalent Swift struct). `isEnabled: Boolean = true` was placed *before*
+`applySelection` instead; the one call site needing `isEnabled = false` (Contemporary) passes it
+as a named argument ahead of its own trailing lambda.
+
+**Subcategory/work desync bug, fixed same day.** Switching between "Rishonim" and "Acharonim"
+(or any future third Teshuvot tier) via these Home buttons left `teshuvotWork` pointing at
+whatever work was last used under the *other* subcategory — the book-picker sheet and volume/
+siman wheels correctly filtered to the new subcategory's works (since they call
+`TeshuvotWork.works(for:)`/`worksFor()` fresh every render), but the reader itself kept
+displaying the stale work's actual content, because nothing re-validated `teshuvotWork` against
+the newly-forced `teshuvotSubcategory`. Root cause: `restoreState(for: .teshuvot)` restores
+`teshuvotSubcategory` and `teshuvotWork` independently from two separately-persisted keys that
+are normally kept in sync by ordinary use, but the Home button's `applySelection` closure then
+overwrites *only* `teshuvotSubcategory` afterward, with nothing forcing `teshuvotWork` back into
+agreement.
+- iOS: `teshuvotSubcategory` gained a `didSet` (guarded by the existing `isRestoring` flag, same
+  pattern as `midrashSubcategory`'s own cascade) that resets `teshuvotWork` to
+  `TeshuvotWork.works(for:).first`, which in turn cascades through `teshuvotWork`'s own existing
+  `didSet` to reset volume/siman to 1.
+- Android: Kotlin's plain `mutableStateOf` properties have no `didSet`-equivalent cascade (same
+  reason `applyMidrashSubcategory` exists as a manual helper), so a new
+  `TextReaderViewModel.setTeshuvotSubcategory(sub)` method sets the subcategory and explicitly
+  resets `teshuvotWork`/`teshuvotVolume`/`teshuvotSiman` together. **Always call this instead of
+  assigning `teshuvotSubcategory` directly** — `HomeScreen.kt`'s `teshuvotRow` entries do.
+
+**Teshuvot row tiles — `compact` styling + unified navy family (2026-08-28, same-day
+follow-up).** Per explicit request: the three Teshuvot tiles now drop their icon entirely and
+use a smaller label font (`CategoryTile`'s new `entry.compact` flag — `HomeCategoryEntry.compact`
+on both platforms, defaults `false`, `true` only for `teshuvotRow`) — three tiles split one row's
+width there, unlike the two-column grid above where each tile gets a full-width row, so the icon
+and larger font were the first things worth giving up to fit "Contemporary" without wrapping.
+Also, all three tiles moved onto the navy family (previously Acharonim was `.lavender`/
+`LAVENDER`, reused from the two-column-grid era when the row still needed to visually pair with
+that grid's purple/blue split — a rationale that stopped applying once Teshuvot became its own
+row): `.navy`/`NAVY` (Rishonim, unchanged), `.navySteel`/`NAVY_STEEL` (Acharonim), `.navyDeep`/
+`NAVY_DEEP` (Contemporary) — three shades of one hue (see `BrandGradients.swift`/`.kt`) so the
+row reads as one coherent group with just enough contrast to tell the tiles apart. `LAVENDER`
+itself is left defined but unused, per the file's own established retire-in-place convention
+(same as `NAVY` during its own earlier retirement). The "Teshuvot" section label also went from
+70%-opacity `appFg` to full-opacity, per request to make it "more white."
+
+- Kotlin gotcha, same shape as `isEnabled`'s: `compact: Boolean = false` had to go *before*
+  `applySelection` in `HomeCategoryEntry`'s constructor (not after), for the same reason —
+  trailing-lambda call sites need `applySelection` to stay the literal last parameter. iOS hit an
+  actual compile error here first (not just a style choice): placing `compact` *after*
+  `applySelection` broke the `teshuvotRow` call sites that pass `compact: true` by name ahead of
+  a trailing closure, because mixing an explicit named argument with a trailing closure defeats
+  Swift's usual tolerance for defaulted params after the closure one. Moving `applySelection`
+  back to the literal last position (matching Kotlin's rule) fixed it — see the struct's own
+  comment.
+
+### Reader header Row 1 — flat row instead of ZStack/Box overlay, full-width pills (2026-08-28)
+
+The nav-pills cluster (book/volume/chapter pills) previously sat inside a `ZStack`/`Box`
+overlaid with a separately-aligned left icon cluster (bookmark/bookmarks/selector) and right
+gear button, centered via a **guessed fixed inset** (`.padding(.horizontal, 88)` / `.padding
+(horizontal = 88.dp)`) meant to roughly clear both edge clusters. That guess didn't track the
+edge clusters' real width, wasting space a long title (e.g. "Teshuvot Rabbi Akiva Eiger") could
+have used. Per explicit request, Row 1 (`TextReaderView.swift`'s `readerHeader`,
+`TextReaderScreen.kt`'s Row 1) is now a single flat `HStack`/`Row`: left icon cluster (fixed
+width) → pills cluster → gear (fixed width, pushed to the trailing edge).
+
+- **iOS**: the pills `HStack` originally sat at its natural (unweighted) size next to a
+  `Spacer(minLength: 8)` before the gear — but `Spacer` is the *most* flexible sibling in
+  SwiftUI's layout algorithm (unbounded range vs. the pills' bounded one), so it greedily
+  absorbed any true leftover width itself, leaving the pills cluster stuck at a compressed size
+  with a visible gap before the gear even while its own text was truncating. Fixed (2026-08-28,
+  same-day follow-up) by deleting the `Spacer` and giving the pills `HStack` itself
+  `.frame(maxWidth: .infinity, alignment: saHebrewMode ? .trailing : .leading)` — now *it's* the
+  flexible sibling, so it receives the actual leftover width, and its children lay out (and
+  truncate, via `.layoutPriority(1)` on the book pill) against that full frame. The `alignment`
+  choice matters for Hebrew: the pills `HStack`'s own `layoutDirection` is already flipped RTL,
+  so the book pill is its rightmost child in that flip — trailing-aligning the frame docks it
+  immediately next to the gear, which is what "right-aligned, close to the gear" meant. The left
+  icon cluster's internal spacing was tightened in two passes the same day: first 14pt → 10pt
+  uniformly, then (once the user reported it still wasn't tight enough) split into a 4pt
+  sub-`HStack` for just the bookmark-edit/bookmarks-list pair, with 10pt kept between that pair
+  and the selector icon — see "Bookmark-list icon swap" under Bookmarks for why the selector
+  stayed a bit further away (it's functionally unrelated, and its icon glyph changed the same
+  day too).
+- **Android**: `Modifier.weight(1f)` on the pills `Row` already claims all leftover width at the
+  outer-Row level (no `Spacer` sibling was ever stealing it), and `Arrangement.spacedBy`'s
+  default Start-packing already docks the RTL-flipped book pill next to the gear in Hebrew mode
+  — so neither of those needed a change. What *was* backwards: `Modifier.weight(1f, fill=false)`
+  was on the **book** pill, but Compose's `Row` measures non-weighted children *first* at their
+  full natural size and only gives weighted children whatever's left — meaning the book title
+  (the one thing the code comment claimed to be protecting) was actually the one getting
+  squeezed, while the volume/chapter pills always rendered at full, unconstrained size. Fixed by
+  moving `Modifier.weight(1f, fill = false)` (+ `TextOverflow.Ellipsis`) onto the volume and
+  chapter pills instead, leaving the book pill unweighted — now book renders in full and
+  volume/chapter are the ones that truncate first, matching iOS's `.layoutPriority(1)` intent.
+
+### Teshuvot volume-picker wheel — word dropped for non-numeric labels (2026-08-28)
+
+The volume-picker sheet's wheel rows (`volumePickerSheet` / `VolumePickerSheet`) used to always
+prefix/suffix the generic word ("Part IV", "Section EH", "Volume Kamma") regardless of what kind
+of label the work actually has. Per explicit request, the word is now shown only when every
+volume in that work is labeled with a plain number or roman numeral (Radbaz's "1"–"6", Rosh's
+"1"–"108", Rashba's "IV"–"VII", Melammed Lehoil's "I"/"II"/"III", etc.) — for everything else
+(Rabbi Akiva Eiger's "Kamma"/"Tinyana"/"Chadashot", Chatam Sofer's "EH I"/"EH II", any Tur-order
+"OC"/"YD"/"EH"/"CM" work), the wheel row shows the bare label with no word at all. This is a new
+computed property, `TeshuvotWork.volumeLabelIsNumeric` (Swift) / `volumeLabelIsNumeric` (Kotlin)
+— derived directly from `volumes`' own `label` strings (every character must be a digit or one of
+`IVXLCDM`) rather than a second hand-maintained per-work switch, so it can't drift out of sync
+with the label data itself if a work's `volumes` ever changes. Only the wheel row is affected —
+the sheet's own "Select {word}" title and the header nav pill (already bare-numeral-only since
+an earlier round) are unchanged.
+
+### Hebrew edah abbreviations — א/ס instead of A/S in Hebrew mode (2026-08-28)
+
+`TeshuvotEdah.hebrewAbbreviation` (א for Ashkenaz, ס for Sefarad) is shown instead of
+`.abbreviation` ("A"/"S") wherever the work-picker badge is rendered in a genuinely Hebrew-mode-
+aware surface — currently just the book-picker sheet's row (`teshuvotBookRow` / the `TESHUVOT`
+branch of `TextReaderScreen.kt`'s book-picker `LazyColumn`). `TextSelectorView.swift`'s /
+`TextSelectorScreen.kt`'s `TeshuvotWheels` (the full-selector work wheel) still shows the English
+badge regardless of `saHebrewMode` — a pre-existing gap (that whole wheel is English-only, work
+names included) left as-is, not newly introduced here.
 
 **Bookmarks**: `teshuvotSubcategory`/`teshuvotWork`/`teshuvotVolume`/`teshuvotSiman` were added
 to `Bookmark` on both platforms *at the same time* as the category itself (nullable DTO fields
@@ -358,7 +580,299 @@ full picker now with draft refs, since a wrong ref just surfaces through the rea
 error/Retry UI rather than crashing, and the user can test on-device (real internet, unlike this
 sandbox) and report back exactly which of the 17 fail. **The user explicitly chose (b)** when
 asked directly — recorded here so a future session doesn't mistake the draft data for an
-oversight or re-litigate the same tradeoff.
+oversight or re-litigate the same tradeoff. That verification pass happened 2026-08-24 (see
+"Ref data verified against live Sefaria content" above) — the draft-data caveat above still
+applies to the handful of individually-unverified per-volume siman ceilings, not to the 17
+titles/structures themselves, which are now confirmed.
+
+### Teshuvot Acharonim — 31 works added, verified against live Sefaria (2026-08-28)
+
+Same category, same picker shape, same verification rigor as Rishonim above — added once the
+user supplied their work list (16th–19th century, 32 works originally, one dropped — see below).
+Verified against `/api/name`, `/api/v2/index`, `/api/shape`, and `/api/texts` before writing any
+code, the same way Rishonim's ref data was verified 2026-08-24.
+
+**Why `TeshuvotVolume` exists.** Most Acharonim works are NOT simple numbered volumes like
+Rishonim's Rashba/Rosh/Terumat HaDeshen — Sefaria structures many of them as named Tur-order
+sections (Orach Chayim/Yoreh Deah/Even HaEzer/Choshen Mishpat), and a few are three levels deep
+(Volume → Section → Siman, or printed-edition → Sub-volume → Siman) with no natural third wheel
+in this app's Work→Volume→Siman shape. Rather than building a second, parallel mechanism
+alongside the old numeral-only one, the whole `TeshuvotWork` volume system was generalized into
+`TeshuvotVolume` (see the data-model bullet above) — every work, Rishonim included, now expresses
+its second-level picker as a list of `TeshuvotVolume` entries, with deep structures flattened
+into one combined-label list at the entry level rather than adding UI complexity. Concretely:
+- **Simple named sections** (Maharshdam, Admat Kodesh, Be'er Yitzchak, Binyan Olam, Chatam Sofer,
+  Chidushei HaRim, HaElef Lekha Shlomo): one `TeshuvotVolume` per Tur section, labeled with the
+  standard English/Hebrew abbreviations (OC/YD/EH/CM, או״ח/יו״ד/אה״ע/חו״מ).
+- **Two-dimensional flattening** — Noda BiYehudah (2 volumes × 4 sections = 8 entries, labeled
+  "Kamma, OC" etc. per the user's requested Kamma/Tinyana display names, even though Sefaria's
+  own titles are the bare "Noda BiYehudah I"/"II") and Rav Pealim (4 volumes × up to 5 sections
+  including a kabbalistic "Sod Yesharim" = 19 entries, since Volume I has no Choshen Mishpat on
+  Sefaria and that combo is simply omitted).
+- **Three-dimensional flattening** — Shoel uMeshiv: 6 printed "Mahadura" editions, the first four
+  further split into 3–4 sub-volumes each on Sefaria = 15 entries labeled e.g. "II.3" (Mahadura
+  II, sub-volume 3); Mahadura V/VI are flat and get one entry each.
+- **A ref needing an embedded colon** — Chatam Sofer's Even HaEzer is itself two levels deep on
+  Sefaria (`Even HaEzer 1:{siman}` / `2:{siman}`); with the old scheme this would have needed a
+  third special-cased `sefariaRef` branch. With `TeshuvotVolume`, the colon is just baked into
+  that one entry's `refTemplate` string like any other — no special-casing needed anywhere in
+  `sefariaRef` itself, which is now one generic `volumes[idx].ref(siman:)` call for every work.
+
+**Sparse/empty content dropped, same policy as Rishonim's four removed works.** One entire work
+and three individual volumes/sections were checked via `/api/shape` and found to have
+essentially no real digitized text, so they were left out entirely rather than shipped as dead
+ends:
+- **Mateh Levi** — dropped whole-work. 1 of 19 nominal simanim (5.3%) has real content, only
+  siman 19.
+- **Teshuvot Bayit Chadash ("Bach")'s third part, "Kuntres Acharon"** — dropped; 10 of 84 nominal
+  (11.9%) real, and 10 total simanim of actual text isn't worth a picker entry regardless of the
+  percentage. Bach's other two parts (HaYeshanot, HaChadashot) are both 100% digitized and kept.
+- **Teshuvot Meshiv Davar's Volumes III and IV** — dropped; both report 0 real content (empty
+  placeholder nodes on Sefaria). Volumes I–II are fully/near-fully digitized and kept.
+- **Teshuvot Maharit's Part II, Even HaEzer** — dropped; a 1-siman stub with 0 real content. The
+  rest of Maharit (Part I, Part II's Orach Chayim/Yoreh Deah/Choshen Mishpat) is fine and kept.
+
+Everything else — including works with real but visibly incomplete coverage, like Radbaz's
+Volumes II–VI (12–30% of nominal simanim populated, but that's still hundreds of real simanim
+each) — was kept rather than dropped, per the same "incomplete isn't the same problem as
+near-empty" reasoning used for Rishonim. If Sefaria digitizes more of the four dropped
+items/volumes later, re-run `/api/shape` before re-adding, same as the standing note for
+Rishonim's four removed works.
+
+**Title/spelling corrections found during verification** (the display name the user gave vs. the
+actual Sefaria index title, where they differ): Maharam miPadua → `Responsa Maharam of Padua`
+(NOT "Teshuvot Maharam", which is the unrelated Rishon Meir of Rothenburg — same collision
+pattern as Rishonim's Maharam entry); Maharshdam → `Responsa Maharashdam` (extra "a"); Rema →
+`Responsa of Rema`; Chatam Sofer → `Responsa Chatam Sofer` (bare "Chatam Sofer" collides with a
+Torah commentary of the same name); Chidushei HaRim → `Chiddushei HaRim Responsa` (double-d,
+"Responsa" suffix needed to disambiguate from his Torah/Talmud commentaries); Maharsham → no
+comma before "Volume" (`Teshuvot Maharsham Volume I`, not "... Volume, I"); Meshiv Davar → the
+user's "Meishiv" is `Teshuvot Meshiv Davar` on Sefaria (no "i" after the M); Melammed Lehoil →
+double-m, no apostrophe (`Melammed Lehoil Part I`, not "Melamed Leho'il"); Rav Pealim →
+`Responsa Rav Pealim` (not "Teshuvot"); Sheilat Yavetz → `Sheilat Yaavetz` (double-a); Binyan
+Tzion → `Binyan Tziyon`. Rabbi Akiva Eiger's first volume ("Kamma") confirmed to have no
+suffix on Sefaria at all, exactly as the user anticipated — `Teshuvot Rabbi Akiva Eiger`, vs.
+`... Tinyana` / `... HaChadashot` for the other two.
+
+**Home screen and settings**: see the "Home screen" and "Century dividers... Alphabetical Order"
+paragraphs above — both were updated in place rather than duplicated here.
+
+### Teshuvot Contemporary — PDF/scanned-page based, not Sefaria (pilot shipped 2026-08-29)
+
+A third Teshuvot subcategory (`TeshuvotSubcategory.contemporary`), for works that exist only as
+scanned PDFs with no Sefaria digitization — starting with Iggros Moshe. Fundamentally different
+data shape from Rishonim/Acharonim, so it's a parallel model + a parallel reader path, not an
+extension of the Sefaria-ref-based `TeshuvotWork`/`TeshuvotVolume` system above.
+
+**Why a separate model, not a Sefaria ref.** Rishonim/Acharonim resolve a siman to a Sefaria API
+call. Contemporary Teshuvot has no digitized text at all — navigation resolves a siman to a raw
+**page number** within a set of page images (see the indexing pipeline below), and the reader
+displays that page image directly, the same way Talmud's daf-image mode does. `ContemporaryTeshuvotWork`
+→ `ContemporaryTeshuvotVolume` (`TextModels.swift`) mirrors `TeshuvotWork`/`TeshuvotVolume`'s
+shape for consistency, but `ContemporaryTeshuvotVolume.page(forSiman:)` looks up a hand-maintained
+index instead of building a ref string.
+
+**Reader path — a hard branch, not scattered conditionals.** `TextReaderView.body` checks
+`vm.category == .teshuvot && vm.teshuvotSubcategory == .contemporary` before `contentWithCommentary`
+is ever reached, rendering `contemporaryTeshuvotContent` (an image pager, `ContemporaryTeshuvotPageView`
++ edge tap-zone paging) instead. `TextReaderViewModel.load()` early-returns for this subcategory
+— there's no Sefaria fetch to make, and every other branch in `load()` assumes `teshuvotWork`,
+which isn't relevant here. This was the deliberate alternative to adding a whole new `TextCategory`
+case: that would have forced touching all ~25 existing `case .teshuvot:` switch sites across 5
+files (most of which assume Sefaria text/commentary), for a reading experience that shares
+nothing with them. The three picker sheets (book/volume/siman) each gained a `contemporary`
+branch alongside their existing Sefaria-based logic instead — `chapterPickerWheel`,
+`volumePickerSheet` (→ `contemporaryVolumePickerSheet`), and the `bookPickerSheet`'s `.teshuvot`
+case (→ `contemporaryBookRow`). **Known gap, not yet fixed**: the separate full-selector sheet
+(`.selector`, `TextSelectorView.swift`'s `TeshuvotWheels`) still calls `TeshuvotWork.works(for:)`,
+which returns empty for `.contemporary` — renders an empty wheel rather than crashing, but isn't
+wired up. Not blocking, since the header's own book/volume/siman pills already give full
+navigation; low priority to fix.
+
+**Page-image hosting — Google Drive, not Supabase, mirroring `TalmudPageManager`'s daf-image
+mechanism exactly.** Considered and rejected: (1) bundling whole PDFs in the app (the 15-volume
+set is hundreds of MB); (2) hosting whole PDFs on Supabase Storage (would exceed the user's free
+tier); (3) downloading a whole PDF from Drive's direct-download link and opening it with a real
+PDF viewer — **rejected after testing**: Drive's `uc?export=download` link returns an HTML
+"can't scan for viruses" interstitial instead of the file for anything past roughly 25MB (Volume
+3/EH1, 191MB, hit this; everything else in the 15-volume set, up to ~23MB, downloaded cleanly).
+Per-page JPGs never approach that threshold regardless of the original PDF's size, and reuse
+100% of the already-working, already-tested daf-image serving path
+(`https://drive.google.com/thumbnail?id=FILE_ID&sz=w1600`) — no new Android PDF-rendering
+dependency needed (a third-party library was tentatively approved for this, then dropped once
+the image-based approach made it unnecessary). Confirms AnyDaf's own documented finding (see
+its CLAUDE.md, "Daf Page Image Quality" → "Planned future improvement: PDF rendering"): PDF
+rendering was tried there and rejected for both platforms (blurry on Android at zoom-out;
+"PDFKit does not give the same low-level bitmap control" on iOS) — independent validation this
+project reached the same conclusion for a different reason (Drive's size limit) before finding
+that AnyDaf had already ruled out the PDF path itself for image-quality reasons.
+
+Per-page JPEG conversion does **not** reduce total storage versus the original PDFs, contrary to
+initial expectation — these scans use an efficient bi-level/text compression (source PDFs were
+made with "Ligature OCR" / ABBYY, ~40-50KB/page average) that generic JPEG re-encoding can't beat
+without hurting legibility (tested: 150dpi/quality-65 JPEGs run 150-300KB/page, larger not
+smaller). Storage size was never the actual constraint though — Drive's per-file interstitial
+threshold and Supabase's free-tier cost were.
+
+**Pipeline**: `tools/build_teshuvot_pages.py` (a fork of `AnyDaf/web/build-pages.py` — kept
+separate per project rather than modified in place, since the two apps' asset sets are
+unrelated) enumerates a public Drive folder via the Drive API (read-only API key, no OAuth) and
+writes `teshuvot_pages.json` — `{volumeKey: {page: driveFileId}}`, loaded by `TeshuvotPageManager`
+(parallel to `TalmudPageManager`, same bundle-JSON-at-init pattern). One Drive folder per
+volume, filenames `{VolumeKey}_Page_NNN.jpg` (same convention as daf images, confirmed — no
+regex changes needed from AnyDaf's script). **PDF-to-JPG conversion and the Drive upload are
+both manual, user-side steps** — no script in this repo does either (matches AnyDaf's own
+daf-image pipeline, which has the identical gap per its own CLAUDE.md).
+
+**Siman→page indexing methodology and accuracy — read before trusting or extending
+`teshuvot_siman_index.json`.** These PDFs' embedded OCR text layer (2015-era "Ligature OCR")
+is NOT reliable enough to parse automatically:
+- Tried linear `pdftotext` + regex on the volume's own printed table of contents ("לוח
+  המפתחות") — too much noise: OCR misreads "עמוד"/"סימן" labels in dozens of ways, and
+  cross-references to *other* simanim inside the TOC's own subject-line prose get mistaken for
+  real table entries.
+- Tried PyMuPDF word-bounding-box coordinates (paired "סימן"/"עמוד" labels by 2D proximity
+  instead of linearized-text character offset) — structurally sounder, still inherits the
+  underlying OCR's letter-level error rate (particularly ר/ד confusion, which is a gematria
+  digit — directly risks a wrong page number).
+- **What actually works**: rendering the relevant page as an image (`pdftoppm`) and reading it
+  directly — far more accurate than either automated approach, but inherently manual, one
+  page at a time. Two efficiency findings that make this tractable at scale: (1) once a
+  volume's own body pages are confirmed to have large, clear, unambiguous siman headings
+  (unlike the compact TOC numerals), **counting consecutive "new teshuvah starts" is more
+  reliable than reading each heading's actual gematria numeral** (per explicit user
+  suggestion) — simanim are sequential with no gaps, so a wrong single-letter reading (e.g.
+  misreading ד as ג) is caught immediately by the running count, whereas trusting each
+  numeral's OCR reading in isolation has no self-correcting signal; (2) a "contact sheet" —
+  several rendered pages tiled into one composite image via PIL, each tagged with its page
+  number — lets one image read cover 9-16 pages at once for *spotting* where a new teshuvah
+  starts (the visual break pattern: a horizontal rule + "משה פיינשטיין" signature line, then a
+  gap, then a new heading), with a full-resolution single-page render only needed to confirm
+  the exact transition point once a candidate is spotted.
+- **A structural discovery that generalizes to the other split volumes**: this file's tail TOC
+  (10 pages) is not specific to Even HaEzer II — it's a single combined index for the *entire*
+  original Volume 4 (Choshen Mishpat + Orach Chaim + Even HaEzer together), and its page
+  numbers are the ORIGINAL printed book's continuous pagination, not this split PDF file's own
+  internal page count. A fixed per-file offset (`original_page - offset = pdf_internal_page`,
+  established by finding one anchor page where a known siman heading's actual PDF page can be
+  read directly) converts between them — confirmed empirically for this file (offset 304,
+  refined from an initial 303 after cross-checking against two more anchors). **Every other
+  split volume (4a/4b, 5a/5b/5c, 6a/6b, 7a/7b, 8a/8b) likely needs this same offset-discovery
+  step before its TOC data is usable** — only the three never-split volumes (1, 2, 3) probably
+  don't.
+- `teshuvot_siman_index.json`'s entries are a **living, hand-maintained best-effort index, not
+  guaranteed page-perfect** — some (currently siman 1, 2, 3, 4, 15, 16, 21 of the shipped
+  EH2 volume) are directly verified against the actual page image; the rest are TOC-derived
+  estimates. This is an acceptable ship state specifically *because* the reader always allows
+  manual forward/back paging regardless of whether a jump lands exactly right — correct as
+  encountered during use, not before shipping. See the file's sibling entries for which are
+  which; there's no in-app confidence flag, just this note.
+- **14 of 15 Iggros Moshe volumes downloaded cleanly** from the user's shared Drive folder;
+  Volume 3 (Even HaEzer I, 191MB) hit Drive's download-interstitial and needs re-splitting by
+  the user before it can be converted to page images — same threshold discussed above.
+
+**Files**: `Models/TextModels.swift` (`ContemporaryTeshuvotWork`/`Volume`, `TeshuvotSubcategory
+.contemporary`), `API/TeshuvotPageManager.swift`, `Views/ContemporaryTeshuvotPageView.swift`
+(the image pager — deliberately not merged with `DafPageView` despite ~90% code overlap; the
+two evolved from different call sites and a forced shared abstraction would cost more than the
+duplication saves), `teshuvot_pages.json` + `teshuvot_siman_index.json` (bundled resources),
+`tools/build_teshuvot_pages.py`.
+
+#### Post-pilot fixes and Android port (2026-08-29, same-day follow-up)
+
+Four fixes made after initial iOS testing, plus the Android port — both platforms now ship
+Contemporary Teshuvot.
+
+- **Selector sheet hidden for all of Teshuvot, not just Contemporary.** The separate combined
+  book/siman selector (`.selector` sheet / `ActiveSheet.SELECTOR`, `TeshuvotWheels`) is
+  redundant once the header's own book/volume/siman pills give full navigation — true for
+  Rishonim/Acharonim too, not only the subcategory that motivated noticing it (Contemporary's
+  `TeshuvotWheels` was never wired up and rendered empty). The selector icon in Row 1's left
+  cluster is now hidden whenever `vm.category == .teshuvot`/`TextCategory.TESHUVOT`, on both
+  platforms.
+- **Restore-state bug, pre-existing in the already-shipped Rishonim/Acharonim feature, found
+  while building Contemporary.** Tapping a Home-screen Teshuvot button always reset to the
+  first work/siman, even when returning to a subcategory you'd already restored from
+  persistence. Root cause: `teshuvotSubcategory`'s reset cascade (iOS's `didSet`, Android's
+  `setTeshuvotSubcategory`) fired on *every* assignment, not just genuine changes — a plain
+  stored property's `didSet` runs regardless of whether the new value differs from the old one,
+  and `HomeCombinedView`/`HomeScreen`'s `select()` always calls `restoreState(for: .teshuvot)`
+  (which correctly loads the last-used work/volume/siman) immediately followed by
+  `applySelection` (which re-asserts the subcategory explicitly, even when unchanged) — so the
+  reset discarded the just-restored state on every single tap. Fixed by gating the reset on
+  `oldValue != teshuvotSubcategory` (iOS) / `sub != teshuvotSubcategory` computed before
+  reassignment (Android, since Kotlin has no `oldValue`). **Found and fixed a second, related
+  crash risk while making this Android fix**: `setTeshuvotSubcategory`'s reset branch called
+  `TeshuvotWork.worksFor(sub).first()` — for `CONTEMPORARY`, `worksFor` returns an empty list
+  (no `TeshuvotWork` case belongs to it), and Kotlin's `first()` throws
+  `NoSuchElementException` on an empty list where Swift's `.first` just returns nil. Changed to
+  `firstOrNull() ?: TeshuvotWork.RASHI` — `teshuvotWork` itself is unused whenever subcategory
+  is Contemporary (the reader reads `contemporaryWork`/`Volume`/`Page` instead), so any
+  harmless default is fine; this only needed to not crash.
+- **Siman pill was showing the page number, not the siman — fixed with a reverse lookup.**
+  Originally showed `"p. N"`/`"עמ׳ N"` (the only reliably-known value at first), but the user
+  correctly pointed out this reads wrong: the pill should say what siman you're on, matching
+  what the siman *picker* actually navigates by — the underlying page number is an
+  implementation detail. Added `TeshuvotPageManager.siman(volume:page:)` (Swift) /
+  `.siman(context, volume, page)` (Kotlin) — a **floor lookup**, not an exact match: finds the
+  largest indexed siman whose own page is <= the current page, so it stays correct for every
+  page within a multi-page teshuvah's span (not just its first page) and degrades gracefully
+  past the last indexed siman (pins to it) rather than returning nothing. No descriptor/label
+  on the pill now either, bare numeral only, per explicit request. Android-specific wrinkle:
+  this lookup needs a `Context` (reads the bundled asset), and `TextReaderViewModel` here is
+  plain/Context-free by established convention (see `EinAyahLoader`'s same shape) — so
+  `navChapterTitle` became a function taking an optional `Context` parameter instead of a
+  plain property, rather than threading Context into the ViewModel itself. Its one real call
+  site (`TextReaderScreen.kt`) always has `LocalContext.current` available.
+- **Abbreviations, matching the existing OC/YD/EH/CM (או״ח/יו״ד/אה״ע/חו״מ) convention already
+  used throughout Acharonim** rather than inventing a new style: Iggros Moshe's Even HaEzer II
+  volume is now labeled "EH II"/"אה״ע ב" (identical to Chatam Sofer's own EH II volume above,
+  not a new abbreviation invented for this work). Added `hebrewAbbreviation`/
+  `hebrewDisplayName` to `ContemporaryTeshuvotWork` (Swift + Kotlin) for the work name itself —
+  "אג״מ" for אגרות משה — used everywhere Hebrew mode would otherwise show the full name (header
+  pill, book-picker rows), per explicit request to abbreviate sefer names in Hebrew "to their
+  common abbreviations when they exist." English work names are deliberately left
+  unabbreviated (already short); this is a Hebrew-only convention per the request's own
+  framing ("at least in Hebrew").
+- **reverseNavDirection wiring, iOS only.** The existing app-wide "reverse navigation
+  direction" setting (used elsewhere for Talmud's swipe handler) needed explicit handling in
+  Contemporary's edge-tap paging so the left zone/chevron advances forward when the setting is
+  on, matching the user's explicit requirement. **Not ported to Android** — checked, and this
+  setting doesn't exist on Android at all yet (no equivalent in `AppPreferences.kt` or
+  `SettingsScreen.kt`), so Android's Contemporary reader always uses the plain left=back/
+  right=forward mapping. Porting the setting itself to Android is a separate, unrelated task,
+  out of scope for this feature.
+
+**Android port structure** — deliberately not a literal file-for-file mirror of iOS, since two
+things didn't already exist on Android to mirror in the first place:
+- **No Android daf-image viewer existed at all** (`TalmudPageManager`/`DafPageView` are
+  iOS-only in this app — Talmud daf-image mode was never built for Android here). Rather than
+  invent a zoom/pan gesture pattern from scratch, `ContemporaryTeshuvotPageView.kt` adapts the
+  proven pattern from **AnyDaf's** `android/app/src/main/java/com/anydaf/ui/PdfDafPageView.kt`
+  (a sibling app, same Coil + `detectTransformGestures`/`graphicsLayer` mechanism) — same
+  reasoning as the iOS side's own note about not force-merging with `DafPageView`: adapted, not
+  imported as a shared library, since the two are different projects. Swipe-to-page (at 1x
+  zoom) is kept from that pattern rather than iOS's edge-tap-zones — already proven on this
+  platform, and Coil/Compose gesture handling has real per-platform quirks not worth
+  re-litigating for parity's sake alone.
+- **`TextReaderViewModel` here is plain (no Android `Context`)** by established convention —
+  asset loading happens at the Composable layer via `LocalContext.current`, the same shape
+  `EinAyahLoader` already uses. `TeshuvotPageManager.kt` follows the identical shape (a
+  Context-parameterized `object` with an in-memory cache), and `ContemporaryTeshuvotVolume`
+  deliberately has **no** `page(siman)`/`imageUrl(page)` convenience methods (unlike the Swift
+  struct, which can reach `Bundle.main` globally) — call `TeshuvotPageManager.page(context,
+  volume.id, siman)` directly at the call site instead.
+- State: `contemporaryWork`/`Volume`/`Page` on `TextReaderViewModel.kt`, persisted via
+  `setContemporaryWork`/`setContemporaryVolume`/`setContemporaryPage` (explicit setter
+  functions that also call `saveState`, since — like iOS — Contemporary's reader never calls
+  `load()`, which is where every other category's state normally gets persisted; Kotlin has no
+  `didSet` to hang this off of automatically).
+- UI: `TextReaderScreen.kt` gates Row 2 (display-mode pill, commentary toggle) and the text
+  content area behind an `isContemporary` check, rendering `ContemporaryTeshuvotContent`
+  instead — same hard-branch shape as iOS's `TextReaderView.body`, not scattered conditionals
+  through the existing Sefaria rendering path. `BookPickerSheet`/`VolumePickerSheet`/
+  `ChapterPickerSheet` each gained a Contemporary branch alongside their existing Sefaria-based
+  logic, mirroring the iOS picker-sheet split described above.
 
 ### State flow
 
@@ -413,9 +927,10 @@ oversight or re-litigate the same tradeoff.
 ## Categories & Commentaries
 
 This section is about `TextCategory`/`contextKey` — the underlying data-model categories and
-their default commentary sets — which is a different count from the 11 home-screen category
-buttons (see "Home screen — ten flat categories" above, and "Teshuvot Rishonim" for the 11th);
-e.g. Talmud is one `TextCategory` here but two home buttons (Bavli/Yerushalmi), each inheriting
+their default commentary sets — which is a different count from the 12 functional home-screen
+category buttons, 13 counting the disabled "Contemporary" Teshuvot placeholder (see "Home
+screen — ten flat categories" above, and "Home screen — its own row below the two-column grid"
+under Teshuvot for the three Teshuvot buttons); e.g. Talmud is one `TextCategory` here but two home buttons (Bavli/Yerushalmi), each inheriting
 the same default commentaries below since Yerushalmi's commentary pool isn't yet a separate
 concept. Midrash and Teshuvot have no commentaries at all (`defaultCommentaries` returns `[]`
 for both), so neither appears in the table below.
@@ -822,7 +1337,13 @@ Stored as `Double` in UserDefaults on iOS (`@AppStorage("anyTorahFontSize")`), `
 
 ## Header Layout (`TextReaderView`)
 
-- **Row 1**: Gear (left) | centered title ±88pt padding (ZStack) | [bookmark][bookmarks][list] (right)
+- **Row 1**: [bookmark, bookmarks-list] (tight-grouped pair) [selector] (left) | nav pills, fill
+  remaining width (flat `HStack`/`Row`, not a `ZStack`/`Box` overlay — see "Reader header Row 1"
+  above) | Gear (right). Icons: bookmark-edit = `bookmark`/`bookmark.fill`; bookmarks-list =
+  `list.bullet` (a literal list glyph, since that button opens the actual bookmarks list —
+  search/tap-to-navigate/swipe-to-delete); selector = `text.book.closed`/`MenuBook` (the full
+  book/chapter/volume picker — deliberately *not* a list-shaped icon, so it's not mistaken for
+  the bookmarks button). See "Bookmark-list icon swap" below for why this changed.
 - **Row 2**: Back (left) | language pill `א/A/אA` (center) | commentary toggle (right)
 - **Row 3** (Talmud only): Audio player row
 
@@ -868,6 +1389,20 @@ Stops automatically on daf/tractate change via `.onChange`.
 `bookmark.apply(to: vm)` restores all VM selection state; caller must then call `await vm.load()`.
 
 `BookmarkListView`: searchable/scrollable list sheet, swipe-to-delete, tapping a row navigates and dismisses.
+
+### Bookmark-list icon swap (2026-08-28)
+
+`BookmarkListView`/`BookmarkListView`-equivalent (`.bookmarks` sheet) always did the right thing
+— search, tap-to-navigate, swipe-to-delete — but the header's second icon (`bookmarks`, a
+stacked-ribbon glyph) didn't read as "tap here for a list" to a user unfamiliar with that
+specific SF Symbol/Material icon, while the *third* icon (`list.bullet`, the full book/chapter
+selector) does look exactly like "a list" — so the selector kept getting tapped by mistake,
+landing on "pick a passage and jump to it" instead of the bookmarks list. Fixed by swapping the
+glyphs, not the sheets: bookmarks-list button → `list.bullet` (iOS) / `Icons.AutoMirrored.
+Filled.List` (Android); selector button → `text.book.closed` (iOS) / `Icons.Default.MenuBook`
+(Android). Also grouped the bookmark-edit and bookmarks-list icons into their own tight-spaced
+sub-`HStack`/`Row` (4pt gap on iOS; 40.dp shrunk `IconButton`s on Android) since they're the
+functionally-related pair, keeping the unrelated selector icon a full 10pt/48.dp away.
 
 ---
 

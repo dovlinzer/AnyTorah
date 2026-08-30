@@ -308,6 +308,35 @@ fun SettingsScreen(
 
         HorizontalDivider(color = colors.dividerColor, modifier = Modifier.padding(vertical = 4.dp))
 
+        // Teshuvot work-picker ordering
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                Text("Teshuvot Alphabetical Order", color = colors.appForeground, fontSize = 15.sp)
+                Text(
+                    if (vm.teshuvotAlphabeticalOrder)
+                        "The Rishonim and Acharonim work pickers list poskim alphabetically by name, with no century grouping."
+                    else
+                        "The Rishonim and Acharonim work pickers group poskim by century, in chronological order.",
+                    color = colors.secondaryText,
+                    fontSize = 12.sp
+                )
+            }
+            Switch(
+                checked = vm.teshuvotAlphabeticalOrder,
+                onCheckedChange = { vm.updateTeshuvotAlphabeticalOrder(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = colors.editorialColor,
+                    checkedTrackColor = colors.editorialColor.copy(alpha = 0.4f)
+                )
+            )
+        }
+
+        HorizontalDivider(color = colors.dividerColor, modifier = Modifier.padding(vertical = 4.dp))
+
         // Display mode
         Text(
             "Default Display Mode",

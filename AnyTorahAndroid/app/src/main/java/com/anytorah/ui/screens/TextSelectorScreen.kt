@@ -1043,20 +1043,44 @@ private fun MidrashWheels(vm: TextReaderViewModel) {
 
 // MARK: - Teshuvot Wheels
 
+/** A century-header divider row or a real work, for the flat wheel -- [WheelPicker] has no
+ *  native section-header concept, so a header is just an inert row; selecting one snaps
+ *  forward to the next real work. */
+private data class TeshuvotPickerRow(val label: String, val work: TeshuvotWork?)
+
 /** Work -> Volume (conditional, only when the work has one -- see [TeshuvotWork.volumeLabel]) ->
- *  Siman. See [TeshuvotWork]'s own doc comment: volume/siman navigation uses draft, unverified
- *  Sefaria ref data as of 2026-08-25. */
+ *  Siman. Sefaria ref data verified 2026-08-24 -- see [TeshuvotWork]'s own doc comment. */
 @Composable
 private fun TeshuvotWheels(vm: TextReaderViewModel) {
     val works = TeshuvotWork.worksFor(vm.teshuvotSubcategory)
-    val workIdx = works.indexOf(vm.teshuvotWork).coerceAtLeast(0)
+    val rows = remember(works, vm.teshuvotAlphabeticalOrder) {
+        if (vm.teshuvotAlphabeticalOrder) {
+            works.sortedBy { it.displayName }
+                .map { w -> TeshuvotPickerRow("${w.displayName} (${w.edah.abbreviation})", w) }
+        } else {
+            val list = mutableListOf<TeshuvotPickerRow>()
+            var lastCentury: String? = null
+            for (w in works) {
+                if (w.century != lastCentury) {
+                    list.add(TeshuvotPickerRow("— ${w.century} —", null))
+                    lastCentury = w.century
+                }
+                list.add(TeshuvotPickerRow("${w.displayName} (${w.edah.abbreviation})", w))
+            }
+            list
+        }
+    }
+    val rowIdx = rows.indexOfFirst { it.work == vm.teshuvotWork }.coerceAtLeast(0)
 
     SelectorLabel("Work")
     WheelPicker(
-        items = works.map { "${it.displayName} (${it.edah.abbreviation})" },
-        selectedIndex = workIdx,
+        items = rows.map { it.label },
+        selectedIndex = rowIdx,
         onIndexSelected = { idx ->
-            val newWork = works.getOrNull(idx) ?: return@WheelPicker
+            var i = idx
+            while (i < rows.size && rows[i].work == null) i++
+            if (i >= rows.size) i = rows.size - 1
+            val newWork = rows.getOrNull(i)?.work ?: return@WheelPicker
             vm.teshuvotWork = newWork
             vm.teshuvotVolume = 1
             vm.teshuvotSiman = 1
@@ -1070,16 +1094,17 @@ private fun TeshuvotWheels(vm: TextReaderViewModel) {
         val volumeCount = vm.teshuvotWork.volumeCount
         SelectorLabel(volumeLabel)
         WheelPicker(
-            items = (1..volumeCount).map { it.toString() },
+            items = (1..volumeCount).map { vm.teshuvotWork.volumeDisplayLabel(it) },
             selectedIndex = (vm.teshuvotVolume - 1).coerceIn(0, volumeCount - 1),
             onIndexSelected = { vm.teshuvotVolume = it + 1; vm.teshuvotSiman = 1 }
         )
     }
 
+    val maxSiman = vm.teshuvotWork.maxSiman(vm.teshuvotVolume)
     SelectorLabel("Siman")
     WheelPicker(
-        items = (1..TeshuvotWork.PLACEHOLDER_MAX_SIMAN).map { it.toString() },
-        selectedIndex = (vm.teshuvotSiman - 1).coerceIn(0, TeshuvotWork.PLACEHOLDER_MAX_SIMAN - 1),
+        items = (1..maxSiman).map { it.toString() },
+        selectedIndex = (vm.teshuvotSiman - 1).coerceIn(0, maxSiman - 1),
         onIndexSelected = { vm.teshuvotSiman = it + 1 }
     )
 }

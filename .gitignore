@@ -24,3 +24,5 @@ AnyTorahAndroid/local.properties
 *~
 *.hprof
 *.bak
+__pycache__/
+*.pyc

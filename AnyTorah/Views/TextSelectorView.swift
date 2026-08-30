@@ -1388,26 +1388,72 @@ private struct MidrashWheels: View {
 // MARK: - Teshuvot Wheels
 
 /// Work → Volume (conditional, only when the work has one — see `TeshuvotWork.volumeLabel`) →
-/// Siman. See `TeshuvotWork`'s own doc comment: volume/siman navigation uses draft, unverified
-/// Sefaria ref data as of 2026-08-25.
+/// Siman. Sefaria ref data verified 2026-08-24 — see `TeshuvotWork`'s own doc comment.
 private struct TeshuvotWheels: View {
     @Bindable var vm: TextReaderViewModel
     let fg: Color
+    @AppStorage("teshuvotAlphabeticalOrder") private var teshuvotAlphabeticalOrder: Bool = false
+
+    /// A century-header divider or a real work, for the flat wheel that can't render section
+    /// headers natively (UIPickerView requires every row to be a selectable item).
+    private enum PickerRow: Hashable {
+        case header(String)
+        case work(TeshuvotWork)
+    }
 
     private var works: [TeshuvotWork] { TeshuvotWork.works(for: vm.teshuvotSubcategory) }
-    private var currentWorkIdx: Int { works.firstIndex(of: vm.teshuvotWork) ?? 0 }
+
+    /// Century-divider rows in chronological order, or a flat alphabetical list with no
+    /// dividers at all when "Alphabetical Order" is on — see `SettingsView`'s Teshuvot section.
+    private var pickerRows: [PickerRow] {
+        if teshuvotAlphabeticalOrder {
+            return works
+                .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+                .map { .work($0) }
+        }
+        var rows: [PickerRow] = []
+        var lastCentury: String?
+        for w in works {
+            if w.century != lastCentury {
+                rows.append(.header(w.century))
+                lastCentury = w.century
+            }
+            rows.append(.work(w))
+        }
+        return rows
+    }
+
+    private var currentRowIdx: Int {
+        pickerRows.firstIndex { if case .work(let w) = $0 { return w == vm.teshuvotWork } else { return false } } ?? 0
+    }
 
     var body: some View {
+        let rows = pickerRows
         VStack(spacing: 4) {
             WheelColumn(fg: fg, label: "Work") {
                 Picker("", selection: Binding(
-                    get: { currentWorkIdx },
-                    set: { vm.teshuvotWork = works[$0] }
+                    get: { currentRowIdx },
+                    set: { newIdx in
+                        // A tapped/scrolled-to header isn't a real selection — snap forward to
+                        // the next actual work.
+                        var idx = newIdx
+                        while idx < rows.count, case .header = rows[idx] { idx += 1 }
+                        if idx >= rows.count { idx = rows.count - 1 }
+                        if case .work(let w) = rows[idx] { vm.teshuvotWork = w }
+                    }
                 )) {
-                    ForEach(works.indices, id: \.self) { i in
-                        Text("\(works[i].displayName) (\(works[i].edah.abbreviation))")
-                            .foregroundStyle(i == currentWorkIdx ? fg : fg.opacity(0.35))
-                            .tag(i)
+                    ForEach(rows.indices, id: \.self) { i in
+                        switch rows[i] {
+                        case .header(let century):
+                            Text("— \(century) —")
+                                .font(.caption.bold())
+                                .foregroundStyle(fg.opacity(0.5))
+                                .tag(i)
+                        case .work(let w):
+                            Text("\(w.displayName) (\(w.edah.abbreviation))")
+                                .foregroundStyle(i == currentRowIdx ? fg : fg.opacity(0.35))
+                                .tag(i)
+                        }
                     }
                 }
                 .pickerStyle(.wheel)
@@ -1423,7 +1469,7 @@ private struct TeshuvotWheels: View {
                             set: { vm.teshuvotVolume = $0 }
                         )) {
                             ForEach(1...count, id: \.self) { v in
-                                Text("\(v)")
+                                Text(vm.teshuvotWork.volumeDisplayLabel(v))
                                     .foregroundStyle(v == selVol ? fg : fg.opacity(0.35))
                                     .tag(v)
                             }
@@ -1434,8 +1480,9 @@ private struct TeshuvotWheels: View {
                 }
 
                 WheelColumn(fg: fg, label: "Siman") {
+                    let maxSiman = vm.teshuvotWork.maxSiman(forVolume: vm.teshuvotVolume)
                     Picker("", selection: $vm.teshuvotSiman) {
-                        ForEach(1...TeshuvotWork.placeholderMaxSiman, id: \.self) { s in
+                        ForEach(1...maxSiman, id: \.self) { s in
                             Text("\(s)")
                                 .foregroundStyle(s == vm.teshuvotSiman ? fg : fg.opacity(0.35))
                                 .tag(s)

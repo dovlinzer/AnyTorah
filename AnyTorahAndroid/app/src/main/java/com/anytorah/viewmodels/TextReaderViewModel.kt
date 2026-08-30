@@ -11,6 +11,7 @@ import com.anytorah.api.Dedication
 import com.anytorah.api.DedicationService
 import com.anytorah.api.EinAyahLoader
 import com.anytorah.api.SefariaTextClient
+import com.anytorah.api.TeshuvotPageManager
 import com.anytorah.api.TurParagraphEngine
 import com.anytorah.models.Bookmark
 import com.anytorah.models.BookmarkManager
@@ -86,6 +87,16 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
     fun updateSaHebrewMode(value: Boolean) {
         saHebrewMode = value
         prefs.edit().putBoolean("saHebrewMode", value).apply()
+    }
+
+    /** true = Teshuvot work pickers list poskim alphabetically with no century grouping;
+     *  false (default) = grouped by century, chronological order. */
+    var teshuvotAlphabeticalOrder by mutableStateOf(prefs.getBoolean("teshuvotAlphabeticalOrder", false))
+        private set
+
+    fun updateTeshuvotAlphabeticalOrder(value: Boolean) {
+        teshuvotAlphabeticalOrder = value
+        prefs.edit().putBoolean("teshuvotAlphabeticalOrder", value).apply()
     }
 
     /** Font size level: −2 … +2, each step = ±2 sp from the base size. Default 0. */
@@ -205,12 +216,74 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
     var midrashNativeSection by mutableIntStateOf(1)
     var midrashScrollToIndex by mutableStateOf<Int?>(null)
 
-    // Teshuvot — subcategory -> work -> volume -> siman. See TeshuvotWork's own doc comment:
-    // volume/siman navigation uses draft, unverified Sefaria ref data.
+    // Teshuvot — subcategory -> work -> volume -> siman. See TeshuvotWork's own doc comment.
     var teshuvotSubcategory by mutableStateOf(TeshuvotSubcategory.RISHONIM)
     var teshuvotWork by mutableStateOf(TeshuvotWork.RASHI)
     var teshuvotVolume by mutableIntStateOf(1)
     var teshuvotSiman by mutableIntStateOf(1)
+
+    // Contemporary Teshuvot — parallel state to the block above, not reused, since navigation
+    // is page-image based (see ContemporaryTeshuvotWork) rather than Sefaria-fetch based.
+    // contemporaryPage (not siman) is the actual navigable unit — the siman picker just jumps
+    // it via TeshuvotPageManager.page(...); forward/back moves it by raw page number. Always go
+    // through setContemporaryWork/setContemporaryVolume/setContemporaryPage rather than
+    // assigning these directly — they also persist state, since Contemporary's reader (a plain
+    // image pager) never calls load(), which is where every other category's state normally
+    // gets saved.
+    var contemporaryWork by mutableStateOf(ContemporaryTeshuvotWork.works.first())
+    var contemporaryVolume by mutableStateOf(ContemporaryTeshuvotWork.works.first().volumes.first())
+    var contemporaryPage by mutableIntStateOf(1)
+
+    fun setContemporaryWork(work: ContemporaryTeshuvotWork) {
+        contemporaryWork = work
+        contemporaryVolume = work.volumes.first()
+        contemporaryPage = 1
+        saveState(TextCategory.TESHUVOT)
+    }
+
+    fun setContemporaryVolume(volume: ContemporaryTeshuvotVolume) {
+        contemporaryVolume = volume
+        contemporaryPage = 1
+        saveState(TextCategory.TESHUVOT)
+    }
+
+    fun setContemporaryPage(page: Int) {
+        contemporaryPage = page
+        saveState(TextCategory.TESHUVOT)
+    }
+
+    /** Sets [teshuvotSubcategory] and resets [teshuvotWork]/[teshuvotVolume]/[teshuvotSiman] to
+     *  the new subcategory's first work — Kotlin's plain `mutableStateOf` properties have no
+     *  iOS-style `didSet` cascade, so without this, switching subcategory (e.g. via the Home
+     *  screen's Rishonim/Acharonim buttons) left `teshuvotWork` pointing at a work from the
+     *  *previous* subcategory: the pickers correctly filtered to the new subcategory's works,
+     *  but the reader itself kept showing the stale work's content. Always call this instead of
+     *  assigning `teshuvotSubcategory` directly — mirrors `applyMidrashSubcategory` in
+     *  HomeScreen.kt for the same reason. */
+    // Only resets work/volume/siman when the subcategory actually changes -- not on every
+    // call. The Home screen's Rishonim/Acharonim buttons call restoreState(TESHUVOT) (which
+    // correctly restores the last-used work/volume/siman from prefs) and THEN this function,
+    // even when re-selecting the SAME subcategory the user was already on. An unconditional
+    // reset here discarded that just-restored state every time, always landing on the first
+    // work/siman regardless of where the user actually left off -- the reported bug. Only the
+    // genuine-change case (e.g. Rishonim -> Acharonim) actually needs the reset, since the new
+    // subcategory's work list doesn't contain the old work at all.
+    fun setTeshuvotSubcategory(sub: TeshuvotSubcategory) {
+        val changed = sub != teshuvotSubcategory
+        teshuvotSubcategory = sub
+        if (changed) {
+            // firstOrNull() ?: RASHI, not first() -- worksFor(CONTEMPORARY) is empty (no
+            // TeshuvotWork case belongs to it, since Contemporary works are a separate
+            // ContemporaryTeshuvotWork list entirely), and Kotlin's first() throws
+            // NoSuchElementException on an empty list where Swift's `.first` just returns nil.
+            // teshuvotWork itself is irrelevant/unused whenever subcategory is CONTEMPORARY
+            // (the reader reads contemporaryWork/Volume/Page instead), so any harmless default
+            // here is fine -- this only needs to not crash.
+            teshuvotWork = TeshuvotWork.worksFor(sub).firstOrNull() ?: TeshuvotWork.RASHI
+            teshuvotVolume = 1
+            teshuvotSiman = 1
+        }
+    }
 
     // MARK: - Display state
 
@@ -525,6 +598,15 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                 teshuvotWork        = TeshuvotWork.fromId(prefs.getString("sel_teshuvot_work", null))
                 teshuvotVolume      = prefs.getInt("sel_teshuvot_volume", 1)
                 teshuvotSiman       = prefs.getInt("sel_teshuvot_siman", 1)
+                if (teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY) {
+                    val workId = prefs.getString("sel_contemp_work", null)
+                    contemporaryWork = ContemporaryTeshuvotWork.works.firstOrNull { it.id == workId }
+                        ?: ContemporaryTeshuvotWork.works.first()
+                    val volId = prefs.getString("sel_contemp_volume", null)
+                    contemporaryVolume = contemporaryWork.volumes.firstOrNull { it.id == volId }
+                        ?: contemporaryWork.volumes.first()
+                    contemporaryPage = prefs.getInt("sel_contemp_page", 1)
+                }
             }
         }
     }
@@ -582,6 +664,11 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                 e.putString("sel_teshuvot_work", teshuvotWork.id)
                 e.putInt("sel_teshuvot_volume", teshuvotVolume)
                 e.putInt("sel_teshuvot_siman", teshuvotSiman)
+                if (teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY) {
+                    e.putString("sel_contemp_work", contemporaryWork.id)
+                    e.putString("sel_contemp_volume", contemporaryVolume.id)
+                    e.putInt("sel_contemp_page", contemporaryPage)
+                }
             }
         }
         e.apply()
@@ -692,7 +779,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         }
         TextCategory.TESHUVOT -> {
             val label = teshuvotWork.volumeLabel
-            if (label != null) "${teshuvotWork.displayName}, $label $teshuvotVolume:$teshuvotSiman"
+            if (label != null) "${teshuvotWork.displayName}, $label ${teshuvotWork.volumeDisplayLabel(teshuvotVolume)}:$teshuvotSiman"
             else "${teshuvotWork.displayName} §$teshuvotSiman"
         }
     }
@@ -729,11 +816,41 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
             if (s == null) "–" else if (saHebrewMode) s.hebrewName.strippingNikud() else s.name
         }
         TextCategory.MIDRASH -> if (saHebrewMode) midrashWork.hebrewName else midrashWork.displayName
-        TextCategory.TESHUVOT -> if (saHebrewMode) teshuvotWork.hebrewName else teshuvotWork.displayName
+        TextCategory.TESHUVOT -> {
+            if (teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY) {
+                if (saHebrewMode) contemporaryWork.hebrewDisplayName else contemporaryWork.name
+            } else {
+                if (saHebrewMode) teshuvotWork.hebrewName else teshuvotWork.displayName
+            }
+        }
+    }
+
+    /** Short title for the dedicated "volume" navigation pill (Teshuvot only, and only for
+     *  works with a volume level -- see [TeshuvotWork.volumeLabel]); null hides the pill. Just
+     *  the bare numeral -- the roman numeral already reads as a volume number in English, no
+     *  prefix needed. */
+    val navVolumeTitle: String? get() {
+        if (category != TextCategory.TESHUVOT) return null
+        if (teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY) {
+            // Always shown (unlike Rishonim/Acharonim, gated on volumeLabel != null) -- every
+            // Contemporary work has a real, always-relevant volume level.
+            return if (saHebrewMode) contemporaryVolume.hebrewLabel else contemporaryVolume.label
+        }
+        if (teshuvotWork.volumeLabel == null) return null
+        return if (saHebrewMode) {
+            teshuvotWork.volumeDisplayLabelHebrew(teshuvotVolume)
+        } else {
+            teshuvotWork.volumeDisplayLabel(teshuvotVolume)
+        }
     }
 
     /** Short title for the "chapter" navigation pill in the reader header. */
-    val navChapterTitle: String get() = when (category) {
+    /** [contemporaryContext] is only consulted for the Contemporary Teshuvot branch (reverse
+     *  siman lookup needs an Android Context to read the bundled asset -- see
+     *  TeshuvotPageManager) -- every other category ignores it. Pass null only when you know
+     *  category/subcategory can't be Contemporary at that call site; the one real call site
+     *  (TextReaderScreen.kt) always has LocalContext.current available. */
+    fun navChapterTitle(contemporaryContext: android.content.Context? = null): String = when (category) {
         TextCategory.TANAKH         -> if (saHebrewMode) "פרק ${SASimanNames.toHebrewNumeral(tanakhChapter)}" else "ch. $tanakhChapter"
         TextCategory.MISHNAH -> {
             val ch = if (mishnahSubcategory == MishnahSubcategory.TOSEFTA) toseftaChapter else mishnahChapter
@@ -764,14 +881,38 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
             }
         }
         TextCategory.TESHUVOT -> {
-            if (teshuvotWork.volumeLabel != null) "$teshuvotVolume:$teshuvotSiman"
-            else "§$teshuvotSiman"
+            if (teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY) {
+                // Reverse-looks-up which siman the current page falls within (a floor lookup
+                // against the siman->page index -- see TeshuvotPageManager.siman) so this pill
+                // reads as "you're on siman N", matching what the siman picker actually
+                // navigates by -- not the underlying page number, which is an implementation
+                // detail. No descriptor/label, bare numeral only, per explicit request -- falls
+                // back to the page number if context is unavailable or nothing's indexed yet.
+                val siman = contemporaryContext?.let {
+                    TeshuvotPageManager.siman(it, contemporaryVolume.id, contemporaryPage)
+                } ?: contemporaryPage
+                if (saHebrewMode) SASimanNames.toHebrewNumeral(siman) else "$siman"
+            } else {
+                // Volume (when present) has its own pill -- see navVolumeTitle -- so this stays
+                // siman-only rather than repeating it here. Hebrew mode drops the "סי׳" symbol
+                // too -- bare numeral, matching the volume pill's compact style.
+                if (saHebrewMode) SASimanNames.toHebrewNumeral(teshuvotSiman) else "§$teshuvotSiman"
+            }
         }
     }
 
     // MARK: - Load
 
     fun load() {
+        // Contemporary Teshuvot's reader is a plain image pager (TeshuvotPageManager,
+        // ContemporaryTeshuvotPageView) -- there's no Sefaria text to fetch, and every other
+        // branch below assumes teshuvotWork/Sefaria refs that don't apply here.
+        if (category == TextCategory.TESHUVOT && teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY) {
+            isLoading = false
+            error = null
+            return
+        }
+
         viewModelScope.launch {
             isLoading = true
             error = null
@@ -886,9 +1027,9 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                         }
                     }
                     TextCategory.TESHUVOT -> {
-                        // DRAFT ref — see TeshuvotWork's own doc comment. Same generic-ref
-                        // fetch pattern as Midrash's native-mode branch above; a wrong ref
-                        // surfaces via the existing error/Retry UI, not a crash.
+                        // Same generic-ref fetch pattern as Midrash's native-mode branch above;
+                        // an occasional bad ref (e.g. an unverified per-volume siman ceiling
+                        // overshooting the real count) surfaces via the existing error/Retry UI.
                         val ref = teshuvotWork.sefariaRef(teshuvotVolume, teshuvotSiman)
                         currentRef = ref
                         val (he, en) = SefariaTextClient.fetchBoth(ref)
@@ -1303,7 +1444,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                     }
                 }
                 TextCategory.TESHUVOT -> {
-                    if (teshuvotSiman < TeshuvotWork.PLACEHOLDER_MAX_SIMAN) {
+                    if (teshuvotSiman < teshuvotWork.maxSiman(teshuvotVolume)) {
                         teshuvotSiman += 1
                     } else if (teshuvotWork.volumeLabel != null && teshuvotVolume < teshuvotWork.volumeCount) {
                         teshuvotVolume += 1
