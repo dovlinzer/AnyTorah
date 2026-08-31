@@ -972,24 +972,23 @@ of their own, so a volume ending in back matter always looked incomplete by a fe
 after a clean full collect. Now trusts a batch already marked `collected` with `last_page`
 covering the volume's true page count, instead of re-deriving from siman entries every time.
 
-**Wiring a completed volume into the app — not yet done, real code change still needed.**
-Confirmed by inspection (2026-08-31): today `teshuvot_siman_index.json` (both the iOS bundle
-copy and `AnyTorahAndroid/app/src/main/assets/`) still only contains `IggrotMosheEH2` — none of
-the newly-batch-indexed volumes are wired in yet, even the ones fully collected with no gaps.
-Two mechanical steps per volume, on both platforms:
+**Wiring a completed volume into the app — 12 of 15 done (2026-08-31).** Two mechanical steps
+per volume, on both platforms:
 1. Merge `index_out/{Volume}_index.json`'s siman→page map into both bundled
    `teshuvot_siman_index.json` copies (keep them identical).
 2. Add a `ContemporaryTeshuvotVolume(id:label:hebrewLabel:simanCount:)` entry to
    `ContemporaryTeshuvotWork.works`'s `iggrosMoshe.volumes` array in both `TextModels.swift` and
    `TextModels.kt` — `simanCount` comes straight from the index (its highest key); `label`/
    `hebrewLabel` follow the existing OC/YD/EH/CM (או״ח/יו״ד/אה״ע/חו״מ) abbreviation convention
-   used throughout Acharonim (e.g. EH2 shipped as `"EH II"`/`"אה״ע ב"`).
-Both steps are small and mechanical enough to script (e.g. a `wire` subcommand on the batch
-tool) rather than hand-edit per volume, especially with 5 more volumes (OH5, YD1-4) still to
-land. As of 2026-08-31, 10 of 15 volumes are fully indexed and gap-verified in `index_out/`
-(EH1-4, HM1-2, OH1-4) but none are wired in yet — worth doing this in a batch once the remaining
-5 land, rather than one volume at a time, unless there's a reason to ship partial coverage
-sooner.
+   used throughout Acharonim (e.g. EH2 shipped as `"EH II"`/`"אה״ע ב"`) — **not** the `OH`/`HM`
+   prefixes `teshuvot_pages.json`'s/`teshuvot_siman_index.json`'s own volume ids use (an
+   unrelated internal asset-naming choice made before this data existed; e.g. `IggrotMosheHM1`'s
+   display label is `"CM I"`, not `"HM I"`).
+Done for OC I-IV, YD II, YD IV, EH I-IV, CM I-II (11 volumes, plus the pre-existing EH II pilot
+= 12 of 15). **Still missing**: OC V, YD I, YD III — their batches were still `in_progress` on
+the Batch API as of this writing; wire them in with the same two steps once `collect` finishes
+them (no script was written for this — it was small enough, done by hand once real data was
+available, rather than building a `wire` subcommand speculatively beforehand).
 
 ### Contemporary — 5 Sefaria-digitized works added alongside Iggros Moshe (2026-08-30)
 
@@ -1154,6 +1153,67 @@ externally like anything else — no reuse of the Talmud-shiur `AudioPlayer` pip
 Talmud/Tanakh/Rambam citation surfacing (the schema supports those `source_type`s too, but
 AnyYCTorah itself has no analogous screen for them either, so there's no UX pattern to copy
 yet), no language filtering/labeling, no persistence.
+
+### Iggros Moshe podcast citations (Contemporary Teshuvot only, shipped 2026-08-31)
+
+Same idea as Related YCT Articles above — a "here's where to find it" indicator, not a player —
+but for the "Iggros Moshe A to Z" podcast (Rabbi Dov Linzer, soundcloud.com/iggrosmosheatoz):
+when a currently-open Iggros Moshe siman is discussed by one or more episodes, a trailing-edge
+tab shows it.
+
+**Data source — bundled JSON, not Supabase, unlike Related YCT Articles.** The citation data
+comes from a manually-maintained Google Sheet ("Shutim References" tab, filtered to
+`Name of Shu"t == "Iggrot Moshe"` — 115 rows, 102 unique volume+siman keys, 8 cited by 2-3
+different episodes), fetched and converted once (Sheet ID `1pSA11PWge6fcV45T2N1PbNk65gD1lqDV`,
+`Episodes` tab gid `1013390249` + `Shutim References` tab gid `697145367`, both link-viewable —
+`curl`'s `.../export?format=csv&gid=...` works directly). This is a small, infrequently-updated,
+hand-curated dataset — the same shape as Contemporary Teshuvot's own `teshuvot_siman_index.json`,
+not the shape of AnyYCTorah's live-synced content index — so it's bundled as a static JSON asset
+(`iggros_moshe_podcast_citations.json`, both platforms) rather than a new Supabase table. The
+sheet's own section abbreviations (`OC`/`CM`/`EH`/`YD`) don't match the app's volume-id prefixes
+(`OH`/`HM`/`EH`/`YD`) — remapped during conversion (`OC→OH`, `CM→HM`). Regenerate by re-running
+the same CSV-export + conversion steps by hand if the sheet changes; no ongoing sync pipeline.
+
+**Artwork — SoundCloud's public oEmbed endpoint**, since the sheet has no artwork column:
+`https://soundcloud.com/oembed?url=<episode_audio_url>&format=json` returns a real per-episode
+`thumbnail_url` (500x500), no auth/API key needed. Fetched at runtime and cached in-memory by
+episode id (`IggrosMoshePodcastService.swift`/`.kt`, mirroring `YCTRelatedArticlesService`'s
+cache-by-key shape) — not bundled, since it's one live HTTP call per episode, cheap and always
+fresh.
+
+**Trigger — can't hang off `load()`** (Contemporary Teshuvot never calls it, per its own section
+above). iOS hangs a `refreshPodcastCitations()` call off `contemporaryPage`'s existing `didSet`
+(sufficient alone, since `contemporaryWork`'s and `contemporaryVolume`'s own didSets both cascade
+into setting `contemporaryPage`) plus one explicit call at the end of the Contemporary branch of
+`restoreState` (didSets are suppressed under `isRestoring`). Android keeps the ViewModel
+Context-free by established convention (see `contemporaryPage`'s own doc comment and
+`TeshuvotPageManager`'s Context-parameterized shape) — the lookup instead runs from a
+`LaunchedEffect(vm.contemporaryVolume.id, currentContemporarySiman)` in `TextReaderScreen.kt`,
+with `currentContemporarySiman` computed synchronously in the composable body (not inside the
+effect) so the effect — and the state writes it does — only re-runs when the resolved siman
+actually changes, not on every page turn. Both platforms resolve "current siman" via the
+**already-existing** `TeshuvotPageManager.siman(volume:page:)` floor lookup (the same one the
+siman pill already uses) — no new lookup logic needed.
+
+**UI — the same trailing-edge-tab mechanism as Related YCT Articles, made "a little more
+visible" per explicit request**, and mutually exclusive with it by category (`.shulchanArukh` vs
+Contemporary/Iggros Moshe), so there's no risk of both docking to the same edge at once. Shows
+the first cited episode's real artwork (64pt, vs. the Related Articles tab's ~20pt icon) instead
+of a generic icon, with a small headphones badge (distinguishes it from that tab's book icon) and
+a count badge only when more than one episode matches. Tapping opens a sheet listing every
+matched episode (artwork + title + episode number via the same `AsyncImage`/`SubcomposeAsyncImage`
+loading/error-slot pattern already established), and tapping a row opens it externally via the
+**same** `SafariView`/Chrome Custom Tabs infrastructure Related YCT Articles already added — no
+new web-view/playback code, no in-app audio (explicit non-goal, matches that feature's own scope
+decision).
+
+**Verification note**: 12 of 15 volumes are wired into the picker as of 2026-08-31 (see "Wiring
+a completed volume into the app" above), covering 69 citable simanim in total. Good test cases:
+`IggrotMosheYD2` (YD II) has the most coverage — 16 cited simanim, including siman 106 (2
+episodes). `IggrotMosheHM2` (CM II) siman 74 is the richest single citation — **3** episodes at
+once, the best case for confirming the count badge and multi-row sheet. The bundled JSON already
+covers all 15 volumes' citations, so this feature needs no further code changes as the remaining
+3 volumes (OC V, YD I, YD III) get wired in.
 
 ### State flow
 

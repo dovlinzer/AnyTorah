@@ -432,12 +432,11 @@ struct ContemporaryTeshuvotWork: Identifiable, Equatable {
         lhs.id == rhs.id
     }
 
-    /// Iggros Moshe is the pilot work (2026-08-29) -- one volume (Even HaEzer II) indexed so
-    /// far, out of 14 downloadable PDF volumes (a 15th, Even HaEzer I, is 191MB and needs
-    /// re-splitting before it can be converted -- Google Drive's direct-download link returns
-    /// an HTML interstitial instead of the file past a certain size). Add volumes here as their
-    /// page images are uploaded to Drive and their siman index is built -- see
-    /// tools/build_teshuvot_pages.py and CLAUDE.md's Contemporary Teshuvot section.
+    /// Iggros Moshe -- 12 of 15 volumes indexed and wired in as of 2026-08-31 (batch-indexed via
+    /// tools/index_iggros_moshe_batch.py; see CLAUDE.md's "Batch indexing the remaining Iggros
+    /// Moshe volumes" section). Missing: OC V, YD I, YD III (still processing on the Batch API
+    /// as of this writing) -- add them here the same way once their index_out/*.json lands and
+    /// gets merged into teshuvot_siman_index.json.
     static let works: [ContemporaryTeshuvotWork] = [
         ContemporaryTeshuvotWork(
             id: "iggrosMoshe",
@@ -445,15 +444,22 @@ struct ContemporaryTeshuvotWork: Identifiable, Equatable {
             hebrewName: "אגרות משה",
             hebrewAbbreviation: "אג״מ",
             volumes: [
-                // "EH II" / "אה״ע ב" -- same abbreviation convention already used for Chatam
-                // Sofer's identically-shaped Even HaEzer II volume above (OC/YD/EH/CM,
-                // או״ח/יו״ד/אה״ע/חו״מ), not a new one invented for this work.
-                ContemporaryTeshuvotVolume(
-                    id: "IggrotMosheEH2",
-                    label: "EH II",
-                    hebrewLabel: "אה״ע ב",
-                    simanCount: 26
-                ),
+                // Labels follow the app-wide OC/YD/EH/CM (או״ח/יו״ד/אה״ע/חו״מ) convention --
+                // same as Chatam Sofer's "EH I"/"EH II" above -- not the "OH"/"HM" prefixes
+                // teshuvot_pages.json/teshuvot_siman_index.json's own volume ids use (an
+                // unrelated internal asset-naming choice made before this data existed).
+                ContemporaryTeshuvotVolume(id: "IggrotMosheOH1", label: "OC I",   hebrewLabel: "או״ח א", simanCount: 220),
+                ContemporaryTeshuvotVolume(id: "IggrotMosheOH2", label: "OC II",  hebrewLabel: "או״ח ב", simanCount: 113),
+                ContemporaryTeshuvotVolume(id: "IggrotMosheOH3", label: "OC III", hebrewLabel: "או״ח ג", simanCount: 101),
+                ContemporaryTeshuvotVolume(id: "IggrotMosheOH4", label: "OC IV",  hebrewLabel: "או״ח ד", simanCount: 197),
+                ContemporaryTeshuvotVolume(id: "IggrotMosheYD2", label: "YD II",  hebrewLabel: "יו״ד ב", simanCount: 170),
+                ContemporaryTeshuvotVolume(id: "IggrotMosheYD4", label: "YD IV",  hebrewLabel: "יו״ד ד", simanCount: 163),
+                ContemporaryTeshuvotVolume(id: "IggrotMosheEH1", label: "EH I",   hebrewLabel: "אה״ע א", simanCount: 176),
+                ContemporaryTeshuvotVolume(id: "IggrotMosheEH2", label: "EH II",  hebrewLabel: "אה״ע ב", simanCount: 26),
+                ContemporaryTeshuvotVolume(id: "IggrotMosheEH3", label: "EH III", hebrewLabel: "אה״ע ג", simanCount: 50),
+                ContemporaryTeshuvotVolume(id: "IggrotMosheEH4", label: "EH IV",  hebrewLabel: "אה״ע ד", simanCount: 163),
+                ContemporaryTeshuvotVolume(id: "IggrotMosheHM1", label: "CM I",   hebrewLabel: "חו״מ א", simanCount: 107),
+                ContemporaryTeshuvotVolume(id: "IggrotMosheHM2", label: "CM II",  hebrewLabel: "חו״מ ב", simanCount: 98),
             ]
         ),
     ]
