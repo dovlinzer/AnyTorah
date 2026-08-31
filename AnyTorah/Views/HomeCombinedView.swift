@@ -112,24 +112,29 @@ private struct CategoryTile: View {
     let entry: HomeCategoryEntry
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 6) {
             // Teshuvot row tiles skip the icon entirely — three tiles share one row (vs. one
             // tile per full-width row in the two-column grid), so every point of width matters
             // for showing the full label ("Contemporary" in particular).
             if !entry.compact {
                 Image(systemName: entry.icon)
-                    .font(.title3)
+                    .font(.caption)
             }
             Text(entry.label)
                 // Same reasoning as dropping the icon — a smaller weight lets longer labels
                 // fit in the Teshuvot row's narrower per-tile width without wrapping.
-                .font(entry.compact ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
+                .font(entry.compact ? .caption.weight(.semibold) : .footnote.weight(.semibold))
                 .lineLimit(2)
-                .minimumScaleFactor(entry.compact ? 0.8 : 1)
+                // Shrinks to fit rather than truncating with "…" — an ellipsis reads worse than
+                // a slightly smaller full label, per explicit feedback.
+                .minimumScaleFactor(0.7)
             Spacer(minLength: 0)
         }
         .foregroundStyle(.white)
-        .padding(entry.compact ? 10 : 14)
+        // Tight padding so the label sits close to the tile edges — every point of width here
+        // is width the label doesn't have, per explicit request to shrink the margins.
+        .padding(.horizontal, entry.compact ? 6 : 8)
+        .padding(.vertical, entry.compact ? 8 : 10)
         // maxHeight pinned to the same value as minHeight (not just a floor) so the three
         // Teshuvot row tiles come out identically tall regardless of whether their label
         // happens to wrap to a second line — an HStack doesn't equalize sibling heights on its
@@ -179,9 +184,9 @@ private struct HomeCategoryEntry: Identifiable {
     ]
 
     static let rightColumn: [HomeCategoryEntry] = [
-        HomeCategoryEntry(id: "talmudBavli", label: "Talmud Bavli", icon: "scroll",
+        HomeCategoryEntry(id: "talmudBavli", label: "Bavli", icon: "scroll",
                            colorFamily: .blue, category: .talmud) { $0.talmudSubcategory = .bavli },
-        HomeCategoryEntry(id: "talmudYerushalmi", label: "Talmud Yerushalmi", icon: "building.columns",
+        HomeCategoryEntry(id: "talmudYerushalmi", label: "Yerushalmi", icon: "building.columns",
                            colorFamily: .blue, category: .talmud) { $0.talmudSubcategory = .yerushalmi },
         HomeCategoryEntry(id: "tur", label: "Tur", icon: "list.bullet.rectangle",
                            colorFamily: .royalBlue, category: .tur) { _ in },
@@ -200,10 +205,11 @@ private struct HomeCategoryEntry: Identifiable {
                            colorFamily: .navy, category: .teshuvot, compact: true) { $0.teshuvotSubcategory = .rishonim },
         HomeCategoryEntry(id: "teshuvotAcharonim", label: "Acharonim", icon: "envelope",
                            colorFamily: .navySteel, category: .teshuvot, compact: true) { $0.teshuvotSubcategory = .acharonim },
-        // "Contemp." not "Contemporary" — the full word is prone to wrapping to a second line
-        // at this tile's width/font, which (before the tile's maxHeight fix above) made this
-        // tile visibly taller than Rishonim/Acharonim.
-        HomeCategoryEntry(id: "teshuvotContemporary", label: "Contemp.", icon: "envelope",
+        // Full word restored 2026-08-30 — the earlier "Contemp." truncation predates the tile's
+        // pinned maxHeight (see CategoryTile above) and its lineLimit(2)/minimumScaleFactor
+        // combo, both of which already absorb a 2-line wrap without growing this tile taller
+        // than its siblings. If it still doesn't fit cleanly on-device, revert to "Contemp.".
+        HomeCategoryEntry(id: "teshuvotContemporary", label: "Contemporary", icon: "envelope",
                            colorFamily: .navyDeep, category: .teshuvot, compact: true) { $0.teshuvotSubcategory = .contemporary },
     ]
 }

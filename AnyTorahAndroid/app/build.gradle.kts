@@ -60,6 +60,10 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.9.3")
 
+    // Custom Tabs — used by the Related YCT Articles sheet to open external article links
+    // in-app without a full native reader (no other web-view/browser precedent in this app).
+    implementation("androidx.browser:browser:1.8.0")
+
     // Lifecycle / ViewModel
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.4")

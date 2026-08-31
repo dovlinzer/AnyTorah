@@ -147,11 +147,42 @@ final class TextReaderViewModel {
             // property's didSet fires on every assignment regardless of whether the value
             // actually changed, so without this check the reset below ran unconditionally on
             // every Home-button tap, discarding the just-restored state and always landing on
-            // the first work/siman — the reported bug. Only reset when the subcategory
-            // genuinely changed (e.g. Rishonim -> Acharonim), which is the actual case that
-            // needs it: the new subcategory's work list doesn't contain the old work at all.
+            // the first work/siman.
             guard !isRestoring, oldValue != teshuvotSubcategory else { return }
-            teshuvotWork = TeshuvotWork.works(for: teshuvotSubcategory).first ?? .rashi
+            // On a genuine switch (e.g. Rishonim -> Acharonim), restore THAT subcategory's own
+            // last-used work/volume/siman rather than always resetting to the first work.
+            // Rishonim and Acharonim previously shared one set of UserDefaults keys, so
+            // whichever was read most recently silently overwrote the other's saved position —
+            // alternating between the two buttons made every switch look like "first time ever"
+            // and reset to the first work/siman 1, which is what was actually being reported as
+            // "still not saving the last position." Each subcategory now gets its own keys (see
+            // `loadRegularTeshuvotState`), and setting `isRestoring` here prevents `teshuvotWork`'s
+            // own didSet from clobbering the volume/siman this just restored.
+            isRestoring = true
+            if teshuvotSubcategory != .contemporary {
+                loadRegularTeshuvotState(for: teshuvotSubcategory)
+            }
+            isRestoring = false
+        }
+    }
+
+    private func teshuvotWorkKey(_ sub: TeshuvotSubcategory) -> String { "sel_teshuvot_work_\(sub.rawValue)" }
+    private func teshuvotVolumeKey(_ sub: TeshuvotSubcategory) -> String { "sel_teshuvot_volume_\(sub.rawValue)" }
+    private func teshuvotSimanKey(_ sub: TeshuvotSubcategory) -> String { "sel_teshuvot_siman_\(sub.rawValue)" }
+
+    /// Restores `sub`'s own last-used work/volume/siman (falling back to the first work / siman
+    /// 1 if `sub` has never been visited). Shared by `restoreState(for: .teshuvot)` and
+    /// `teshuvotSubcategory`'s didSet so both paths use the same per-subcategory keys.
+    private func loadRegularTeshuvotState(for sub: TeshuvotSubcategory) {
+        let d = UserDefaults.standard
+        if let raw = d.string(forKey: teshuvotWorkKey(sub)), let w = TeshuvotWork(rawValue: raw) {
+            teshuvotWork = w
+            teshuvotVolume = d.object(forKey: teshuvotVolumeKey(sub)) as? Int ?? 1
+            teshuvotSiman  = d.object(forKey: teshuvotSimanKey(sub))  as? Int ?? 1
+        } else {
+            teshuvotWork = TeshuvotWork.works(for: sub).first ?? .rashi
+            teshuvotVolume = 1
+            teshuvotSiman = 1
         }
     }
     var teshuvotWork: TeshuvotWork = .rashi {
@@ -188,6 +219,16 @@ final class TextReaderViewModel {
         didSet { if !isRestoring { saveState(for: .teshuvot) } }
     }
 
+    /// True when Contemporary's currently-selected "book" is one of the Sefaria-digitized works
+    /// (Mishpetei Uziel, Benei Banim, B'mareh HaBazak — fetched/rendered through the ordinary
+    /// `teshuvotWork`/`load()` pipeline, exactly like Rishonim/Acharonim) rather than the
+    /// page-image-based Iggros Moshe (`contemporaryWork`/`ContemporaryTeshuvotPageView`). Both
+    /// systems live under the one `.contemporary` subcategory and share its book picker — this
+    /// flag is the discriminator every Contemporary-aware call site checks to decide which of
+    /// the two to use. Set directly by the book-picker row handlers in TextReaderView, not by
+    /// any didSet cascade of its own — mirrors how `contemporaryWork`'s own didSet works.
+    var contemporaryUsesSefaria: Bool = false
+
     // MARK: - Display state
 
     private var _displayMode: TextDisplayMode = .source
@@ -203,6 +244,9 @@ final class TextReaderViewModel {
     var isLoading = false
     var error: String? = nil
     var currentRef: String = ""
+    /// YCT halakha pieces (library.yctorah.org/psak.yctorah.org) citing the current SA siman —
+    /// see YCTRelatedArticlesService. Shulchan Arukh only; empty for every other category.
+    private(set) var relatedYCTPieces: [RelatedYCTPiece] = []
 
     // Commentary layout visibility
     var commentaryVisible = false {
@@ -320,12 +364,13 @@ final class TextReaderViewModel {
             if let sub = d.string(forKey: "sel_teshuvot_sub").flatMap(TeshuvotSubcategory.init) {
                 teshuvotSubcategory = sub
             }
-            if let raw = d.string(forKey: "sel_teshuvot_work"), let w = TeshuvotWork(rawValue: raw) {
-                teshuvotWork = w
-            }
-            teshuvotVolume = d.object(forKey: "sel_teshuvot_volume") as? Int ?? 1
-            teshuvotSiman  = d.object(forKey: "sel_teshuvot_siman")  as? Int ?? 1
             if teshuvotSubcategory == .contemporary {
+                contemporaryUsesSefaria = d.bool(forKey: "sel_contemp_uses_sefaria")
+            }
+            if teshuvotSubcategory != .contemporary || contemporaryUsesSefaria {
+                loadRegularTeshuvotState(for: teshuvotSubcategory)
+            }
+            if teshuvotSubcategory == .contemporary && !contemporaryUsesSefaria {
                 if let workId = d.string(forKey: "sel_contemp_work"),
                    let w = ContemporaryTeshuvotWork.works.first(where: { $0.id == workId }) {
                     contemporaryWork = w
@@ -384,13 +429,20 @@ final class TextReaderViewModel {
             d.set(midrashNativeSection,           forKey: "sel_midrash_native_sec")
         case .teshuvot:
             d.set(teshuvotSubcategory.rawValue, forKey: "sel_teshuvot_sub")
-            d.set(teshuvotWork.rawValue,        forKey: "sel_teshuvot_work")
-            d.set(teshuvotVolume,               forKey: "sel_teshuvot_volume")
-            d.set(teshuvotSiman,                forKey: "sel_teshuvot_siman")
             if teshuvotSubcategory == .contemporary {
+                d.set(contemporaryUsesSefaria, forKey: "sel_contemp_uses_sefaria")
+            }
+            if teshuvotSubcategory == .contemporary && !contemporaryUsesSefaria {
                 d.set(contemporaryWork.id,   forKey: "sel_contemp_work")
                 d.set(contemporaryVolume.id, forKey: "sel_contemp_volume")
                 d.set(contemporaryPage,      forKey: "sel_contemp_page")
+            } else {
+                // Keyed per subcategory — Rishonim and Acharonim used to share one set of keys,
+                // so whichever was read most recently silently overwrote the other's saved
+                // position. See `teshuvotSubcategory`'s didSet for the full story.
+                d.set(teshuvotWork.rawValue, forKey: teshuvotWorkKey(teshuvotSubcategory))
+                d.set(teshuvotVolume,        forKey: teshuvotVolumeKey(teshuvotSubcategory))
+                d.set(teshuvotSiman,         forKey: teshuvotSimanKey(teshuvotSubcategory))
             }
         }
     }
@@ -868,7 +920,7 @@ final class TextReaderViewModel {
         case .midrash:
             return useHe ? midrashWork.hebrewName : midrashWork.displayName
         case .teshuvot:
-            if teshuvotSubcategory == .contemporary {
+            if teshuvotSubcategory == .contemporary && !contemporaryUsesSefaria {
                 return useHe ? contemporaryWork.hebrewDisplayName : contemporaryWork.name
             }
             return useHe ? teshuvotWork.hebrewName : teshuvotWork.displayName
@@ -884,7 +936,7 @@ final class TextReaderViewModel {
     var navVolumeTitle: String? {
         guard category == .teshuvot else { return nil }
         let useHe = UserDefaults.standard.value(forKey: "saHebrewMode") as? Bool ?? false
-        if teshuvotSubcategory == .contemporary {
+        if teshuvotSubcategory == .contemporary && !contemporaryUsesSefaria {
             // Always shown (unlike Rishonim/Acharonim, gated on volumeLabel != nil) — every
             // Contemporary work has a real, always-relevant volume level.
             return useHe ? contemporaryVolume.hebrewLabel : contemporaryVolume.label
@@ -930,7 +982,7 @@ final class TextReaderViewModel {
             let bookName = TextCatalog.allTanakhBooks.first(where: { $0.id == midrashBookIndex })?.name ?? "?"
             return "\(bookName) \(midrashChapter):\(midrashVerse)"
         case .teshuvot:
-            if teshuvotSubcategory == .contemporary {
+            if teshuvotSubcategory == .contemporary && !contemporaryUsesSefaria {
                 // Reverse-looks-up which siman the current page falls within (via a floor
                 // lookup against the siman->page index — see TeshuvotPageManager.siman(volume:
                 // page:)) so this pill reads as "you're on siman N", matching what the siman
@@ -952,10 +1004,11 @@ final class TextReaderViewModel {
     // MARK: - Fetch
 
     func load() async {
-        // Contemporary Teshuvot's reader is a plain image pager (TeshuvotPageManager,
-        // ContemporaryTeshuvotPageView) — there's no Sefaria text to fetch, and every other
-        // branch below assumes `teshuvotWork`/Sefaria refs that don't apply here.
-        if category == .teshuvot && teshuvotSubcategory == .contemporary {
+        // Contemporary Teshuvot's PDF-based works (Iggros Moshe) use a plain image pager
+        // (TeshuvotPageManager, ContemporaryTeshuvotPageView) — there's no Sefaria text to
+        // fetch. Contemporary's Sefaria-digitized works (Mishpetei Uziel etc.) fall through to
+        // the ordinary `.teshuvot` case below instead, via `contemporaryUsesSefaria`.
+        if category == .teshuvot && teshuvotSubcategory == .contemporary && !contemporaryUsesSefaria {
             isLoading = false
             error = nil
             return
@@ -1102,6 +1155,20 @@ final class TextReaderViewModel {
                     bookOrTractateIndex: saSection,
                     chapterOrDaf: saSiman)
                 currentRef = r
+
+                // Fire-and-forget: fetch related YCT pieces for this siman. Guarded by
+                // loadGeneration (incremented at the top of every load()) so a stale response
+                // from a since-superseded load can't clobber a newer one's result.
+                let sectionAtFetch = saSection
+                let simanAtFetch = saSiman
+                let genAtFetch = loadGeneration
+                relatedYCTPieces = []
+                Task { @MainActor in
+                    let pieces = await YCTRelatedArticlesService.relatedPieces(saSection: sectionAtFetch, saSiman: simanAtFetch)
+                    guard genAtFetch == self.loadGeneration else { return }
+                    self.relatedYCTPieces = pieces
+                }
+
                 // In bothPanels mode the marker processor needs all 6 slot assignments so
                 // every panel's bracket markers are baked into the text simultaneously.
                 let layoutRaw = UserDefaults.standard.string(forKey: "commentaryLayout") ?? "bottom"

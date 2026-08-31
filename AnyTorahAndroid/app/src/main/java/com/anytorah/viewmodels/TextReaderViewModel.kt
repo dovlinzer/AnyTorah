@@ -10,9 +10,11 @@ import androidx.lifecycle.viewModelScope
 import com.anytorah.api.Dedication
 import com.anytorah.api.DedicationService
 import com.anytorah.api.EinAyahLoader
+import com.anytorah.api.RelatedYCTPiece
 import com.anytorah.api.SefariaTextClient
 import com.anytorah.api.TeshuvotPageManager
 import com.anytorah.api.TurParagraphEngine
+import com.anytorah.api.YCTRelatedArticlesService
 import com.anytorah.models.Bookmark
 import com.anytorah.models.BookmarkManager
 import com.anytorah.models.CommentaryEntry
@@ -234,6 +236,15 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
     var contemporaryVolume by mutableStateOf(ContemporaryTeshuvotWork.works.first().volumes.first())
     var contemporaryPage by mutableIntStateOf(1)
 
+    /** True when Contemporary's currently-selected "book" is one of the Sefaria-digitized works
+     *  (Mishpetei Uziel, Benei Banim, B'mareh HaBazak — fetched/rendered through the ordinary
+     *  teshuvotWork/load() pipeline, exactly like Rishonim/Acharonim) rather than the page-image-
+     *  based Iggros Moshe (contemporaryWork/the image pager). Both systems live under the one
+     *  CONTEMPORARY subcategory and share its book picker — this flag is the discriminator every
+     *  Contemporary-aware call site checks. Set directly by the book-picker row handlers in
+     *  TextReaderScreen.kt, not by any cascade of its own — mirrors contemporaryWork's own shape. */
+    var contemporaryUsesSefaria by mutableStateOf(false)
+
     fun setContemporaryWork(work: ContemporaryTeshuvotWork) {
         contemporaryWork = work
         contemporaryVolume = work.volumes.first()
@@ -252,36 +263,48 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         saveState(TextCategory.TESHUVOT)
     }
 
-    /** Sets [teshuvotSubcategory] and resets [teshuvotWork]/[teshuvotVolume]/[teshuvotSiman] to
-     *  the new subcategory's first work — Kotlin's plain `mutableStateOf` properties have no
-     *  iOS-style `didSet` cascade, so without this, switching subcategory (e.g. via the Home
-     *  screen's Rishonim/Acharonim buttons) left `teshuvotWork` pointing at a work from the
-     *  *previous* subcategory: the pickers correctly filtered to the new subcategory's works,
-     *  but the reader itself kept showing the stale work's content. Always call this instead of
-     *  assigning `teshuvotSubcategory` directly — mirrors `applyMidrashSubcategory` in
-     *  HomeScreen.kt for the same reason. */
-    // Only resets work/volume/siman when the subcategory actually changes -- not on every
-    // call. The Home screen's Rishonim/Acharonim buttons call restoreState(TESHUVOT) (which
-    // correctly restores the last-used work/volume/siman from prefs) and THEN this function,
-    // even when re-selecting the SAME subcategory the user was already on. An unconditional
-    // reset here discarded that just-restored state every time, always landing on the first
-    // work/siman regardless of where the user actually left off -- the reported bug. Only the
-    // genuine-change case (e.g. Rishonim -> Acharonim) actually needs the reset, since the new
-    // subcategory's work list doesn't contain the old work at all.
-    fun setTeshuvotSubcategory(sub: TeshuvotSubcategory) {
-        val changed = sub != teshuvotSubcategory
-        teshuvotSubcategory = sub
-        if (changed) {
-            // firstOrNull() ?: RASHI, not first() -- worksFor(CONTEMPORARY) is empty (no
-            // TeshuvotWork case belongs to it, since Contemporary works are a separate
-            // ContemporaryTeshuvotWork list entirely), and Kotlin's first() throws
-            // NoSuchElementException on an empty list where Swift's `.first` just returns nil.
-            // teshuvotWork itself is irrelevant/unused whenever subcategory is CONTEMPORARY
-            // (the reader reads contemporaryWork/Volume/Page instead), so any harmless default
-            // here is fine -- this only needs to not crash.
+    private fun teshuvotWorkKey(sub: TeshuvotSubcategory) = "sel_teshuvot_work_${sub.id}"
+    private fun teshuvotVolumeKey(sub: TeshuvotSubcategory) = "sel_teshuvot_volume_${sub.id}"
+    private fun teshuvotSimanKey(sub: TeshuvotSubcategory) = "sel_teshuvot_siman_${sub.id}"
+
+    /** Restores [sub]'s own last-used work/volume/siman from prefs (falling back to the first
+     *  work / siman 1 if [sub] has never been visited). Shared by `restoreState(TESHUVOT)` and
+     *  `setTeshuvotSubcategory` so both paths use the same per-subcategory keys — see
+     *  `setTeshuvotSubcategory`'s doc comment for why per-subcategory keys are needed at all. */
+    private fun loadRegularTeshuvotState(sub: TeshuvotSubcategory) {
+        val savedWork = prefs.getString(teshuvotWorkKey(sub), null)?.let { TeshuvotWork.fromId(it) }
+        if (savedWork != null) {
+            teshuvotWork = savedWork
+            teshuvotVolume = prefs.getInt(teshuvotVolumeKey(sub), 1)
+            teshuvotSiman = prefs.getInt(teshuvotSimanKey(sub), 1)
+        } else {
             teshuvotWork = TeshuvotWork.worksFor(sub).firstOrNull() ?: TeshuvotWork.RASHI
             teshuvotVolume = 1
             teshuvotSiman = 1
+        }
+    }
+
+    /** Sets [teshuvotSubcategory] and restores that subcategory's own last-used work/volume/
+     *  siman — Kotlin's plain `mutableStateOf` properties have no iOS-style `didSet` cascade, so
+     *  without this, switching subcategory (e.g. via the Home screen's Rishonim/Acharonim
+     *  buttons) left `teshuvotWork` pointing at a work from the *previous* subcategory: the
+     *  pickers correctly filtered to the new subcategory's works, but the reader itself kept
+     *  showing the stale work's content. Always call this instead of assigning
+     *  `teshuvotSubcategory` directly — mirrors `applyMidrashSubcategory` in HomeScreen.kt for
+     *  the same reason. */
+    // Only restores/resets work/volume/siman when the subcategory actually changes -- not on
+    // every call, since the Home screen's Rishonim/Acharonim buttons call restoreState(TESHUVOT)
+    // and THEN this function, even when re-selecting the SAME subcategory the user was already
+    // on. Rishonim and Acharonim used to share one set of prefs keys for work/volume/siman, so
+    // whichever was visited most recently silently overwrote the other's saved position --
+    // alternating between the two buttons made every switch look like "first time ever" and
+    // reset to the first work/siman 1 regardless of that subcategory's own history. Each
+    // subcategory now gets its own keys (see loadRegularTeshuvotState).
+    fun setTeshuvotSubcategory(sub: TeshuvotSubcategory) {
+        val changed = sub != teshuvotSubcategory
+        teshuvotSubcategory = sub
+        if (changed && sub != TeshuvotSubcategory.CONTEMPORARY) {
+            loadRegularTeshuvotState(sub)
         }
     }
 
@@ -304,6 +327,10 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
     var isLoading by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
     var currentRef by mutableStateOf("")
+    /** YCT halakha pieces (library.yctorah.org/psak.yctorah.org) citing the current SA siman --
+     *  see YCTRelatedArticlesService. Shulchan Arukh only; empty for every other category. */
+    var relatedYCTPieces by mutableStateOf<List<RelatedYCTPiece>>(emptyList())
+        private set
 
     // Commentary
     var commentaryVisible by mutableStateOf(prefs.getBoolean("commentaryVisible", false))
@@ -595,10 +622,13 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
             }
             TextCategory.TESHUVOT -> {
                 teshuvotSubcategory = TeshuvotSubcategory.fromId(prefs.getString("sel_teshuvot_sub", null))
-                teshuvotWork        = TeshuvotWork.fromId(prefs.getString("sel_teshuvot_work", null))
-                teshuvotVolume      = prefs.getInt("sel_teshuvot_volume", 1)
-                teshuvotSiman       = prefs.getInt("sel_teshuvot_siman", 1)
                 if (teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY) {
+                    contemporaryUsesSefaria = prefs.getBoolean("sel_contemp_uses_sefaria", false)
+                }
+                if (teshuvotSubcategory != TeshuvotSubcategory.CONTEMPORARY || contemporaryUsesSefaria) {
+                    loadRegularTeshuvotState(teshuvotSubcategory)
+                }
+                if (teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY && !contemporaryUsesSefaria) {
                     val workId = prefs.getString("sel_contemp_work", null)
                     contemporaryWork = ContemporaryTeshuvotWork.works.firstOrNull { it.id == workId }
                         ?: ContemporaryTeshuvotWork.works.first()
@@ -661,13 +691,18 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
             }
             TextCategory.TESHUVOT -> {
                 e.putString("sel_teshuvot_sub", teshuvotSubcategory.id)
-                e.putString("sel_teshuvot_work", teshuvotWork.id)
-                e.putInt("sel_teshuvot_volume", teshuvotVolume)
-                e.putInt("sel_teshuvot_siman", teshuvotSiman)
                 if (teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY) {
+                    e.putBoolean("sel_contemp_uses_sefaria", contemporaryUsesSefaria)
+                }
+                if (teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY && !contemporaryUsesSefaria) {
                     e.putString("sel_contemp_work", contemporaryWork.id)
                     e.putString("sel_contemp_volume", contemporaryVolume.id)
                     e.putInt("sel_contemp_page", contemporaryPage)
+                } else {
+                    // Keyed per subcategory -- see setTeshuvotSubcategory's doc comment.
+                    e.putString(teshuvotWorkKey(teshuvotSubcategory), teshuvotWork.id)
+                    e.putInt(teshuvotVolumeKey(teshuvotSubcategory), teshuvotVolume)
+                    e.putInt(teshuvotSimanKey(teshuvotSubcategory), teshuvotSiman)
                 }
             }
         }
@@ -817,7 +852,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         }
         TextCategory.MIDRASH -> if (saHebrewMode) midrashWork.hebrewName else midrashWork.displayName
         TextCategory.TESHUVOT -> {
-            if (teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY) {
+            if (teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY && !contemporaryUsesSefaria) {
                 if (saHebrewMode) contemporaryWork.hebrewDisplayName else contemporaryWork.name
             } else {
                 if (saHebrewMode) teshuvotWork.hebrewName else teshuvotWork.displayName
@@ -831,7 +866,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
      *  prefix needed. */
     val navVolumeTitle: String? get() {
         if (category != TextCategory.TESHUVOT) return null
-        if (teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY) {
+        if (teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY && !contemporaryUsesSefaria) {
             // Always shown (unlike Rishonim/Acharonim, gated on volumeLabel != null) -- every
             // Contemporary work has a real, always-relevant volume level.
             return if (saHebrewMode) contemporaryVolume.hebrewLabel else contemporaryVolume.label
@@ -881,7 +916,7 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
             }
         }
         TextCategory.TESHUVOT -> {
-            if (teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY) {
+            if (teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY && !contemporaryUsesSefaria) {
                 // Reverse-looks-up which siman the current page falls within (a floor lookup
                 // against the siman->page index -- see TeshuvotPageManager.siman) so this pill
                 // reads as "you're on siman N", matching what the siman picker actually
@@ -904,10 +939,11 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
     // MARK: - Load
 
     fun load() {
-        // Contemporary Teshuvot's reader is a plain image pager (TeshuvotPageManager,
-        // ContemporaryTeshuvotPageView) -- there's no Sefaria text to fetch, and every other
-        // branch below assumes teshuvotWork/Sefaria refs that don't apply here.
-        if (category == TextCategory.TESHUVOT && teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY) {
+        // Contemporary Teshuvot's PDF-based works (Iggros Moshe) use a plain image pager
+        // (TeshuvotPageManager, ContemporaryTeshuvotPageView) -- there's no Sefaria text to
+        // fetch. Contemporary's Sefaria-digitized works (Mishpetei Uziel etc.) fall through to
+        // the ordinary TESHUVOT branch below instead, via contemporaryUsesSefaria.
+        if (category == TextCategory.TESHUVOT && teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY && !contemporaryUsesSefaria) {
             isLoading = false
             error = null
             return
@@ -998,6 +1034,20 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                     TextCategory.SHULCHAN_ARUKH -> {
                         val r = SefariaTextClient.ref(TextCategory.SHULCHAN_ARUKH, saSection, saSiman)
                         currentRef = r
+
+                        // Fire-and-forget: fetch related YCT pieces for this siman, without
+                        // blocking the main text/commentary fetch below. Guarded by comparing
+                        // captured vs. current saSection/saSiman (no loadGeneration equivalent
+                        // on Android) so a stale response from a since-superseded load can't
+                        // clobber a newer one's result.
+                        val sectionAtFetch = saSection
+                        val simanAtFetch = saSiman
+                        relatedYCTPieces = emptyList()
+                        viewModelScope.launch {
+                            val pieces = YCTRelatedArticlesService.relatedPieces(sectionAtFetch, simanAtFetch)
+                            if (sectionAtFetch == saSection && simanAtFetch == saSiman) relatedYCTPieces = pieces
+                        }
+
                         segments = SefariaTextClient.fetchChapter(TextCategory.SHULCHAN_ARUKH, saSection, saSiman,
                             selectedCommentaries = availableCommentaries, saTextMode = saTextMode)
                     }

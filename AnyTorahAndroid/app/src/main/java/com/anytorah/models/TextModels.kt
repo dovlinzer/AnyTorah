@@ -293,12 +293,115 @@ enum class TeshuvotEdah(val abbreviation: String, val hebrewAbbreviation: String
  *  in the UI. */
 data class TeshuvotVolume(
     val label: String,
+    /** Hebrew display label, shown when Hebrew mode is on -- used for the nav volume PILL. */
     val hebrewLabel: String,
     /** Sefaria ref with the literal placeholder `{siman}` substituted for the actual number. */
     val refTemplate: String,
-    val maxSiman: Int
+    val maxSiman: Int,
+    /** Un-abbreviated Hebrew label for the volume-PICKER sheet only -- null falls back to
+     *  [hebrewLabel]. Standing policy (2026-08-30): abbreviations like או״ח/יו״ד/אה״ע/חו״מ are
+     *  fine for the compact nav pill, but the picker list has no space constraint and should
+     *  spell the section name out in full -- set this whenever [hebrewLabel] is an abbreviation.
+     *  Only retrofitted onto Mishpetei Uziel so far -- the ~40 pre-existing Rishonim/Acharonim
+     *  works with abbreviated Hebrew volume/section labels still show their abbreviation in the
+     *  picker too, flagged to the user as a separate, much larger follow-up, not done here.
+     *  Trailing param with a default so existing call sites (positional or named) don't need to
+     *  change -- unlike Swift, Kotlin data classes DO synthesize this correctly. */
+    val pickerHebrewLabel: String? = null
 ) {
     fun ref(siman: Int): String = refTemplate.replace("{siman}", "$siman")
+}
+
+/** One responsum entry in Nishmat HaBayit's picker -- this work has no numeric Siman address
+ *  type on Sefaria (each responsum is an individually-titled complex-schema node, per-Part), so
+ *  it needs a bespoke titled-list picker instead of [TeshuvotVolume]'s numeric wheel. Verified
+ *  against the live Sefaria raw-index + a per-siman /api/texts check, 2026-08-30 -- see
+ *  CLAUDE.md's Contemporary Teshuvot section. [number] is a synthetic 1-63 sequential index
+ *  (not part of Sefaria's own data) used as this work's teshuvotSiman value so the existing
+ *  selection-state plumbing (persistence, nav pill, etc.) needs no new type. [ref] is the
+ *  complete, literal Sefaria ref string (embeds the full node title) -- unlike [TeshuvotVolume],
+ *  there is no {siman}-substitution template, since the ref isn't formulaic here. */
+data class NishmatHaBayitSiman(
+    val number: Int,
+    val partEnglish: String,
+    val partHebrew: String,
+    val titleEnglish: String,
+    val titleHebrew: String,
+    val ref: String
+) {
+    companion object {
+        /** All 63 real responsa, across Nishmat HaBayit's 5 Parts (Pregnancy/Birth/Pregnancy
+         *  Loss/Nursing/Contraception) -- front matter (Foreword/Preface/Introduction) and back
+         *  matter (Medical Appendices, Bibliography, Halakhic References) are ancillary and
+         *  intentionally excluded, per the same policy used for other works' non-responsa sections. */
+        val all: List<NishmatHaBayitSiman> = listOf(
+        NishmatHaBayitSiman(1, "Pregnancy", "היריון", "Panty Liners during the Seven Neki'im When Trying to Conceive", "תחתונית בז' נקיים באישה המנסה להרות", "Nishmat HaBayit, Part I; Pregnancy, Siman 1; Panty Liners during the Seven Neki'im When Trying to Conceive"),
+        NishmatHaBayitSiman(2, "Pregnancy", "היריון", "Onot Perishah at the Beginning of Pregnancy", "עונות פרישה בהתחלת היריון", "Nishmat HaBayit, Part I; Pregnancy, Siman 2; Onot Perishah at the Beginning of Pregnancy"),
+        NishmatHaBayitSiman(3, "Pregnancy", "היריון", "Blood in Urine during Pregnancy", "דם בשתן בזמן ההיריון", "Nishmat HaBayit, Part I; Pregnancy, Siman 3; Blood in Urine during Pregnancy"),
+        NishmatHaBayitSiman(4, "Pregnancy", "היריון", "Spotting and Bleeding during Pregnancy", "כתמים ודימומים בזמן היריון", "Nishmat HaBayit, Part I; Pregnancy, Siman 4; Spotting and Bleeding during Pregnancy"),
+        NishmatHaBayitSiman(5, "Pregnancy", "היריון", "Blood on an Ultrasound Transducer", "דם במכשיר אולטרסאונד", "Nishmat HaBayit, Part I; Pregnancy, Siman 5; Blood on an Ultrasound Transducer"),
+        NishmatHaBayitSiman(6, "Pregnancy", "היריון", "Bleeding from Placenta Previa", "דימומים בהיריון בסיכון בעקבות שליית פתח", "Nishmat HaBayit, Part I; Pregnancy, Siman 6; Bleeding from Placenta Previa"),
+        NishmatHaBayitSiman(7, "Pregnancy", "היריון", "Bleeding after Cervical Cerclage", "ראיית דם לאחר תפירת צוואר הרחם", "Nishmat HaBayit, Part I; Pregnancy, Siman 7; Bleeding after Cervical Cerclage"),
+        NishmatHaBayitSiman(8, "Pregnancy", "היריון", "Mikveh Immersion during Pregnancy", "טבילה בהיריון", "Nishmat HaBayit, Part I; Pregnancy, Siman 8; Mikveh Immersion during Pregnancy"),
+        NishmatHaBayitSiman(9, "Birth", "לידה", "Cervical Dilation and the Onset of Labor", "דין פתיחת צוואר הרחם כהתחלת לידה", "Nishmat HaBayit, Part II; Birth, Siman 9; Cervical Dilation and the Onset of Labor"),
+        NishmatHaBayitSiman(10, "Birth", "לידה", "Does Expulsion of the Mucus Plug Render a Woman Niddah?", "האם יציאת הפקק הרירי אוסרת?", "Nishmat HaBayit, Part II; Birth, Siman 10; Does Expulsion of the Mucus Plug Render a Woman Niddah?"),
+        NishmatHaBayitSiman(11, "Birth", "לידה", "Does Membrane Stripping Render a Woman Niddah?", "האם פעולת הפרדת קרומים ('סטריפינג') אוסרת?", "Nishmat HaBayit, Part II; Birth, Siman 11; Does Membrane Stripping Render a Woman Niddah?"),
+        NishmatHaBayitSiman(12, "Birth", "לידה", "Does the Rupture of Membranes Render a Woman Niddah?", "האם ירידת מים אוסרת?", "Nishmat HaBayit, Part II; Birth, Siman 12; Does the Rupture of Membranes Render a Woman Niddah?"),
+        NishmatHaBayitSiman(13, "Birth", "לידה", "Assistance of the Husband in the Delivery Room", "סיוע הבעל בחדר לידה", "Nishmat HaBayit, Part II; Birth, Siman 13; Assistance of the Husband in the Delivery Room"),
+        NishmatHaBayitSiman(14, "Birth", "לידה", "Mokh Dahuk and Bedikot following Birth", "מוך דחוק ובדיקות ז' נקיים לאחר לידה", "Nishmat HaBayit, Part II; Birth, Siman 14; Mokh Dahuk and Bedikot following Birth"),
+        NishmatHaBayitSiman(15, "Birth", "לידה", "Counting Seven Neki'im following a Caesarean Section", "ספירת ז' נקיים לאחר ניתוח קיסרי", "Nishmat HaBayit, Part II; Birth, Siman 15; Counting Seven Neki'im following a Caesarean Section"),
+        NishmatHaBayitSiman(16, "Birth", "לידה", "Observation of Blood by a Physician during the Postpartum Examination", "ראיית דם על ידי רופא בבדיקה לאחר הלידה", "Nishmat HaBayit, Part II; Birth, Siman 16; Observation of Blood by a Physician during the Postpartum Examination"),
+        NishmatHaBayitSiman(17, "Birth", "לידה", "Attributing Bleeding to Hemorrhoids, Postpartum", "תלייה בטחורים בז' נקיים לאחר לידה", "Nishmat HaBayit, Part II; Birth, Siman 17; Attributing Bleeding to Hemorrhoids, Postpartum"),
+        NishmatHaBayitSiman(18, "Birth", "לידה", "Hefsek Taharah after Sunset, Postpartum", "הפסק טהרה ביולדת לאחר שקיעה", "Nishmat HaBayit, Part II; Birth, Siman 18; Hefsek Taharah after Sunset, Postpartum"),
+        NishmatHaBayitSiman(19, "Birth", "לידה", "Onot Perishah and Establishing a Veset, Postpartum", "עונות פרישה וקביעת וסת בכ\"ד חודש לאחר לידה", "Nishmat HaBayit, Part II; Birth, Siman 19; Onot Perishah and Establishing a Veset, Postpartum"),
+        NishmatHaBayitSiman(20, "Birth", "לידה", "Bedikot with Uterine Prolapse", "בדיקות ז' נקיים במצב צניחת רחם", "Nishmat HaBayit, Part II; Birth, Siman 20; Bedikot with Uterine Prolapse"),
+        NishmatHaBayitSiman(21, "Birth", "לידה", "Attributing Blood to a Petza during the Seven Neki'im", "תלייה בפצע בז' נקיים", "Nishmat HaBayit, Part II; Birth, Siman 21; Attributing Blood to a Petza during the Seven Neki'im"),
+        NishmatHaBayitSiman(22, "Pregnancy Loss", "אובדן היריון", "Counting Seven Neki'im following D&C", "ספירת ז' נקיים לאחר גרידה", "Nishmat HaBayit, Part III; Pregnancy Loss, Siman 22; Counting Seven Neki'im following D&C"),
+        NishmatHaBayitSiman(23, "Pregnancy Loss", "אובדן היריון", "Onot Perishah following a Miscarriage", "עונות פרישה לאחר הפלה", "Nishmat HaBayit, Part III; Pregnancy Loss, Siman 23; Onot Perishah following a Miscarriage"),
+        NishmatHaBayitSiman(24, "Pregnancy Loss", "אובדן היריון", "Reducing Bedikot following a Miscarriage", "הפחתת בדיקות באישה שעברה הפלה", "Nishmat HaBayit, Part III; Pregnancy Loss, Siman 24; Reducing Bedikot following a Miscarriage"),
+        NishmatHaBayitSiman(25, "Nursing", "הנקה", "The Law of Hargashah (Sensation of Menses)", "בדין הרגשה", "Nishmat HaBayit, Part IV; Nursing, Siman 25; The Law of Hargashah (Sensation of Menses)"),
+        NishmatHaBayitSiman(26, "Nursing", "הנקה", "Pain and Reduced Libido", "כאב וחוסר עניין ביחסים", "Nishmat HaBayit, Part IV; Nursing, Siman 26; Pain and Reduced Libido"),
+        NishmatHaBayitSiman(27, "Nursing", "הנקה", "Blood on Toilet Paper", "דם על נייר קינוח", "Nishmat HaBayit, Part IV; Nursing, Siman 27; Blood on Toilet Paper"),
+        NishmatHaBayitSiman(28, "Nursing", "הנקה", "Breastfeeding a Toddler after an Interruption", "המשך הנקה לאחר הפסקה בפעוט", "Nishmat HaBayit, Part IV; Nursing, Siman 28; Breastfeeding a Toddler after an Interruption"),
+        NishmatHaBayitSiman(29, "Nursing", "הנקה", "Passing a Baby between Parents during Niddut", "העברת תינוק בין ההורים בימי הנידות", "Nishmat HaBayit, Part IV; Nursing, Siman 29; Passing a Baby between Parents during Niddut"),
+        NishmatHaBayitSiman(30, "Contraception", "אמצעי מניעה", "Family Planning following Childbirth", "בדין דחיית היריון אחר לידה", "Nishmat HaBayit, Part V; Contraception, Siman 30; Family Planning following Childbirth"),
+        NishmatHaBayitSiman(31, "Contraception", "אמצעי מניעה", "Contraception after Several Births", "מניעת היריון לאחר כמה לידות", "Nishmat HaBayit, Part V; Contraception, Siman 31; Contraception after Several Births"),
+        NishmatHaBayitSiman(32, "Contraception", "אמצעי מניעה", "IUD Use and the Ranking of Contraceptive Options", "שימוש בהתקן תוך רחמי ודירוג אמצעי מניעה", "Nishmat HaBayit, Part V; Contraception, Siman 32; IUD Use and the Ranking of Contraceptive Options"),
+        NishmatHaBayitSiman(33, "Contraception", "אמצעי מניעה", "Condom Use When Pregnancy Is Contra Indicated", "שימוש בקונדום במקרה של סכנה להרות", "Nishmat HaBayit, Part V; Contraception, Siman 33; Condom Use When Pregnancy Is Contra Indicated"),
+        NishmatHaBayitSiman(34, "Contraception", "אמצעי מניעה", "Spermicide Use", "שימוש בקוטל זרע", "Nishmat HaBayit, Part V; Contraception, Siman 34; Spermicide Use"),
+        NishmatHaBayitSiman(35, "Contraception", "אמצעי מניעה", "Diaphragm Use", "שימוש בדיאפרגמה", "Nishmat HaBayit, Part V; Contraception, Siman 35; Diaphragm Use"),
+        NishmatHaBayitSiman(36, "Contraception", "אמצעי מניעה", "Emergency Contraception; The \"Morning After\" Pill", "בדין גלולת 'היום שאחרי'", "Nishmat HaBayit, Part V; Contraception, Siman 36; Emergency Contraception; The \"Morning After\" Pill"),
+        NishmatHaBayitSiman(37, "Contraception", "אמצעי מניעה", "Depo Provera (Progesterone Injection)", "שימוש בזריקת פרוגסטרון", "Nishmat HaBayit, Part V; Contraception, Siman 37; Depo Provera (Progesterone Injection)"),
+        NishmatHaBayitSiman(38, "Contraception", "אמצעי מניעה", "Onot Perishah with Hormonal Contraception", "עונת פרישה וסילוק דמים בעת נטילת גלולות", "Nishmat HaBayit, Part V; Contraception, Siman 38; Onot Perishah with Hormonal Contraception"),
+        NishmatHaBayitSiman(39, "Contraception", "אמצעי מניעה", "Establishing a Veset with Hormonal Contraception", "קביעת וסת לגלולות", "Nishmat HaBayit, Part V; Contraception, Siman 39; Establishing a Veset with Hormonal Contraception"),
+        NishmatHaBayitSiman(40, "Contraception", "אמצעי מניעה", "Onot Perishah When Stopping Hormonal Contraception", "עונת פרישה בתום השימוש בגלולות", "Nishmat HaBayit, Part V; Contraception, Siman 40; Onot Perishah When Stopping Hormonal Contraception"),
+        NishmatHaBayitSiman(41, "Contraception", "אמצעי מניעה", "Extending the Cycle via Hormonal Contraception", "נטילת גלולות ברצף", "Nishmat HaBayit, Part V; Contraception, Siman 41; Extending the Cycle via Hormonal Contraception"),
+        NishmatHaBayitSiman(42, "Contraception", "אמצעי מניעה", "When Staining Renders a Woman Niddah", "מתי הופכים כתמים למחזור?", "Nishmat HaBayit, Part V; Contraception, Siman 42; When Staining Renders a Woman Niddah"),
+        NishmatHaBayitSiman(43, "Contraception", "אמצעי מניעה", "Post Coital Bleeding with Hormonal Contraception", "דם לאחר תשמיש בנוטלת גלולות", "Nishmat HaBayit, Part V; Contraception, Siman 43; Post Coital Bleeding with Hormonal Contraception"),
+        NishmatHaBayitSiman(44, "Contraception", "אמצעי מניעה", "Staining on a Panty Liner or Synthetic Clothing", "כתמים על תחתונית ובגד סינתטי", "Nishmat HaBayit, Part V; Contraception, Siman 44; Staining on a Panty Liner or Synthetic Clothing"),
+        NishmatHaBayitSiman(45, "Contraception", "אמצעי מניעה", "A Suspected Lesion and Stain Location on a Bedikah Cloth", "חשש לפצע ומיקום הדם על העד", "Nishmat HaBayit, Part V; Contraception, Siman 45; A Suspected Lesion and Stain Location on a Bedikah Cloth"),
+        NishmatHaBayitSiman(46, "Contraception", "אמצעי מניעה", "When a Contraceptive Pill Is Not Absorbed, Recommendations", "המלצה בעקבות אי ספיגת גלולה", "Nishmat HaBayit, Part V; Contraception, Siman 46; When a Contraceptive Pill Is Not Absorbed, Recommendations"),
+        NishmatHaBayitSiman(47, "Contraception", "אמצעי מניעה", "Mikveh Immersion with a Hormonal Patch", "טבילה עם מדבקה הורמונלית", "Nishmat HaBayit, Part V; Contraception, Siman 47; Mikveh Immersion with a Hormonal Patch"),
+        NishmatHaBayitSiman(48, "Contraception", "אמצעי מניעה", "Bedikot with a Contraceptive Ring", "בדיקות ז' נקיים עם נובה רינג", "Nishmat HaBayit, Part V; Contraception, Siman 48; Bedikot with a Contraceptive Ring"),
+        NishmatHaBayitSiman(49, "Contraception", "אמצעי מניעה", "Immersion with a Contraceptive Ring", "טבילה עם נובה רינג", "Nishmat HaBayit, Part V; Contraception, Siman 49; Immersion with a Contraceptive Ring"),
+        NishmatHaBayitSiman(50, "Contraception", "אמצעי מניעה", "Insertion of an IUD during the Seven Neki'im", "הכנסת התקן תוך רחמי בז' נקיים", "Nishmat HaBayit, Part V; Contraception, Siman 50; Insertion of an IUD during the Seven Neki'im"),
+        NishmatHaBayitSiman(51, "Contraception", "אמצעי מניעה", "Does Removal of an IUD Render a Woman Niddah?", "האם הוצאת התקן תוך רחמי מטמאת?", "Nishmat HaBayit, Part V; Contraception, Siman 51; Does Removal of an IUD Render a Woman Niddah?"),
+        NishmatHaBayitSiman(52, "Contraception", "אמצעי מניעה", "Bleeding from an Abrasion Caused by an IUD", "דימום מפצע הנגרם ע\"י התקן תוך רחמי", "Nishmat HaBayit, Part V; Contraception, Siman 52; Bleeding from an Abrasion Caused by an IUD"),
+        NishmatHaBayitSiman(53, "Contraception", "אמצעי מניעה", "Premenstrual Staining", "בדין כתמים המקדימים את המחזור", "Nishmat HaBayit, Part V; Contraception, Siman 53; Premenstrual Staining"),
+        NishmatHaBayitSiman(54, "Contraception", "אמצעי מניעה", "Colors on Bedikah Cloths", "צבעים בעדי בדיקה", "Nishmat HaBayit, Part V; Contraception, Siman 54; Colors on Bedikah Cloths"),
+        NishmatHaBayitSiman(55, "Contraception", "אמצעי מניעה", "Bedikot of Onot Perishah When a Woman Experiences Spotting", "בדיקות בעונת פרישה באישה המרבה להכתים", "Nishmat HaBayit, Part V; Contraception, Siman 55; Bedikot of Onot Perishah When a Woman Experiences Spotting"),
+        NishmatHaBayitSiman(56, "Contraception", "אמצעי מניעה", "Minor Monthly Spotting", "כתמים מזעריים פעם בחודש", "Nishmat HaBayit, Part V; Contraception, Siman 56; Minor Monthly Spotting"),
+        NishmatHaBayitSiman(57, "Contraception", "אמצעי מניעה", "Waiting before the Seven Neki'im", "המתנה לפני ספירת ז' נקיים בכתם המטמא", "Nishmat HaBayit, Part V; Contraception, Siman 57; Waiting before the Seven Neki'im"),
+        NishmatHaBayitSiman(58, "Contraception", "אמצעי מניעה", "Douching before Internal Bedikot", "שטיפה לפני בדיקת ז' נקיים", "Nishmat HaBayit, Part V; Contraception, Siman 58; Douching before Internal Bedikot"),
+        NishmatHaBayitSiman(59, "Contraception", "אמצעי מניעה", "A Spot on a Tampon", "נקודה על טמפון", "Nishmat HaBayit, Part V; Contraception, Siman 59; A Spot on a Tampon"),
+        NishmatHaBayitSiman(60, "Contraception", "אמצעי מניעה", "Finding Blood on a Diaphragm", "מציאת דם בדיאפרגמה", "Nishmat HaBayit, Part V; Contraception, Siman 60; Finding Blood on a Diaphragm"),
+        NishmatHaBayitSiman(61, "Contraception", "אמצעי מניעה", "Onot Perishah with Fertility Awareness Method (FAM)", "עונת פרישה בשיטת המודעות לפוריות", "Nishmat HaBayit, Part V; Contraception, Siman 61; Onot Perishah with Fertility Awareness Method (FAM)"),
+        NishmatHaBayitSiman(62, "Contraception", "אמצעי מניעה", "Checking for Secretions with Fertility Awareness Method (FAM)", "בדיקת הפרשות בשיטת המודעות לפוריות", "Nishmat HaBayit, Part V; Contraception, Siman 62; Checking for Secretions with Fertility Awareness Method (FAM)"),
+        NishmatHaBayitSiman(63, "Contraception", "אמצעי מניעה", "The Mitzvah of Onah on Mikveh Night with Fertility Awareness Method (FAM)", "מצוות עונה בליל טבילה בשיטת מודעות הפוריות", "Nishmat HaBayit, Part V; Contraception, Siman 63; The Mitzvah of Onah on Mikveh Night with Fertility Awareness Method (FAM)"),
+        )
+
+        fun entry(number: Int): NishmatHaBayitSiman? = all.firstOrNull { it.number == number }
+    }
 }
 
 // MARK: - Contemporary Teshuvot (PDF/scanned-page based, not Sefaria)
@@ -430,11 +533,24 @@ enum class TeshuvotWork(
     MELAMMED_LEHOIL("melammedLehoil", "Melammed Lehoil", "מלמד להועיל", TeshuvotEdah.ASHKENAZ, "19th Century"),
     RAV_PEALIM("ravPealim", "Rav Pealim", "רב פעלים", TeshuvotEdah.SEFARAD, "19th Century"),
     SHOEL_UMESHIV("shoelUmeshiv", "Shoel uMeshiv", "שואל ומשיב", TeshuvotEdah.ASHKENAZ, "19th Century"),
-    TESHUVA_MEAHAVA("teshuvaMeahava", "Teshuva MeAhava", "תשובה מאהבה", TeshuvotEdah.ASHKENAZ, "19th Century");
+    TESHUVA_MEAHAVA("teshuvaMeahava", "Teshuva MeAhava", "תשובה מאהבה", TeshuvotEdah.ASHKENAZ, "19th Century"),
+
+    // Contemporary — Sefaria-digitized modern responsa, shown alongside the page-image-based
+    // Iggros Moshe under the same "Contemporary" subcategory (see ContemporaryTeshuvotWork and
+    // TextReaderViewModel.contemporaryUsesSefaria). Declaration order is the order they appear
+    // in the Contemporary book picker, after Iggros Moshe — per explicit request. `century` is
+    // unused for these (Contemporary is a flat list, never century-grouped) — placeholder only.
+    MISHPETEI_UZIEL("mishpeteiUziel", "Mishpetei Uziel", "משפטי עוזיאל", TeshuvotEdah.SEFARAD, "Contemporary"),
+    BENEI_BANIM("beneiBanim", "Benei Banim", "בני בנים", TeshuvotEdah.ASHKENAZ, "Contemporary"),
+    BMAREH_HABAZAK("bmarehHabazak", "B'mareh HaBazak", "במראה הבזק", TeshuvotEdah.SEFARAD, "Contemporary"),
+    // No numeric Siman address type on Sefaria (see NishmatHaBayitSiman's doc comment) -- uses a
+    // bespoke titled-list siman picker instead of the ordinary numeric wheel.
+    NISHMAT_HA_BAYIT("nishmatHaBayit", "Nishmat HaBayit", "נשמת הבית", TeshuvotEdah.SEFARAD, "Contemporary");
 
     val subcategory: TeshuvotSubcategory get() = when (this) {
         RASHI, RI_MIGASH, RAMBAM, RASHBA, MAHARAM, MAHARACH_OR_ZARUA, ROSH, RAN, RIVASH,
         MAHARIL, TERUMAT_HA_DESHEN, MAHARIK, SEFER_HA_TASHBETZ -> TeshuvotSubcategory.RISHONIM
+        MISHPETEI_UZIEL, BENEI_BANIM, BMAREH_HABAZAK, NISHMAT_HA_BAYIT -> TeshuvotSubcategory.CONTEMPORARY
         else -> TeshuvotSubcategory.ACHARONIM
     }
 
@@ -445,7 +561,8 @@ enum class TeshuvotWork(
         RASHBA, TERUMAT_HA_DESHEN, BACH, HALAKHOT_KETANOT, MAHARIT, MELAMMED_LEHOIL -> "Part"
         ROSH -> "Klal"
         SEFER_HA_TASHBETZ -> "Chelek"
-        RADBAZ, MAHARSHAM, SHEILAT_YAAVETZ, MESHIV_DAVAR, RABBI_AKIVA_EIGER, NODA_BIYEHUDAH, RAV_PEALIM -> "Volume"
+        RADBAZ, MAHARSHAM, SHEILAT_YAAVETZ, MESHIV_DAVAR, RABBI_AKIVA_EIGER, NODA_BIYEHUDAH, RAV_PEALIM,
+        MISHPETEI_UZIEL, BENEI_BANIM, BMAREH_HABAZAK -> "Volume"
         MAHARSHDAM, ADMAT_KODESH, BEER_YITZCHAK, BINYAN_OLAM, CHATAM_SOFER, CHIDUSHEI_HA_RIM, HA_ELEF_LEKHA_SHLOMO -> "Section"
         SHOEL_UMESHIV -> "Mahadura"
         else -> null
@@ -668,6 +785,71 @@ enum class TeshuvotWork(
         }
         // Only Part I exists on Sefaria — Parts II/III were never digitized.
         TESHUVA_MEAHAVA -> listOf(TeshuvotVolume("1", "1", "Teshuva MeAhava Part I {siman}", 211))
+
+        // Contemporary — Sefaria-verified 2026-08-30 (live /api/v2/raw/index + /api/shape).
+        // Volume x Tur-order section, flattened exactly like Rav Pealim above — Sefaria splits
+        // each of Rav Uziel's 9 printed volumes into 1-5 named sections rather than one
+        // continuous siman count per volume.
+        MISHPETEI_UZIEL -> {
+            data class Entry(val vol: String, val volHe: String, val disp: String, val dispHe: String, val name: String, val count: Int)
+            val entries = listOf(
+                Entry("I", "א", "OC", "או״ח", "Orach Chayim", 26),
+                Entry("I", "א", "YD", "יו״ד", "Yoreh De'ah", 30),
+                Entry("I", "א", "Omissions", "השמטות", "Omissions", 5),
+                Entry("II", "ב", "YD", "יו״ד", "Yoreh De'ah", 66),
+                Entry("III", "ג", "OC", "או״ח", "Orach Chayim", 81),
+                Entry("III", "ג", "Addenda", "מלואים", "Addenda", 8),
+                Entry("IV", "ד", "CM", "חו״מ", "Choshen Mishpat", 47),
+                Entry("IV", "ד", "General Topics", "ענינים כלליים", "General Topics", 19),
+                Entry("V", "ה", "EH", "אה״ע", "Even HaEzer", 89),
+                Entry("VI", "ו", "YD", "יו״ד", "Yoreh De'ah", 131),
+                Entry("VI", "ו", "Addenda", "מלואים", "Addenda", 6),
+                Entry("VII", "ז", "EH", "אה״ע", "Even HaEzer", 49),
+                Entry("VIII", "ח", "OC", "או״ח", "Orach Chayim", 62),
+                Entry("IX", "ט", "OC", "או״ח", "Orach Chayim", 9),
+                Entry("IX", "ט", "YD", "יו״ד", "Yoreh De'ah", 49),
+                Entry("IX", "ט", "EH", "אה״ע", "Even HaEzer", 2),
+                Entry("IX", "ט", "CM", "חו״מ", "Choshen Mishpat", 3),
+                Entry("IX", "ט", "General Topics", "ענינים כלליים", "General Topics", 3)
+            )
+            // Un-abbreviated Hebrew for the volume-PICKER sheet only (`pickerHebrewLabel`) — the
+            // nav pill keeps the standard Tur-order abbreviation (`hebrewLabel`) unchanged.
+            val fullSectionHe = mapOf(
+                "או״ח" to "אורח חיים", "יו״ד" to "יורה דעה", "אה״ע" to "אבן העזר", "חו״מ" to "חושן משפט"
+            )
+            entries.map { e ->
+                val pickerHe = fullSectionHe[e.dispHe]?.let { "${e.volHe}, $it" }
+                TeshuvotVolume("${e.vol}, ${e.disp}", "${e.volHe}, ${e.dispHe}",
+                    "Mishpetei Uziel, Volume ${e.vol}, ${e.name} {siman}", e.count,
+                    pickerHebrewLabel = pickerHe)
+            }
+        }
+        // Each volume's main responsa live in an unnamed ("default") sub-node alongside sibling
+        // Approbations/Introduction/Essays/Miscellanea sections — only the default node's ref
+        // omits any section title, so no third label is appended here (unlike Mishpetei Uziel
+        // above). Essays/Miscellanea are skipped as ancillary, matching the policy already used
+        // for other Acharonim works' non-responsa sections.
+        BENEI_BANIM -> {
+            val counts = listOf(44, 52, 45, 28)
+            val numerals = listOf("I", "II", "III", "IV")
+            (0..3).map { i ->
+                TeshuvotVolume(numerals[i], toHebrewNumeral(i + 1), "Responsa Benei Banim, Volume ${numerals[i]} {siman}", counts[i])
+            }
+        }
+        // 10 flat volumes (Siman/Seif, no further sub-sections) from Kollel Eretz Chemda.
+        BMAREH_HABAZAK -> {
+            val counts = listOf(100, 120, 156, 140, 53, 102, 114, 41, 48, 100)
+            val numerals = listOf("I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X")
+            (0..9).map { i ->
+                TeshuvotVolume(numerals[i], toHebrewNumeral(i + 1), "B'Mareh HaBazak Volume ${numerals[i]} {siman}", counts[i])
+            }
+        }
+        // Flat -- no real volume level (volumeLabel is null for this work), so this is the one
+        // dummy entry every TeshuvotWork needs. refTemplate/ref(siman) are never actually used --
+        // sefariaRef(volume:siman:) below special-cases NISHMAT_HA_BAYIT to look up the real ref
+        // from NishmatHaBayitSiman.all instead, since the ref embeds each responsum's full title
+        // and isn't {siman}-formulaic.
+        NISHMAT_HA_BAYIT -> listOf(TeshuvotVolume("1", "1", "", NishmatHaBayitSiman.all.size))
     }
 
     val volumeCount: Int get() = volumes.size
@@ -708,8 +890,23 @@ enum class TeshuvotWork(
         return vols[idx].hebrewLabel
     }
 
+    /** Hebrew-mode display label for the volume-PICKER wheel only -- prefers the un-abbreviated
+     *  [TeshuvotVolume.pickerHebrewLabel] when a volume has one, falling back to the (possibly
+     *  abbreviated) [TeshuvotVolume.hebrewLabel] otherwise. The nav pill keeps using
+     *  [volumeDisplayLabelHebrew] above. */
+    fun volumePickerDisplayLabelHebrew(volume: Int): String {
+        val vols = volumes
+        val idx = (volume - 1).coerceIn(0, vols.size - 1)
+        return vols[idx].pickerHebrewLabel ?: vols[idx].hebrewLabel
+    }
+
     /** Builds the real Sefaria ref for a 1-based volume position and siman number. */
     fun sefariaRef(volume: Int, siman: Int): String {
+        // Nishmat HaBayit's ref isn't {siman}-formulaic (see NishmatHaBayitSiman's doc comment)
+        // -- `siman` here is really the synthetic 1-63 NishmatHaBayitSiman.number.
+        if (this == NISHMAT_HA_BAYIT) {
+            return NishmatHaBayitSiman.entry(siman)?.ref ?: NishmatHaBayitSiman.all[0].ref
+        }
         val vols = volumes
         val idx = (volume - 1).coerceIn(0, vols.size - 1)
         return vols[idx].ref(siman)

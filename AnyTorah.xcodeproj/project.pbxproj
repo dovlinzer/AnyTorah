@@ -54,6 +54,8 @@
 		F7AD86A08DEE260E6A443C38 /* RambamIntroductions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1407717DD3E83F4E86199C40 /* RambamIntroductions.swift */; };
 		F9E9324043CE3158AB37523B /* NotoRashiHebrew-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5F5BF9ED32A30FE7A23DB40E /* NotoRashiHebrew-Regular.ttf */; };
 		FCE16F47EDC82EAC1341F8B1 /* TalmudAudioService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AB4EE1C8500B44CEA98EA04 /* TalmudAudioService.swift */; };
+		A030A9BB7C1C9240C89CF78D /* YCTRelatedArticlesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67288E9EFF6D36CA6F06DB66 /* YCTRelatedArticlesService.swift */; };
+		FFCB6F093B4BC608285774BC /* SafariView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 248CC325C7E09F97F587FD23 /* SafariView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -117,6 +119,8 @@
 		FD1883E5DFF90AEAD8F4E32E /* FrankRuhlLibre-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "FrankRuhlLibre-Regular.ttf"; sourceTree = "<group>"; };
 		FDD864AA5726C51F90A02A1F /* CommentaryPanelViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentaryPanelViewModel.swift; sourceTree = "<group>"; };
 		FFF104CACB9B3F1FF79D7819 /* TalmudPageManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalmudPageManager.swift; sourceTree = "<group>"; };
+		67288E9EFF6D36CA6F06DB66 /* YCTRelatedArticlesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YCTRelatedArticlesService.swift; sourceTree = "<group>"; };
+		248CC325C7E09F97F587FD23 /* SafariView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -164,6 +168,7 @@
 				E148EF34371DD5299E6EE7F8 /* DafPageView.swift */,
 				8971E52FB06D211090609113 /* DedicationBannerView.swift */,
 				C7A7A9EF7EF165B48C320562 /* HomeCombinedView.swift */,
+				248CC325C7E09F97F587FD23 /* SafariView.swift */,
 				567113EA5D31701C9F2936BC /* SelectableTextView.swift */,
 				985DF0DB3464786C42B4558A /* SettingsView.swift */,
 				51843B948C0B1422A968C504 /* SplashView.swift */,
@@ -193,6 +198,7 @@
 				EB876CE0DBD0962DC0D3A498 /* TeshuvotPageManager.swift */,
 				52DD8CDAE7EC2E40A50B3BC4 /* TurParagraphEngine.swift */,
 				63287C9C4B340ECC4D610E59 /* YomiService.swift */,
+				67288E9EFF6D36CA6F06DB66 /* YCTRelatedArticlesService.swift */,
 			);
 			path = API;
 			sourceTree = "<group>";
@@ -371,10 +377,12 @@
 				F7AD86A08DEE260E6A443C38 /* RambamIntroductions.swift in Sources */,
 				87EBFB75F65879AA05E8DC8B /* SASimanNames.swift in Sources */,
 				027B7E634948DFE7A4988349 /* SefariaTextClient.swift in Sources */,
+				FFCB6F093B4BC608285774BC /* SafariView.swift in Sources */,
 				A899789D4EC41BE773FD28B4 /* SelectableTextView.swift in Sources */,
 				D763D920A87154A36DEF165F /* SettingsView.swift in Sources */,
 				CA618EE046866E666E6D0A18 /* SplashView.swift in Sources */,
 				FCE16F47EDC82EAC1341F8B1 /* TalmudAudioService.swift in Sources */,
+				A030A9BB7C1C9240C89CF78D /* YCTRelatedArticlesService.swift in Sources */,
 				2FA3E9EA02D6D72936159E4D /* TalmudPageManager.swift in Sources */,
 				2905807620D145DFD84AB64E /* TeshuvotPageManager.swift in Sources */,
 				D7A4C69E10298365317E5F7B /* TextCatalog.swift in Sources */,

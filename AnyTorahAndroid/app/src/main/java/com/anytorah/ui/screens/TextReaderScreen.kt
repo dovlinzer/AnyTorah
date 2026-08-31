@@ -1,5 +1,7 @@
 package com.anytorah.ui.screens
 
+import android.net.Uri
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,8 +26,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -54,7 +58,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import coil.compose.SubcomposeAsyncImage
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.text.font.FontWeight
@@ -62,11 +69,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.anytorah.api.RelatedYCTPiece
 import com.anytorah.api.TalmudAudioService
 import com.anytorah.audio.AudioPlayer
 import com.anytorah.models.ContemporaryTeshuvotVolume
 import com.anytorah.models.ContemporaryTeshuvotWork
 import com.anytorah.models.MidrashWork
+import com.anytorah.models.NishmatHaBayitSiman
 import com.anytorah.models.SASimanNames
 import com.anytorah.models.SATopicSection
 import com.anytorah.models.TextCatalog
@@ -86,7 +95,7 @@ import androidx.compose.ui.graphics.Color
 import com.anytorah.viewmodels.TextReaderViewModel
 import kotlinx.coroutines.launch
 
-enum class ActiveSheet { SELECTOR, SETTINGS, BOOKMARKS, BOOKMARK_EDIT, CHAPTER_PICKER, BOOK_PICKER, VOLUME_PICKER }
+enum class ActiveSheet { SELECTOR, SETTINGS, BOOKMARKS, BOOKMARK_EDIT, CHAPTER_PICKER, BOOK_PICKER, VOLUME_PICKER, RELATED_ARTICLES }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -104,8 +113,11 @@ fun TextReaderScreen(
     // Bypasses the whole Sefaria text/commentary/audio pipeline below (Row 2's display-mode
     // pill and commentary toggle, Row 3's audio player, the segment-based text content area) --
     // matches iOS's equivalent hard branch in TextReaderView.body. See load()'s early-return
-    // guard and ContemporaryTeshuvotPageView.
-    val isContemporary = vm.category == TextCategory.TESHUVOT && vm.teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY
+    // guard and ContemporaryTeshuvotPageView. True only for the page-image works (Iggros
+    // Moshe) -- false for Contemporary's Sefaria-digitized works (Mishpetei Uziel etc.), which
+    // use the ordinary text pipeline like Rishonim/Acharonim, Row 2 included.
+    val isContemporaryPdf = vm.category == TextCategory.TESHUVOT &&
+        vm.teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY && !vm.contemporaryUsesSefaria
 
     var activeSheet by remember { mutableStateOf<ActiveSheet?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -135,6 +147,7 @@ fun TextReaderScreen(
         }
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -200,7 +213,10 @@ fun TextReaderScreen(
             ) {
             Row(
                 modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                // Centered (not start-aligned) so the whole book/volume/siman cluster reads as
+                // one centered unit in the available row space, per explicit request -- matches
+                // iOS's equivalent `.frame(maxWidth: .infinity, alignment: .center)`.
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Book / tractate / work pill → opens in-reader list picker. Left unweighted (and
@@ -280,7 +296,7 @@ fun TextReaderScreen(
         // Row 2: Back | Language pill | Commentary toggle -- none of this applies to
         // Contemporary Teshuvot (no display mode, no commentary, content navigation happens
         // via the image pager's own gestures/edge taps instead).
-        if (!isContemporary) {
+        if (!isContemporaryPdf) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -346,7 +362,7 @@ fun TextReaderScreen(
         // Text content area
         Box(modifier = Modifier.weight(1f)) {
             when {
-                isContemporary -> {
+                isContemporaryPdf -> {
                     ContemporaryTeshuvotContent(vm = vm, fg = colors.appForeground)
                 }
                 vm.isLoading -> {
@@ -478,6 +494,37 @@ fun TextReaderScreen(
         }
     }
 
+    // Trailing-edge tab mirroring AnyYCTorah's own "cited from this daf" indicator
+    // (LearnTheDafView.citingTab) -- docked to the screen edge, overlapping the content, so it
+    // reads as persistently present rather than buried in Row 1's icon cluster (its previous
+    // spot, easy to miss among several other icons). Only when real coverage exists for the
+    // current siman -- pops in once the async fetch resolves. Matches iOS.
+    if (vm.category == TextCategory.SHULCHAN_ARUKH && vm.relatedYCTPieces.isNotEmpty()) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .clip(RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
+                .background(Color.Black.copy(alpha = 0.55f))
+                .clickable { activeSheet = ActiveSheet.RELATED_ARTICLES }
+                .padding(vertical = 12.dp, horizontal = 8.dp)
+        ) {
+            Icon(
+                Icons.Default.Article,
+                contentDescription = "Related YCT Articles",
+                tint = Color.White,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = "${vm.relatedYCTPieces.size}",
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+    } // end Box
+
     // Sheet management
     if (activeSheet != null) {
         ModalBottomSheet(
@@ -530,7 +577,7 @@ fun TextReaderScreen(
                 }
                 ActiveSheet.BOOK_PICKER -> {
                     BookPickerSheet(vm = vm, onSelect = {
-                        if (isContemporary) {
+                        if (isContemporaryPdf) {
                             // Every Contemporary work has a real volume level worth surfacing
                             // immediately -- always chain into the volume picker, unlike
                             // Rishonim/Acharonim's volumeLabel != null gate below.
@@ -551,6 +598,15 @@ fun TextReaderScreen(
                         vm.load()
                     })
                 }
+                ActiveSheet.RELATED_ARTICLES -> {
+                    val context = LocalContext.current
+                    RelatedArticlesSheet(
+                        pieces = vm.relatedYCTPieces,
+                        onOpen = { url ->
+                            CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url))
+                        }
+                    )
+                }
                 null -> {}
             }
         }
@@ -565,6 +621,9 @@ private fun ChapterPickerSheet(vm: TextReaderViewModel, onDone: () -> Unit) {
         return
     } else if (vm.category == TextCategory.TUR) {
         TurSimanPickerContent(vm = vm, onSelect = onDone)
+        return
+    } else if (vm.category == TextCategory.TESHUVOT && vm.contemporaryUsesSefaria && vm.teshuvotWork == TeshuvotWork.NISHMAT_HA_BAYIT) {
+        NishmatHaBayitSimanPickerContent(vm = vm, onSelect = onDone)
         return
     }
 
@@ -648,7 +707,7 @@ private fun ChapterPickerSheet(vm: TextReaderViewModel, onDone: () -> Unit) {
                 )
             }
             TextCategory.TESHUVOT -> {
-                if (vm.teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY) {
+                if (vm.teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY && !vm.contemporaryUsesSefaria) {
                     // Selecting a siman jumps contemporaryPage to that siman's indexed page
                     // (see TeshuvotPageManager.page) rather than storing the siman itself --
                     // page, not siman, is Contemporary's real navigable unit, since the index
@@ -694,7 +753,7 @@ private fun ChapterPickerSheet(vm: TextReaderViewModel, onDone: () -> Unit) {
  *  doesn't always equal the label (Rashba's wheel position 2 is Part IV, not II). */
 @Composable
 private fun VolumePickerSheet(vm: TextReaderViewModel, onDone: () -> Unit) {
-    if (vm.teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY) {
+    if (vm.teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY && !vm.contemporaryUsesSefaria) {
         ContemporaryVolumePickerSheet(vm = vm, onDone = onDone)
         return
     }
@@ -731,11 +790,19 @@ private fun VolumePickerSheet(vm: TextReaderViewModel, onDone: () -> Unit) {
         // ("Part IV"). The generic word is dropped entirely when the volume labels aren't
         // plain numbers -- "Kamma"/"EH I" already read fine on their own; only "Part IV"-style
         // needs it.
+        // Scoped exception (2026-08-30), not a global flip: Benei Banim/B'mareh HaBazak need
+        // חלק visually RIGHT of the numeral, the opposite of every other numeric-labeled work
+        // already verified correct with the typed order above. If a future numeric-labeled
+        // Hebrew volume work looks backwards on-device, it likely needs its own entry in this
+        // same exception set rather than a global change.
+        val wordBeforeNumeralInHebrew = setOf(TeshuvotWork.BENEI_BANIM, TeshuvotWork.BMAREH_HABAZAK)
         WheelPicker(
             items = (1..count).map { v ->
-                val numeral = if (vm.saHebrewMode) vm.teshuvotWork.volumeDisplayLabelHebrew(v) else vm.teshuvotWork.volumeDisplayLabel(v)
+                val numeral = if (vm.saHebrewMode) vm.teshuvotWork.volumePickerDisplayLabelHebrew(v) else vm.teshuvotWork.volumeDisplayLabel(v)
                 if (!vm.teshuvotWork.volumeLabelIsNumeric) numeral
-                else if (vm.saHebrewMode) "$numeral $label" else "$label $numeral"
+                else if (vm.saHebrewMode) {
+                    if (vm.teshuvotWork in wordBeforeNumeralInHebrew) "$label $numeral" else "$numeral $label"
+                } else "$label $numeral"
             },
             selectedIndex = (vm.teshuvotVolume - 1).coerceIn(0, count - 1),
             onIndexSelected = { vm.teshuvotVolume = it + 1 },
@@ -871,6 +938,153 @@ private fun saBookSections(bookIdx: Int): List<SATopicSection> = when (bookIdx) 
     2 -> SASimanNames.sectionsEH
     3 -> SASimanNames.sectionsHM
     else -> emptyList()
+}
+
+/** Nishmat HaBayit's titled-list siman picker, grouped by its 5 Parts -- same shape as
+ *  [SASimanPickerContent] above, since this work has no numeric Siman address type on Sefaria
+ *  (see [NishmatHaBayitSiman]'s doc comment for why). */
+@Composable
+private fun NishmatHaBayitSimanPickerContent(vm: TextReaderViewModel, onSelect: () -> Unit) {
+    val colors = LocalAnyTorahColors.current
+    val useHe = vm.saHebrewMode
+    val parts = remember { NishmatHaBayitSiman.all.map { it.partEnglish }.distinct() }
+    CompositionLocalProvider(
+        LocalLayoutDirection provides if (useHe) LayoutDirection.Rtl else LayoutDirection.Ltr
+    ) {
+    LazyColumn(modifier = Modifier.fillMaxWidth()) {
+        for (part in parts) {
+            val entries = NishmatHaBayitSiman.all.filter { it.partEnglish == part }
+            stickyHeader {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(colors.cardBackground)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        text = if (useHe) entries.first().partHebrew else part,
+                        color = colors.appForeground,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            for (entry in entries) {
+                item {
+                    val isSelected = vm.teshuvotSiman == entry.number
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { vm.teshuvotSiman = entry.number; onSelect() }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${entry.number}",
+                            color = colors.appForeground.copy(alpha = 0.5f),
+                            fontSize = 12.sp,
+                            modifier = Modifier.width(28.dp),
+                            textAlign = TextAlign.End
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (useHe) entry.titleHebrew else entry.titleEnglish,
+                            color = colors.appForeground,
+                            fontSize = 14.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (isSelected) {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = null,
+                                tint = colors.appForeground,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                    HorizontalDivider(color = colors.dividerColor)
+                }
+            }
+        }
+    }
+    } // end CompositionLocalProvider
+}
+
+/** Lists YCT halakha pieces (library.yctorah.org/psak.yctorah.org) citing the current SA siman --
+ *  see [YCTRelatedArticlesService]. Tapping a row opens it externally via Custom Tabs; no native
+ *  in-app reader (this app has no other web-view precedent -- see CLAUDE.md). */
+@Composable
+private fun RelatedArticlesSheet(pieces: List<RelatedYCTPiece>, onOpen: (String) -> Unit) {
+    val colors = LocalAnyTorahColors.current
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "Related YCT Articles",
+            color = colors.appForeground,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+        )
+        HorizontalDivider(color = colors.dividerColor)
+        LazyColumn(modifier = Modifier.fillMaxWidth()) {
+            items(pieces) { piece ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpen(piece.url) }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    RelatedArticleThumbnail(piece, colors)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(piece.title, color = colors.appForeground, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        piece.author?.takeIf { it.isNotBlank() }?.let {
+                            Text(it, color = colors.appForeground.copy(alpha = 0.6f), fontSize = 12.sp)
+                        }
+                        piece.excerpt?.takeIf { it.isNotBlank() }?.let {
+                            Text(it, color = colors.appForeground.copy(alpha = 0.75f), fontSize = 12.sp,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                HorizontalDivider(color = colors.dividerColor)
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+/** Featured-image thumbnail per piece, mirroring AnyYCTorah's `PostRow` thumbnail (real image
+ *  when `pieces.image_url` is populated, else a gray placeholder with a content-type glyph). No
+ *  author-photo fallback tier -- that's backed by AnyYCTorah's separate author-photo scraping
+ *  pipeline, out of scope for this read-only surface. */
+@Composable
+private fun RelatedArticleThumbnail(piece: RelatedYCTPiece, colors: AnyTorahColors) {
+    val shape = RoundedCornerShape(8.dp)
+    val placeholder: @Composable () -> Unit = {
+        Box(
+            modifier = Modifier.size(56.dp).clip(shape).background(colors.appForeground.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (piece.isAudio) Icons.Default.Headphones else Icons.Default.Article,
+                contentDescription = null,
+                tint = colors.appForeground.copy(alpha = 0.5f)
+            )
+        }
+    }
+    if (!piece.imageURL.isNullOrBlank()) {
+        SubcomposeAsyncImage(
+            model = piece.imageURL,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(56.dp).clip(shape),
+            loading = { placeholder() },
+            error = { placeholder() }
+        )
+    } else {
+        placeholder()
+    }
 }
 
 /**
@@ -1064,14 +1278,33 @@ private fun BookPickerSheet(vm: TextReaderViewModel, onSelect: () -> Unit) {
                 }
             }
             TextCategory.TESHUVOT -> if (vm.teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY) {
-                // Only one work (Iggros Moshe) exists as of 2026-08-29, but built as a real
-                // list, not a special case, since more are planned -- see CLAUDE.md.
+                // Iggros Moshe (page-image works) first, then Contemporary's Sefaria-digitized
+                // works (Mishpetei Uziel etc.) in declaration order -- per explicit request.
+                // Always a flat list, never century-grouped/alphabetized like Rishonim/Acharonim.
                 items(ContemporaryTeshuvotWork.works) { work ->
                     BookPickerRow(
-                        name = if (useHe) work.hebrewDisplayName else work.name,
-                        isSelected = vm.contemporaryWork.id == work.id,
+                        // Full, un-abbreviated name here -- abbreviations (hebrewDisplayName,
+                        // "אג״מ") are for the compact nav pill only, not the book-picker list.
+                        // See TeshuvotVolume.pickerHebrewLabel's doc comment for the same
+                        // standing policy applied to volume labels.
+                        name = if (useHe) work.hebrewName else work.name,
+                        isSelected = !vm.contemporaryUsesSefaria && vm.contemporaryWork.id == work.id,
                         onClick = {
+                            vm.contemporaryUsesSefaria = false
                             vm.setContemporaryWork(work)
+                            onSelect()
+                        }
+                    )
+                    HorizontalDivider(color = colors.dividerColor)
+                }
+                items(TeshuvotWork.worksFor(TeshuvotSubcategory.CONTEMPORARY)) { work ->
+                    BookPickerRow(
+                        name = if (useHe) work.hebrewName else work.displayName,
+                        isSelected = vm.contemporaryUsesSefaria && vm.teshuvotWork == work,
+                        onClick = {
+                            vm.contemporaryUsesSefaria = true
+                            vm.teshuvotWork = work
+                            vm.teshuvotVolume = 1; vm.teshuvotSiman = 1
                             onSelect()
                         }
                     )

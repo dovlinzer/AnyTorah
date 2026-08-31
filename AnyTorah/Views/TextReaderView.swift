@@ -59,10 +59,11 @@ struct TextReaderView: View {
     // Single enum drives all sheet presentations — multiple .sheet(isPresented:) modifiers
     // on the same view interfere with each other in SwiftUI, causing the wrong sheet to show.
     private enum ActiveSheet: String, Identifiable {
-        case selector, settings, bookmarks, bookmarkEdit, chapterPicker, bookPicker, volumePicker
+        case selector, settings, bookmarks, bookmarkEdit, chapterPicker, bookPicker, volumePicker, relatedArticles
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet? = nil
+    @State private var externalArticleURL: IdentifiableURL? = nil
 
     @AppStorage("saHebrewMode") private var saHebrewMode: Bool = false
     @AppStorage("teshuvotAlphabeticalOrder") private var teshuvotAlphabeticalOrder: Bool = false
@@ -77,12 +78,19 @@ struct TextReaderView: View {
 
     private var cardFill: Color { appFg.opacity(0.08) }
 
+    /// True only for the page-image Contemporary works (Iggros Moshe) — false for Contemporary's
+    /// Sefaria-digitized works (Mishpetei Uziel etc.), which use the ordinary text pipeline like
+    /// Rishonim/Acharonim. See `TextReaderViewModel.contemporaryUsesSefaria`.
+    private var isContemporaryPdfMode: Bool {
+        vm.category == .teshuvot && vm.teshuvotSubcategory == .contemporary && !vm.contemporaryUsesSefaria
+    }
+
     var body: some View {
         GeometryReader { geo in
             VStack(spacing: 0) {
                 readerHeader
 
-                if vm.category == .teshuvot && vm.teshuvotSubcategory == .contemporary {
+                if isContemporaryPdfMode {
                     // Bypasses the whole Sefaria text/commentary pipeline below — see
                     // load()'s early-return guard and ContemporaryTeshuvotPageView.
                     contemporaryTeshuvotContent
@@ -116,6 +124,17 @@ struct TextReaderView: View {
             }
         }
         .background(appBg.ignoresSafeArea())
+        .overlay(alignment: .trailing) {
+            // Only when real coverage exists for the current siman — pops in once the async
+            // fetch resolves, same as the Talmud audio row. Previously a header-row icon among
+            // several others (easy to miss); moved to a trailing-edge tab per the pattern
+            // AnyYCTorah already shipped for its own "cited from this daf" indicator
+            // (LearnTheDafView.citingTab) — docked to the screen edge, overlapping the content,
+            // so it reads as persistently present rather than buried in a row of controls.
+            if vm.category == .shulchanArukh, !vm.relatedYCTPieces.isEmpty {
+                relatedArticlesTab
+            }
+        }
         // When the text changes (load() fires) while in bothPanels layout, reload the right panel.
         // The main panel is already reloaded by load() itself; only the right panel needs this.
         .onChange(of: vm.loadGeneration) { _, _ in
@@ -161,6 +180,8 @@ struct TextReaderView: View {
                 bookPickerSheet
             case .volumePicker:
                 volumePickerSheet
+            case .relatedArticles:
+                relatedArticlesSheet
             }
         }
         .task {
@@ -269,12 +290,11 @@ struct TextReaderView: View {
                 // Claim every point of width the two icon clusters don't need — previously a
                 // Spacer(minLength: 8) sat between this HStack and the gear, so it (not the
                 // pills) absorbed any leftover room and pills stayed at their compressed
-                // ideal width even when the row had space to spare. Anchoring this frame's
-                // alignment to the reading direction also satisfies Hebrew mode: with the
-                // pills HStack's own layoutDirection flipped RTL above, the book pill is the
-                // rightmost child in that flip, so trailing-aligning the frame docks it right
-                // next to the gear.
-                .frame(maxWidth: .infinity, alignment: saHebrewMode ? .trailing : .leading)
+                // ideal width even when the row had space to spare. Centered (not edge-aligned)
+                // so the whole book/volume/siman cluster reads as one centered unit in the
+                // available row space, per explicit request — same in both reading directions
+                // since the RTL flip above already handles internal pill order.
+                .frame(maxWidth: .infinity, alignment: .center)
 
                 // Settings gear — top-right, matching the home screen convention
                 Button { activeSheet = .settings } label: {
@@ -296,7 +316,13 @@ struct TextReaderView: View {
             ZStack {
                 // ── Centre: language mode selector + optional text/daf toggle ──
                 HStack(spacing: 0) {
-                    displayModePill
+                    // Hidden for Iggros Moshe (page images, not text — no Hebrew/English
+                    // toggle applies) per explicit request; still shown for Contemporary's
+                    // Sefaria-digitized works, which have real translations like any other
+                    // Teshuvot work.
+                    if !isContemporaryPdfMode {
+                        displayModePill
+                    }
                     if vm.isTalmudBavli,
                        let tractate = vm.currentTalmudTractate,
                        TalmudPageManager.shared.hasPages(for: tractate.sefariaName) {
@@ -1137,6 +1163,8 @@ struct TextReaderView: View {
             saSimanPickerSheet
         } else if vm.category == .tur {
             turSimanPickerSheet
+        } else if vm.category == .teshuvot && vm.contemporaryUsesSefaria && vm.teshuvotWork == .nishmatHaBayit {
+            nishmatHaBayitSimanPickerSheet
         } else {
             regularChapterPickerSheet
         }
@@ -1242,7 +1270,7 @@ struct TextReaderView: View {
             }
             .pickerStyle(.wheel)
         case .teshuvot:
-            if vm.teshuvotSubcategory == .contemporary {
+            if isContemporaryPdfMode {
                 // Selecting a siman jumps `contemporaryPage` to that siman's indexed page (see
                 // ContemporaryTeshuvotVolume.page(forSiman:)) rather than storing the siman
                 // itself — page, not siman, is Contemporary's real navigable unit, since the
@@ -1282,7 +1310,7 @@ struct TextReaderView: View {
     /// label (`TeshuvotWork.volumeDisplayLabel`) rather than a bare wheel position, since that
     /// position doesn't always equal the label (Rashba's wheel position 2 is Part IV, not II).
     private var volumePickerSheet: some View {
-        if vm.teshuvotSubcategory == .contemporary {
+        if isContemporaryPdfMode {
             return AnyView(contemporaryVolumePickerSheet)
         }
         return AnyView(regularVolumePickerSheet)
@@ -1361,10 +1389,19 @@ struct TextReaderView: View {
                     // dropped entirely when the volume labels aren't plain numbers — "Kamma"/
                     // "EH I" already read fine on their own; only "Part IV"-style needs it.
                     let numeral = saHebrewMode
-                        ? vm.teshuvotWork.volumeDisplayLabelHebrew(v)
+                        ? vm.teshuvotWork.volumePickerDisplayLabelHebrew(v)
                         : vm.teshuvotWork.volumeDisplayLabel(v)
+                    // Scoped exception (2026-08-30), not a global flip: Benei Banim/B'mareh
+                    // HaBazak need חלק visually RIGHT of the numeral, the opposite of every
+                    // other numeric-labeled work already verified correct with the typed order
+                    // below. RTL wheel-row bidi gotcha — see the comment above; if a future
+                    // numeric-labeled Hebrew volume work looks backwards on-device, it likely
+                    // needs its own entry in this same exception set rather than a global change.
+                    let wordBeforeNumeralInHebrew: Set<TeshuvotWork> = [.beneiBanim, .bmarehHabazak]
                     let text = vm.teshuvotWork.volumeLabelIsNumeric
-                        ? (saHebrewMode ? "\(numeral) \(label)" : "\(label) \(numeral)")
+                        ? (saHebrewMode
+                            ? (wordBeforeNumeralInHebrew.contains(vm.teshuvotWork) ? "\(label) \(numeral)" : "\(numeral) \(label)")
+                            : "\(label) \(numeral)")
                         : numeral
                     Text(text).tag(v)
                 }
@@ -1453,6 +1490,180 @@ struct TextReaderView: View {
             .environment(\.layoutDirection, saHebrewMode ? .rightToLeft : .leftToRight)
             .onAppear {
                 let scrollId = "siman_\(vm.saSection)_\(vm.saSiman)"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    proxy.scrollTo(scrollId, anchor: .center)
+                }
+            }
+        }
+        .background(appBg)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+
+    // MARK: - Related YCT Articles (Shulchan Arukh only)
+
+    private struct IdentifiableURL: Identifiable { let url: URL; var id: String { url.absoluteString } }
+
+    /// Trailing-edge tab mirroring AnyYCTorah's `LearnTheDafView.citingTab`: a small badge
+    /// (icon + count) pinned to the screen's trailing edge, rounded only on the leading corners
+    /// so it reads as docked to the edge rather than a floating button. Tapping opens
+    /// `relatedArticlesSheet`.
+    private var relatedArticlesTab: some View {
+        Button {
+            activeSheet = .relatedArticles
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: "text.book.closed.fill")
+                    .font(.system(size: 15))
+                Text("\(vm.relatedYCTPieces.count)")
+                    .font(.caption2.weight(.bold))
+            }
+            .foregroundStyle(.white)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 8)
+            .background(Color.black.opacity(0.55))
+            .clipShape(UnevenRoundedRectangle(topLeadingRadius: 10, bottomLeadingRadius: 10))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Lists YCT halakha pieces (library.yctorah.org/psak.yctorah.org) citing the current SA
+    /// siman — see YCTRelatedArticlesService. Tapping a row opens it externally via SafariView;
+    /// no native in-app reader (this app has no other web-view precedent — see CLAUDE.md).
+    private var relatedArticlesSheet: some View {
+        NavigationStack {
+            List(vm.relatedYCTPieces) { piece in
+                Button {
+                    guard let url = URL(string: piece.url) else { return }
+                    externalArticleURL = IdentifiableURL(url: url)
+                } label: {
+                    HStack(alignment: .top, spacing: 10) {
+                        relatedArticleThumbnail(piece)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(piece.title).font(.subheadline.weight(.semibold)).foregroundStyle(appFg)
+                            if let author = piece.author, !author.isEmpty {
+                                Text(author).font(.caption).foregroundStyle(appFg.opacity(0.6))
+                            }
+                            if let excerpt = piece.excerpt, !excerpt.isEmpty {
+                                Text(excerpt).font(.caption).foregroundStyle(appFg.opacity(0.75)).lineLimit(2)
+                            }
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(Color.clear)
+                .listRowSeparatorTint(appFg.opacity(0.12))
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(appBg)
+            .navigationTitle("Related YCT Articles")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { activeSheet = nil }
+                        .foregroundStyle(appFg)
+                }
+            }
+        }
+        .background(appBg)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .sheet(item: $externalArticleURL) { item in SafariView(url: item.url) }
+    }
+
+    /// Featured-image thumbnail per piece, mirroring AnyYCTorah's `PostRow.thumbnail` (real
+    /// image when `pieces.image_url` is populated, else a gray placeholder with a content-type
+    /// glyph). No author-photo fallback tier here — that's backed by AnyYCTorah's separate
+    /// `AuthorPhotoCache` scraping pipeline, out of scope for this read-only surface.
+    @ViewBuilder
+    private func relatedArticleThumbnail(_ piece: RelatedYCTPiece) -> some View {
+        let placeholder = RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(appFg.opacity(0.12))
+            .overlay {
+                Image(systemName: piece.isAudio ? "headphones" : "doc.text")
+                    .foregroundStyle(appFg.opacity(0.5))
+            }
+            .frame(width: 56, height: 56)
+
+        if let imageURLString = piece.imageURL, let url = URL(string: imageURLString) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().aspectRatio(contentMode: .fill)
+                        .frame(width: 56, height: 56)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                default:
+                    placeholder
+                }
+            }
+        } else {
+            placeholder
+        }
+    }
+
+    // MARK: - Nishmat HaBayit siman picker (titled list, grouped by Part — no numeric wheel)
+
+    /// Same List+Section shape as `saSimanPickerSheet` above, grouped by Nishmat HaBayit's 5
+    /// Parts instead of SA's Tur-order books — see `NishmatHaBayitSiman`'s doc comment for why
+    /// this work needs a titled list rather than the ordinary numeric wheel every other Teshuvot
+    /// work uses.
+    private var nishmatHaBayitParts: [String] {
+        var seen = Set<String>()
+        return NishmatHaBayitSiman.all.map { $0.partEnglish }.filter { seen.insert($0).inserted }
+    }
+
+    @ViewBuilder
+    private var nishmatHaBayitSimanPickerSheet: some View {
+        ScrollViewReader { proxy in
+            List {
+                ForEach(nishmatHaBayitParts, id: \.self) { part in
+                    let entries = NishmatHaBayitSiman.all.filter { $0.partEnglish == part }
+                    Section {
+                        ForEach(entries, id: \.number) { entry in
+                            let isSelected = vm.teshuvotSiman == entry.number
+                            Button {
+                                vm.teshuvotSiman = entry.number
+                                activeSheet = nil
+                                Task { await vm.load() }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Text("\(entry.number)")
+                                        .foregroundStyle(appFg.opacity(0.5))
+                                        .font(.caption.monospacedDigit())
+                                        .frame(minWidth: 24, alignment: .trailing)
+                                    Text(saHebrewMode ? entry.titleHebrew : entry.titleEnglish)
+                                        .foregroundStyle(appFg)
+                                        .font(.subheadline)
+                                    Spacer()
+                                    if isSelected {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(appFg)
+                                            .font(.caption.weight(.semibold))
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparatorTint(appFg.opacity(0.08))
+                            .id("nishmat_siman_\(entry.number)")
+                        }
+                    } header: {
+                        Text(saHebrewMode ? (entries.first?.partHebrew ?? part) : part)
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(appFg)
+                            .textCase(nil)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(appBg)
+            .environment(\.layoutDirection, saHebrewMode ? .rightToLeft : .leftToRight)
+            .onAppear {
+                let scrollId = "nishmat_siman_\(vm.teshuvotSiman)"
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                     proxy.scrollTo(scrollId, anchor: .center)
                 }
@@ -1634,20 +1845,26 @@ struct TextReaderView: View {
         .id("book_teshuvot_\(idx)")
     }
 
-    /// One row of the Contemporary Teshuvot book-picker sheet. Only one work (Iggros Moshe)
-    /// exists as of 2026-08-29, but built as a real list, not a special case, since more are
-    /// planned — see CLAUDE.md's Contemporary Teshuvot section.
+    /// One row of the Contemporary Teshuvot book-picker sheet for a page-image work (Iggros
+    /// Moshe). See `contemporarySefariaBookRow` for the sibling row type used by Contemporary's
+    /// Sefaria-digitized works (Mishpetei Uziel etc.) — both appear in the same list, in a
+    /// specific order (Iggros Moshe first) per explicit request.
     @ViewBuilder
     private func contemporaryBookRow(_ work: ContemporaryTeshuvotWork) -> some View {
-        let isSelected = vm.contemporaryWork.id == work.id
+        let isSelected = !vm.contemporaryUsesSefaria && vm.contemporaryWork.id == work.id
         Button {
+            vm.contemporaryUsesSefaria = false
             vm.contemporaryWork = work
             // Chain straight into the volume picker, same reasoning as teshuvotBookRow —
             // every Contemporary work has a real volume level worth surfacing immediately.
             activeSheet = .volumePicker
         } label: {
             HStack {
-                Text(saHebrewMode ? work.hebrewDisplayName : work.name).foregroundStyle(appFg)
+                // Full, un-abbreviated name here — abbreviations (hebrewDisplayName, "אג״מ")
+                // are for the compact nav pill only, not the book-picker list. See
+                // `TeshuvotVolume.pickerHebrewLabel`'s doc comment for the same standing policy
+                // applied to volume labels.
+                Text(saHebrewMode ? work.hebrewName : work.name).foregroundStyle(appFg)
                 Spacer()
                 if isSelected { Image(systemName: "checkmark").foregroundStyle(appFg).font(.caption.weight(.semibold)) }
             }.contentShape(Rectangle())
@@ -1656,6 +1873,37 @@ struct TextReaderView: View {
         .listRowBackground(Color.clear)
         .listRowSeparatorTint(appFg.opacity(0.12))
         .id("book_contemp_\(work.id)")
+    }
+
+    /// One row of the Contemporary Teshuvot book-picker sheet for a Sefaria-digitized work
+    /// (Mishpetei Uziel, Benei Banim, B'mareh HaBazak) — added 2026-08-30. Unlike
+    /// `teshuvotBookRow` (Rishonim/Acharonim), this list is never century-grouped or
+    /// alphabetized: Contemporary is always a flat list, Iggros Moshe first, per explicit
+    /// request. Selecting a row switches Contemporary onto the ordinary Sefaria fetch pipeline
+    /// via `contemporaryUsesSefaria`.
+    @ViewBuilder
+    private func contemporarySefariaBookRow(_ work: TeshuvotWork) -> some View {
+        let isSelected = vm.contemporaryUsesSefaria && vm.teshuvotWork == work
+        Button {
+            vm.contemporaryUsesSefaria = true
+            vm.teshuvotWork = work
+            if work.volumeLabel != nil {
+                activeSheet = .volumePicker
+            } else {
+                activeSheet = nil
+                Task { await vm.load() }
+            }
+        } label: {
+            HStack {
+                Text(saHebrewMode ? work.hebrewName : work.displayName).foregroundStyle(appFg)
+                Spacer()
+                if isSelected { Image(systemName: "checkmark").foregroundStyle(appFg).font(.caption.weight(.semibold)) }
+            }.contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Color.clear)
+        .listRowSeparatorTint(appFg.opacity(0.12))
+        .id("book_contemp_sefaria_\(work.rawValue)")
     }
 
     private var bookPickerSheet: some View {
@@ -1849,6 +2097,9 @@ struct TextReaderView: View {
                         ForEach(ContemporaryTeshuvotWork.works) { work in
                             contemporaryBookRow(work)
                         }
+                        ForEach(TeshuvotWork.works(for: .contemporary)) { work in
+                            contemporarySefariaBookRow(work)
+                        }
                     } else {
                         let works = TeshuvotWork.works(for: vm.teshuvotSubcategory)
                         if teshuvotAlphabeticalOrder {
@@ -1891,6 +2142,9 @@ struct TextReaderView: View {
                         return "book_midrash_\(idx)"
                     case .teshuvot:
                         if vm.teshuvotSubcategory == .contemporary {
+                            if vm.contemporaryUsesSefaria {
+                                return "book_contemp_sefaria_\(vm.teshuvotWork.rawValue)"
+                            }
                             return "book_contemp_\(vm.contemporaryWork.id)"
                         }
                         let works = TeshuvotWork.works(for: vm.teshuvotSubcategory)

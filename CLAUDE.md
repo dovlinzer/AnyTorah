@@ -501,6 +501,19 @@ itself is left defined but unused, per the file's own established retire-in-plac
   back to the literal last position (matching Kotlin's rule) fixed it — see the struct's own
   comment.
 
+**"Contemp." reverted to "Contemporary" (2026-08-30).** The 2026-08-28 truncation predates two
+things that already absorb the longer word without the tile growing taller than its siblings:
+`CategoryTile`'s pinned `maxHeight` (same value as `minHeight` — see above) and iOS's
+`lineLimit(2)` + `minimumScaleFactor(0.7)`. iOS needed no further change. Android's plain `Text`
+has no auto-shrink and doesn't break a single long word mid-word (unlike wrapping at word
+boundaries), so without a fix "Contemporary" could get silently clipped at the tile's rounded
+corner rather than resized — added a manual shrink-on-overflow to `CategoryTile`'s `Text`
+(`remember`ed `fontSize` state, decremented by 1sp whenever `onTextLayout` reports
+`hasVisualOverflow`, floored at 9sp, `overflow = TextOverflow.Ellipsis` as a last-resort
+fallback) rather than depending on `BasicText`'s `autoSize` (Compose Foundation 1.8+, not
+assumed available here). If "Contemporary" still doesn't read cleanly on-device on either
+platform, revert the label back to "Contemp." — that string is still a safe fallback.
+
 ### Reader header Row 1 — flat row instead of ZStack/Box overlay, full-width pills (2026-08-28)
 
 The nav-pills cluster (book/volume/chapter pills) previously sat inside a `ZStack`/`Box`
@@ -557,6 +570,40 @@ computed property, `TeshuvotWork.volumeLabelIsNumeric` (Swift) / `volumeLabelIsN
 with the label data itself if a work's `volumes` ever changes. Only the wheel row is affected —
 the sheet's own "Select {word}" title and the header nav pill (already bare-numeral-only since
 an earlier round) are unchanged.
+
+### Standing policy: RTL wheel-row word order, verify per-work (2026-08-30)
+
+`regularVolumePickerSheet` / `VolumePickerSheet`'s wheel rows type the numeral before the word
+in Hebrew mode ("ד חלק") because a native wheel picker row's own bidi resolution does not
+reorder RTL text the way plain `Text` does — typing the numeral first was verified on-device to
+land it visually on the right, for the works checked at the time. **This is not guaranteed to
+hold for every future numeric-labeled work** — Benei Banim and B'mareh HaBazak (added
+2026-08-30) needed the opposite order (word visually right of the numeral), fixed via a small
+`wordBeforeNumeralInHebrew` exception set (`TextReaderView.swift`, `TextReaderScreen.kt`) rather
+than a global flip, to avoid regressing the ~10 other pre-existing numeric-labeled works
+(Radbaz, Rav Pealim, Rosh, Rashba, Melammed Lehoil, etc.) already confirmed correct with the
+default order. **When adding a new numeric-labeled Hebrew volume work, check it on-device** —
+if the word lands on the wrong side, add the work to that same exception set rather than
+guessing or flipping the shared default.
+
+### Standing policy: abbreviated Hebrew labels — picker spells out, pill abbreviates (2026-08-30)
+
+Two places show a Hebrew abbreviation (או״ח, אג״מ, etc.): the compact nav pill (book/volume),
+where an abbreviation is appropriate and space-constrained, and a picker sheet/wheel list, where
+there's no space constraint and the full word reads better. `TeshuvotVolume.pickerHebrewLabel`
+(Swift, with a hand-written `init` since Swift does not synthesize memberwise-init defaults from
+a property's own initializer — see the struct's doc comment) / `TeshuvotVolume.pickerHebrewLabel`
+(Kotlin `data class`, a plain trailing default param — this one *does* work as expected) holds
+the un-abbreviated form for the volume picker; `contemporaryBookRow`/`BookPickerRow`'s
+Contemporary-work-picker rows use `hebrewName` (full) instead of `hebrewDisplayName`/
+`hebrewAbbreviation` (abbreviated) for the same reason. **Only retrofitted onto Mishpetei
+Uziel's 4 abbreviated volume entries and the Contemporary book-picker rows so far** — the ~40
+pre-existing Rishonim/Acharonim works with abbreviated Hebrew volume/section labels (Rav
+Pealim, Chatam Sofer, Noda Biyehudah, Admat Kodesh, Beer Yitzchak, Binyan Olam, HaElef Lekha
+Shlomo, Maharshdam, Shoel uMeshiv, etc.) still show their abbreviation in their own picker too —
+a separate, much larger follow-up, not done here. **When adding a new work with an abbreviated
+Hebrew volume/section label, populate `pickerHebrewLabel` for it at the same time** rather than
+letting the gap grow further.
 
 ### Hebrew edah abbreviations — א/ס instead of A/S in Hebrew mode (2026-08-28)
 
@@ -868,11 +915,233 @@ things didn't already exist on Android to mirror in the first place:
   `load()`, which is where every other category's state normally gets persisted; Kotlin has no
   `didSet` to hang this off of automatically).
 - UI: `TextReaderScreen.kt` gates Row 2 (display-mode pill, commentary toggle) and the text
-  content area behind an `isContemporary` check, rendering `ContemporaryTeshuvotContent`
+  content area behind an `isContemporaryPdf` check, rendering `ContemporaryTeshuvotContent`
   instead — same hard-branch shape as iOS's `TextReaderView.body`, not scattered conditionals
   through the existing Sefaria rendering path. `BookPickerSheet`/`VolumePickerSheet`/
   `ChapterPickerSheet` each gained a Contemporary branch alongside their existing Sefaria-based
   logic, mirroring the iOS picker-sheet split described above.
+
+#### Batch indexing the remaining Iggros Moshe volumes (2026-08-31)
+
+The pilot above shipped with 1 of 15 Iggros Moshe volumes indexed (EH2). Indexing the rest by
+hand (or via live Claude Code subagents reading page images one at a time) kept getting
+interrupted by the Claude Code subscription's own monthly usage limit — unrelated to any actual
+per-request cost. Replaced with **`tools/index_iggros_moshe_batch.py`**, a standalone script
+against the user's own separate, metered Anthropic API key, using the **Messages Batch API**
+specifically because it (a) runs entirely server-side, surviving this machine sleeping/closing/
+disconnecting, and (b) is a flat 50% discount off standard per-token pricing. One independent
+request per page (no conversation history between pages — keeps cost linear and lets every page
+be judged purely on its own image), then a local post-hoc pass enforces "siman numbers are
+strictly sequential, no gaps" over the sorted results — same "trust the running count over an
+individual page's misread numeral" methodology validated by hand in the pilot above, just
+automated. `plan`/`submit`/`status`/`collect` subcommands; `submit` always prompts for
+confirmation before spending money unless `--yes` is passed. Writes to `index_out/
+{Volume}_index.json` — **not yet merged into the bundled `teshuvot_siman_index.json`** that
+ships with the app; see "Wiring a completed volume into the app" below.
+
+**Two real bugs found and fixed post-launch (2026-08-31), both from the same root cause — a
+race between this script and a live indexing agent finishing the same volume concurrently**:
+1. `IggrotMosheOH2`'s on-disk index got corrupted: the script's `resume_point()` took a stale
+   snapshot of the index (before a live agent had finished writing it), submitted a batch for
+   pages already covered by the time `collect` ran, and the "trust the sequence" numbering logic
+   misfiled 6 already-known simanim (108-113) as new ones (114-119). Fixed the data by hand
+   (restored to the correct 113 simanim) and hardened `assemble_volume` to drop any collected
+   page at or before the highest page already recorded for an existing siman, instead of
+   renumbering it.
+2. `IggrotMosheYD1` (554 pages) crashed submission with a 413 `RequestTooLargeError` — one
+   base64-image-heavy batch request exceeded the Batch API's 256MB cap (`IggrotMosheEH1`'s 415
+   pages fit; 554 didn't). Added automatic chunking (`MAX_PAGES_PER_BATCH = 350`) — a volume's
+   requests now split across multiple sub-batches transparently to `status`/`collect`.
+
+Also fixed: `plan`/`submit --all-remaining` was falsely flagging fully-collected volumes as
+having a handful of pages "still remaining" — `resume_point()`'s heuristic (highest page
+recorded against *any* siman entry) can't see trailing back-matter pages that never get an entry
+of their own, so a volume ending in back matter always looked incomplete by a few pages even
+after a clean full collect. Now trusts a batch already marked `collected` with `last_page`
+covering the volume's true page count, instead of re-deriving from siman entries every time.
+
+**Wiring a completed volume into the app — not yet done, real code change still needed.**
+Confirmed by inspection (2026-08-31): today `teshuvot_siman_index.json` (both the iOS bundle
+copy and `AnyTorahAndroid/app/src/main/assets/`) still only contains `IggrotMosheEH2` — none of
+the newly-batch-indexed volumes are wired in yet, even the ones fully collected with no gaps.
+Two mechanical steps per volume, on both platforms:
+1. Merge `index_out/{Volume}_index.json`'s siman→page map into both bundled
+   `teshuvot_siman_index.json` copies (keep them identical).
+2. Add a `ContemporaryTeshuvotVolume(id:label:hebrewLabel:simanCount:)` entry to
+   `ContemporaryTeshuvotWork.works`'s `iggrosMoshe.volumes` array in both `TextModels.swift` and
+   `TextModels.kt` — `simanCount` comes straight from the index (its highest key); `label`/
+   `hebrewLabel` follow the existing OC/YD/EH/CM (או״ח/יו״ד/אה״ע/חו״מ) abbreviation convention
+   used throughout Acharonim (e.g. EH2 shipped as `"EH II"`/`"אה״ע ב"`).
+Both steps are small and mechanical enough to script (e.g. a `wire` subcommand on the batch
+tool) rather than hand-edit per volume, especially with 5 more volumes (OH5, YD1-4) still to
+land. As of 2026-08-31, 10 of 15 volumes are fully indexed and gap-verified in `index_out/`
+(EH1-4, HM1-2, OH1-4) but none are wired in yet — worth doing this in a batch once the remaining
+5 land, rather than one volume at a time, unless there's a reason to ship partial coverage
+sooner.
+
+### Contemporary — 5 Sefaria-digitized works added alongside Iggros Moshe (2026-08-30)
+
+Contemporary is no longer 100% page-image. Per explicit user request, 5 works that ARE
+digitized on Sefaria (Mishpetei Uziel, Benei Banim, B'mareh HaBazak — verified and shipped;
+Lindenbaum Center — a Sefaria *Collection* of source sheets, not a responsa text, explicitly
+deferred to the future YCT-halakha-pieces work below; Nishmat HaBayit — approved for a bespoke
+titled-list siman picker, not yet built) were added to the same Contemporary subcategory
+alongside Iggros Moshe, using the ordinary `TeshuvotWork`/`TeshuvotVolume`/Sefaria-ref pipeline
+(same as Rishonim/Acharonim) rather than the page-image one.
+
+**`contemporaryUsesSefaria: Bool`/`Boolean`** (`TextReaderViewModel`) is the discriminator that
+lets one subcategory host both systems: `false` (default) → the pre-existing page-image path
+(`contemporaryWork`/`Volume`/`Page`, `TeshuvotPageManager`); `true` → the ordinary Sefaria path
+(`teshuvotWork`/`Volume`/`Siman`, `SefariaTextClient`, `load()`). Persisted as
+`"sel_contemp_uses_sefaria"`. Gates `load()`'s early-return guard, `navBookTitle`/
+`navVolumeTitle`/`navChapterTitle`, `restoreState`/`saveState`, `TextReaderView.swift`'s
+`isContemporaryPdfMode` (renamed from the bare Contemporary check the pilot used — see above),
+and the picker sheets' routing. The book-picker sheet renders both work lists in one combined
+`List`/`LazyColumn` — `ContemporaryTeshuvotWork.works` (Iggros Moshe, page-image) followed by
+`TeshuvotWork.works(for: .contemporary)`/`worksFor(CONTEMPORARY)` (the 3 Sefaria works, in
+declaration order) — giving one unified picker, Iggros Moshe first, per explicit request.
+
+**Iggros Moshe's language pill removed.** The header's Hebrew/English/Both toggle pill
+(`displayModePill`) only makes sense for real text with a translation — Iggros Moshe is a scan
+with no translation option, so it's hidden specifically when `isContemporaryPdfMode` is true,
+still shown for the 3 new Sefaria-backed works (which have real Hebrew/English text like any
+other Teshuvot work).
+
+**Data — verified against live Sefaria content 2026-08-30**, same rigor as Rishonim/Acharonim:
+- Mishpetei Uziel — 18 combined-label volumes (Volume × Tur-order section, flattened the same
+  way as Rav Pealim/Shoel uMeshiv above).
+- Benei Banim — 4 flat volumes (44/52/45/28 simanim).
+- B'Mareh HaBazak — 10 flat volumes.
+- No sparse/near-empty content found for any of the three (unlike the earlier Rishonim/Acharonim
+  cleanup) — full `/api/shape` check before adding more content later, same standing note as
+  those sections.
+
+**Lindenbaum Center is a Sefaria Collection, not an Index** — it's a curated set of source
+sheets (one of which the user, Dov Linzer, authored himself), reachable via the sheets API
+(`/api/collections/{slug}`), not the text API. It cannot slot into `TeshuvotWork`'s ref-based
+picker at all. Per explicit user decision, this is folded into the future "YCT halakha pieces"
+work (linking in AnyYCTorah's existing halakha-piece content) rather than getting its own
+sheet-list reader built here.
+
+**Nishmat HaBayit — bespoke titled-list picker, not the numeric wheel (shipped 2026-08-30).**
+Its Sefaria structure has no numeric `Siman` address type — each responsum is an individually-
+titled node (`sectionNames: ["Paragraph"]`), grouped into 5 real Parts (Pregnancy 8, Birth 13,
+Pregnancy Loss 3, Nursing 5, Contraception 34 = 63 simanim total). Ancillary front matter
+(Foreword/Preface/Introduction) and back matter (Medical Appendices, Bibliography, Halakhic
+References) are excluded, same policy as other works' non-responsa sections.
+
+- `NishmatHaBayitSiman` (Swift `struct` / Kotlin `data class`, in `TextModels.swift`/`.kt` right
+  after `TeshuvotVolume`) — one static array of 63 entries (`number` 1–63, `partEnglish`/
+  `partHebrew`, `titleEnglish`/`titleHebrew`, `ref`), generated from a live
+  `/api/v2/raw/index/Nishmat%20HaBayit` fetch (not hand-transcribed) to avoid transcription
+  errors across 63 Hebrew/English title pairs. `ref` is the **complete literal ref string**
+  (embeds the full node title, e.g. `"Nishmat HaBayit, Part I; Pregnancy, Siman 1; Panty Liners
+  during the Seven Neki'im When Trying to Conceive"`) — spot-verified against `/api/texts` across
+  all 5 Parts including the first and last siman. Unlike every other `TeshuvotWork`, this ref
+  isn't `{siman}`-formulaic, so `TeshuvotWork.sefariaRef(volume:siman:)` special-cases
+  `.nishmatHaBayit`/`NISHMAT_HA_BAYIT` to look up `NishmatHaBayitSiman.entry(forNumber:)` instead
+  of using `TeshuvotVolume.ref(siman:)`'s template substitution — `volumes` still returns one
+  dummy flat `TeshuvotVolume` (as every `TeshuvotWork` must), just with an unused `refTemplate`.
+- **Hebrew-only content, confirmed via `/api/texts?lang=en`** — checked 4 simanim spread across
+  all 5 Parts (first, two middle, last); all returned empty English. This work has no Sefaria
+  translation at all, unlike Mishpetei Uziel/Benei Banim/B'mareh HaBazak. Expected, not a bug —
+  `displayMode` still offers the English/Both toggle (per the "shown for the 3 new Sefaria-backed
+  works" note above), it'll just render blank in English mode for this one work, same as any
+  other Hebrew-only Sefaria text elsewhere in the app.
+- **Picker UI**: `nishmatHaBayitSimanPickerSheet` (iOS `TextReaderView.swift`) /
+  `NishmatHaBayitSimanPickerContent` (Android `TextReaderScreen.kt`) — a `List`/`LazyColumn`
+  grouped by Part with section headers, near-identical in shape to `saSimanPickerSheet`/
+  `SASimanPickerContent`. Routed in from `chapterPickerSheet`/`ChapterPickerSheet` alongside the
+  existing SA/Tur special cases, gated on `vm.teshuvotWork == .nishmatHaBayit` (only reachable
+  when `contemporaryUsesSefaria` is already true, since that's Contemporary's Sefaria-work
+  discriminator). Selecting a row sets `teshuvotSiman` to the entry's synthetic 1–63 `number` —
+  the existing persistence/nav-pill plumbing needs no new type, it just treats this like any
+  other numeric siman. The nav siman pill therefore shows the bare number (no title) for this
+  work too, consistent with every other Teshuvot work's pill.
+- The Contemporary book-picker row for Nishmat HaBayit is otherwise unremarkable — it reuses
+  `contemporarySefariaBookRow`/the generic `TeshuvotWork.worksFor(CONTEMPORARY)` `items(...)`
+  block already built for Mishpetei Uziel/Benei Banim/B'mareh HaBazak, no special-casing needed
+  there. Since `volumeLabel` is `nil` for this work (flat, no real volume level), tapping it
+  loads siman 1 directly rather than chaining into a volume picker — same as any other flat
+  work (Maharik, Teshuva MeAhava, etc.).
+
+### Related YCT Articles (Shulchan Arukh only, shipped 2026-08-30)
+
+A read-only surface showing YCT halakha pieces (articles + audio episodes from
+library.yctorah.org and psak.yctorah.org) that cite whatever SA siman is currently open —
+reusing AnyYCTorah's already-built, already-populated Supabase content index rather than
+building any new backend/scraping/classification pipeline. See
+`/Users/dovlinzer/.claude/plans/reactive-tumbling-giraffe.md` for the full design rationale;
+summarized here.
+
+**Data source — the same Supabase project AnyTorah already talks to.** `API/DedicationService
+.swift`/`.kt` already hits `zewdazoijdpakugfvnzt.supabase.co` for the dedication banner — this
+feature queries the same project, read-only, via a new `YCTRelatedArticlesService.swift`/`.kt`
+(mirroring `DedicationService`'s exact inline-REST-call shape; no shared Supabase client exists
+in this app, by established convention). Query: `piece_references` filtered
+`source_type=eq.SA&book_or_tractate=eq.<Book>` (exact strings `"Orach Chayim"`, `"Yoreh De'ah"`,
+`"Even HaEzer"`, `"Choshen Mishpat"` — **not** `TextCatalog.shulchanArukhSections`' own names,
+which read "Yoreh Deah" with no apostrophe), joined via PostgREST's embedded-join syntax to
+`pieces(id,title,url,author,excerpt,post_type)`. A piece citing multiple simanim in one book
+collapses to one entry, anchored at its `is_book_primary=true` citation if one exists (an
+offline LLM tie-breaker AnyYCTorah already ran) else the lowest siman cited — the one piece of
+AnyYCTorah's server-computed logic worth replicating, since it changes *which* siman a piece
+surfaces under. `pieces.language`/translation filtering is deliberately **not** replicated —
+`saHebrewMode` controls Torah-text display, not YCT-article language, and conflating the two
+needs a product decision this pass didn't make.
+
+**Caching**: in-memory per SA book (not per siman) — the whole book's citations are fetched
+once and indexed client-side by siman, so paging within one book is a free lookup; only
+crossing OC/YD/EH/CM triggers a real fetch. No persistence across launches.
+
+**Trigger**: inside `load()`'s `.shulchanArukh`/`SHULCHAN_ARUKH` branch, right after `currentRef`
+is set — the same place every other category sets its own ref, since `saSection`/`saSiman` have
+no `didSet`/reactive cascade of their own. iOS guards a stale response with `loadGeneration`
+(incremented at the top of every `load()`); Android has no such counter, so it compares captured
+vs. current `saSection`/`saSiman` directly instead.
+
+**UI**: a new `ActiveSheet` case (`relatedArticles`/`RELATED_ARTICLES`), not a new commentary-
+panel tab — `CommentaryPanelView`'s tab strip is strictly typed to `CommentaryType` (~90 Sefaria-
+ref-fetch classical commentaries), and forcing external-link articles into that type would widen
+something deeply threaded through `loadCommentary`/`sefariaRef`/availability-filtering for no
+real benefit. Tapping a row opens the piece externally — **`SFSafariViewController`** (iOS, new
+`Views/SafariView.swift`) / **Chrome Custom Tabs** (Android, `androidx.browser:browser:1.8.0`,
+newly added to `build.gradle.kts`) — not a native in-app reader. Neither platform had any
+web-view/external-link precedent before this feature (confirmed via grep); a full native reader
+(à la AnyYCTorah's `ArticleReaderView`, with its SoundCloud/YouTube/direct-audio resolution
+chain) would be a disproportionate lift for a "related articles" surface — a plausible future
+upgrade, not attempted here.
+
+**Entry point — trailing-edge tab, not a header icon (revised 2026-08-31).** Originally a
+`"newspaper"`/`Icons.Default.Newspaper` icon in the reader header's left icon cluster; moved
+after explicit feedback that it was "not visible in a meaningful way" buried among the other
+icons there. Now ported directly from **AnyYCTorah's own equivalent indicator**
+(`LearnTheDafView.citingTab`, its "cited from this daf" tab) rather than invented fresh: a small
+badge — `"text.book.closed.fill"`/`Icons.Default.Article` icon + a count number — docked to the
+screen's trailing edge via `.overlay(alignment: .trailing)` on the reader's outer container
+(iOS) / a `Box`-wrapped `Column` with `Modifier.align(Alignment.CenterEnd)` (Android), semi-
+transparent black background (`Color.black.opacity(0.55)`), rounded on the leading corners only
+(`UnevenRoundedRectangle(topLeadingRadius:bottomLeadingRadius:)` / `RoundedCornerShape
+(topStart:bottomStart:)`) so it reads as physically attached to the edge rather than a floating
+pill. Same visibility gate as before (`vm.category == .shulchanArukh && !relatedYCTPieces
+.isEmpty`). AnyYCTorah's version has no per-piece thumbnails in the tab itself either — that
+same pattern (badge → tap → sheet) is what's replicated here, not a strip of thumbnails.
+
+**Thumbnails in the sheet's rows**, also ported from AnyYCTorah (`PostRow.thumbnail`): each row
+now shows a real 56×56pt image from `pieces.image_url` (added to `RelatedYCTPiece` and to both
+services' `select=` query strings) via `AsyncImage`/phase-switch (iOS) or Coil's
+`SubcomposeAsyncImage` with `loading`/`error` slots (Android, `coil-compose` was already a
+dependency for `DedicationDialog`) — falling back to a plain content-type-icon placeholder square
+when `image_url` is null or the load fails. AnyYCTorah's further fallback tier (an author-photo
+scrape via its own `AuthorPhotoCache`) is deliberately **not** ported — that's a whole separate
+scraping pipeline, out of scope for this read-only surface.
+
+**Explicit non-goals for v1**: no topic-based/general YCT browsing (strictly "pieces citing the
+open SA siman"), no in-app audio playback (audio pieces just get a headphones icon and open
+externally like anything else — no reuse of the Talmud-shiur `AudioPlayer` pipeline), no
+Talmud/Tanakh/Rambam citation surfacing (the schema supports those `source_type`s too, but
+AnyYCTorah itself has no analogous screen for them either, so there's no UX pattern to copy
+yet), no language filtering/labeling, no persistence.
 
 ### State flow
 

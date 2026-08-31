@@ -49,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.anytorah.models.MidrashNavigationMode
@@ -209,7 +210,9 @@ private fun CategoryTile(entry: HomeCategoryEntry, onClick: () -> Unit) {
                     it.alpha(0.4f)
                 }
             }
-            .padding(if (entry.compact) 10.dp else 14.dp),
+            // Tight padding so the label sits close to the tile edges -- every dp here is width
+            // the label doesn't have, per explicit request to shrink the margins.
+            .padding(horizontal = if (entry.compact) 6.dp else 8.dp, vertical = if (entry.compact) 8.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (!entry.compact) {
@@ -217,16 +220,28 @@ private fun CategoryTile(entry: HomeCategoryEntry, onClick: () -> Unit) {
                 imageVector = entry.icon,
                 contentDescription = null,
                 tint = fg,
-                modifier = Modifier.width(24.dp)
+                modifier = Modifier.width(16.dp)
             )
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.width(6.dp))
         }
+        // Manual shrink-on-overflow -- Compose's Text does not wrap mid-word, so a single long
+        // word (e.g. "Contemporary") in this narrow compact-row tile would otherwise get
+        // silently clipped at the tile's rounded-corner edge rather than resized. Matches iOS's
+        // .minimumScaleFactor(0.7) behavior; doesn't require a newer Compose Foundation version
+        // (unlike BasicText's autoSize, added in 1.8).
+        var labelFontSize by remember(entry.label) { mutableStateOf(12.sp) }
         Text(
             text = entry.label,
             color = fg,
-            fontSize = if (entry.compact) 12.sp else 14.sp,
+            fontSize = labelFontSize,
             fontWeight = FontWeight.SemiBold,
-            maxLines = 2
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            onTextLayout = { result ->
+                if (result.hasVisualOverflow && labelFontSize > 9.sp) {
+                    labelFontSize = (labelFontSize.value - 1).sp
+                }
+            }
         )
     }
 }
@@ -268,10 +283,10 @@ private data class HomeCategoryEntry(
         )
 
         val rightColumn = listOf(
-            HomeCategoryEntry("Talmud Bavli", Icons.Default.AutoStories, BrandColorFamily.BLUE, TextCategory.TALMUD) { vm ->
+            HomeCategoryEntry("Bavli", Icons.Default.AutoStories, BrandColorFamily.BLUE, TextCategory.TALMUD) { vm ->
                 vm.talmudSubcategory = TalmudSubcategory.BAVLI
             },
-            HomeCategoryEntry("Talmud Yerushalmi", Icons.Default.AccountBalance, BrandColorFamily.BLUE, TextCategory.TALMUD) { vm ->
+            HomeCategoryEntry("Yerushalmi", Icons.Default.AccountBalance, BrandColorFamily.BLUE, TextCategory.TALMUD) { vm ->
                 vm.talmudSubcategory = TalmudSubcategory.YERUSHALMI
             },
             HomeCategoryEntry("Tur", Icons.Default.MenuBook, BrandColorFamily.ROYAL_BLUE, TextCategory.TUR) { },
@@ -292,9 +307,9 @@ private data class HomeCategoryEntry(
                 compact = true) { vm ->
                 vm.setTeshuvotSubcategory(TeshuvotSubcategory.ACHARONIM)
             },
-            // "Contemp." not "Contemporary" -- the full word is prone to wrapping to a second
-            // line at this tile's width/font. Enabled 2026-08-29 -- Android port shipped.
-            HomeCategoryEntry("Contemp.", Icons.Default.Email, BrandColorFamily.NAVY_DEEP, TextCategory.TESHUVOT,
+            // Full word restored 2026-08-30 -- CategoryTile's Text now shrinks its own font on
+            // overflow (see its onTextLayout), so "Contemporary" no longer needs truncating.
+            HomeCategoryEntry("Contemporary", Icons.Default.Email, BrandColorFamily.NAVY_DEEP, TextCategory.TESHUVOT,
                 compact = true) { vm ->
                 vm.setTeshuvotSubcategory(TeshuvotSubcategory.CONTEMPORARY)
             },
