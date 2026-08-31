@@ -7,6 +7,18 @@
 
 iOS app (Swift/SwiftUI, iOS 17+) for browsing Torah texts via the Sefaria public API. Built with `@Observable`, `@Bindable`, and `@MainActor` throughout — no Combine, no StateObject. Android is Kotlin/Compose with an `@HiltViewModel`-based architecture.
 
+## Handoff — pending on-device verification (2026-08-25)
+
+**Teshuvot Rishonim** (new home-screen category, commit `14f3bc2`) was built in a sandboxed
+session with no network access to `sefaria.org`, so its 17 works' Sefaria ref titles/volume
+counts are **draft, unverified data** — see the "Teshuvot Rishonim" section under iOS Key
+Files/Architecture below for the full writeup, and its "Action needed" list for exactly which
+works to check first (Maharach Or Zarua, Mahari Weil, Mahari Bruna, Maharik's shoresh count,
+and which Maharam MiRotenburg edition, if any, Sefaria carries are the least certain). This is
+the first thing to test once building locally with real internet: pull, build, open Teshuvot
+Rishonim → try each work, and report which ones fail to load so the ref data can be corrected.
+Nothing else from that session is pending — only this verification step.
+
 ## Build & Run
 
 **iOS:** Open `AnyTorah.xcodeproj` in Xcode and run on simulator or device. No package dependencies. `project.yml` is a XcodeGen spec (not normally needed unless regenerating).
