@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.anytorah.api.RelatedYCTPiece
@@ -83,6 +84,8 @@ import com.anytorah.models.TextCategory
 import com.anytorah.models.TextDisplayMode
 import com.anytorah.models.TeshuvotSubcategory
 import com.anytorah.models.TeshuvotWork
+import com.anytorah.api.IggrosMoshePodcastService
+import com.anytorah.api.PodcastEpisodeCitation
 import com.anytorah.api.TeshuvotPageManager
 import com.anytorah.ui.components.WheelPicker
 import com.anytorah.ui.panels.AudioPlayerPanel
@@ -95,7 +98,7 @@ import androidx.compose.ui.graphics.Color
 import com.anytorah.viewmodels.TextReaderViewModel
 import kotlinx.coroutines.launch
 
-enum class ActiveSheet { SELECTOR, SETTINGS, BOOKMARKS, BOOKMARK_EDIT, CHAPTER_PICKER, BOOK_PICKER, VOLUME_PICKER, RELATED_ARTICLES }
+enum class ActiveSheet { SELECTOR, SETTINGS, BOOKMARKS, BOOKMARK_EDIT, CHAPTER_PICKER, BOOK_PICKER, VOLUME_PICKER, RELATED_ARTICLES, PODCAST_CITATIONS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -144,6 +147,34 @@ fun TextReaderScreen(
                 audioUrl = TalmudAudioService.audioUrl(tractate.name, vm.talmudDaf)
             }
             isCheckingAudio = false
+        }
+    }
+
+    // Iggros Moshe podcast citations -- resolve the current siman via the same floor lookup
+    // the siman pill already uses (TeshuvotPageManager.siman), keyed here (not inside the
+    // effect) so the effect body -- and the state writes it does -- only re-runs when the
+    // resolved siman actually changes, not on every single page turn within one teshuvah's span.
+    // Context stays out of the ViewModel by established convention (see contemporaryPage's own
+    // doc comment) -- this LaunchedEffect is where Context-needing lookups for Contemporary
+    // state live, same as navChapterTitle(context)'s call site.
+    val currentContemporarySiman = if (vm.category == TextCategory.TESHUVOT &&
+        vm.teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY && !vm.contemporaryUsesSefaria
+    ) {
+        TeshuvotPageManager.siman(context, vm.contemporaryVolume.id, vm.contemporaryPage)
+    } else null
+
+    LaunchedEffect(vm.contemporaryVolume.id, currentContemporarySiman) {
+        if (currentContemporarySiman == null) {
+            vm.setCitedPodcastEpisodes(emptyList())
+            return@LaunchedEffect
+        }
+        val episodes = IggrosMoshePodcastService.citedEpisodes(context, vm.contemporaryVolume.id, currentContemporarySiman)
+        vm.setCitedPodcastEpisodes(episodes)
+        for (episode in episodes) {
+            if (vm.podcastArtwork.containsKey(episode.id)) continue
+            launch {
+                IggrosMoshePodcastService.artworkUrl(episode)?.let { vm.setPodcastArtwork(episode.id, it) }
+            }
         }
     }
 
@@ -522,6 +553,32 @@ fun TextReaderScreen(
                 fontWeight = FontWeight.Bold
             )
         }
+    } else if (vm.category == TextCategory.TESHUVOT && vm.teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY &&
+        !vm.contemporaryUsesSefaria && vm.citedPodcastEpisodes.isNotEmpty()
+    ) {
+        // Same docked-to-edge mechanism as the Related Articles tab above, but made "a little
+        // more visible" per explicit request: shows the first cited episode's real SoundCloud
+        // artwork (once loaded) at a noticeably larger size than that tab's icon+count, with a
+        // small headphones badge distinguishing it from the book-icon Related Articles tab.
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .clip(RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
+                .background(Color.Black.copy(alpha = 0.55f))
+                .clickable { activeSheet = ActiveSheet.PODCAST_CITATIONS }
+                .padding(vertical = 10.dp, horizontal = 8.dp)
+        ) {
+            PodcastArtworkImage(vm.citedPodcastEpisodes[0], vm.podcastArtwork[vm.citedPodcastEpisodes[0].id], size = 64.dp)
+            if (vm.citedPodcastEpisodes.size > 1) {
+                Text(
+                    text = "${vm.citedPodcastEpisodes.size}",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
     }
     } // end Box
 
@@ -602,6 +659,16 @@ fun TextReaderScreen(
                     val context = LocalContext.current
                     RelatedArticlesSheet(
                         pieces = vm.relatedYCTPieces,
+                        onOpen = { url ->
+                            CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url))
+                        }
+                    )
+                }
+                ActiveSheet.PODCAST_CITATIONS -> {
+                    val context = LocalContext.current
+                    PodcastCitationsSheet(
+                        episodes = vm.citedPodcastEpisodes,
+                        artwork = vm.podcastArtwork,
                         onOpen = { url ->
                             CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url))
                         }
@@ -1084,6 +1151,74 @@ private fun RelatedArticleThumbnail(piece: RelatedYCTPiece, colors: AnyTorahColo
         )
     } else {
         placeholder()
+    }
+}
+
+/** Artwork thumbnail for one podcast episode citation -- [artworkUrl] is `vm.podcastArtwork`'s
+ *  lookup for this episode (null until its SoundCloud oEmbed fetch resolves), falling back to a
+ *  plain headphones-icon placeholder while loading or if the fetch fails. Same
+ *  `SubcomposeAsyncImage` loading/error-slot shape as [RelatedArticleThumbnail]. */
+@Composable
+private fun PodcastArtworkImage(episode: PodcastEpisodeCitation, artworkUrl: String?, size: Dp) {
+    val shape = RoundedCornerShape(8.dp)
+    val placeholder: @Composable () -> Unit = {
+        Box(
+            modifier = Modifier.size(size).clip(shape).background(Color.White.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.Headphones, contentDescription = null, tint = Color.White.copy(alpha = 0.7f))
+        }
+    }
+    if (artworkUrl != null) {
+        SubcomposeAsyncImage(
+            model = artworkUrl,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(size).clip(shape),
+            loading = { placeholder() },
+            error = { placeholder() }
+        )
+    } else {
+        placeholder()
+    }
+}
+
+/** Lists every "Iggros Moshe A to Z" podcast episode (soundcloud.com/iggrosmosheatoz, Rabbi Dov
+ *  Linzer) discussing the current siman -- see [IggrosMoshePodcastService]. Tapping a row opens
+ *  it externally via Custom Tabs, matching [RelatedArticlesSheet]'s own pattern; no in-app
+ *  playback (explicit non-goal, this is a "here's where to find it" indicator). */
+@Composable
+private fun PodcastCitationsSheet(episodes: List<PodcastEpisodeCitation>, artwork: Map<String, String>, onOpen: (String) -> Unit) {
+    val colors = LocalAnyTorahColors.current
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "Iggros Moshe A to Z",
+            color = colors.appForeground,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+        )
+        HorizontalDivider(color = colors.dividerColor)
+        LazyColumn(modifier = Modifier.fillMaxWidth()) {
+            items(episodes) { episode ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpen(episode.audioUrl) }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    PodcastArtworkImage(episode, artwork[episode.id], size = 56.dp)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text("Episode ${episode.episodeNumber}", color = colors.appForeground.copy(alpha = 0.6f), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        Text(episode.title, color = colors.appForeground, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                HorizontalDivider(color = colors.dividerColor)
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }
 

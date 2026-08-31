@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.anytorah.api.Dedication
 import com.anytorah.api.DedicationService
 import com.anytorah.api.EinAyahLoader
+import com.anytorah.api.PodcastEpisodeCitation
 import com.anytorah.api.RelatedYCTPiece
 import com.anytorah.api.SefariaTextClient
 import com.anytorah.api.TeshuvotPageManager
@@ -261,6 +262,26 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
     fun setContemporaryPage(page: Int) {
         contemporaryPage = page
         saveState(TextCategory.TESHUVOT)
+    }
+
+    /** Every "Iggros Moshe A to Z" podcast episode citing the current Contemporary siman (empty
+     *  if none) -- see [com.anytorah.api.IggrosMoshePodcastService]. Kept Context-free like the
+     *  rest of this ViewModel (established convention -- see contemporaryPage's own doc comment
+     *  and [com.anytorah.api.TeshuvotPageManager]); the lookup itself runs from a
+     *  `LaunchedEffect` in TextReaderScreen.kt, which has `LocalContext.current` available. */
+    var citedPodcastEpisodes by mutableStateOf<List<PodcastEpisodeCitation>>(emptyList())
+        private set
+
+    /** [episodeId: artworkUrl], populated as each episode's SoundCloud oEmbed fetch resolves. */
+    var podcastArtwork by mutableStateOf<Map<String, String>>(emptyMap())
+        private set
+
+    fun setCitedPodcastEpisodes(episodes: List<PodcastEpisodeCitation>) {
+        citedPodcastEpisodes = episodes
+    }
+
+    fun setPodcastArtwork(episodeId: String, url: String) {
+        podcastArtwork = podcastArtwork + (episodeId to url)
     }
 
     private fun teshuvotWorkKey(sub: TeshuvotSubcategory) = "sel_teshuvot_work_${sub.id}"

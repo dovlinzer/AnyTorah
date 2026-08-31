@@ -214,9 +214,52 @@ final class TextReaderViewModel {
     }
     // Contemporary's reader (an image pager, not the Sefaria text pipeline) never calls
     // load(), which is where every other category's state normally gets persisted -- this
-    // didSet is the only place contemporaryPage changes get saved.
+    // didSet is the only place contemporaryPage changes get saved. Also the one place that
+    // covers all three contemporaryWork/Volume/Page mutation paths for refreshPodcastCitations()
+    // -- work's and volume's own didSets both cascade into setting contemporaryPage, so a single
+    // call here (rather than duplicating it in all three didSets) is sufficient; restore has its
+    // own explicit call since didSets are suppressed under isRestoring.
     var contemporaryPage: Int = 1 {
-        didSet { if !isRestoring { saveState(for: .teshuvot) } }
+        didSet {
+            if !isRestoring {
+                saveState(for: .teshuvot)
+                refreshPodcastCitations()
+            }
+        }
+    }
+
+    /// Every "Iggros Moshe A to Z" podcast episode citing the current Contemporary siman (empty
+    /// if none) -- see IggrosMoshePodcastService and CLAUDE.md's "Iggros Moshe podcast
+    /// citations" section.
+    private(set) var citedPodcastEpisodes: [PodcastEpisodeCitation] = []
+    /// [episodeId: artworkURL], populated as each episode's SoundCloud oEmbed fetch resolves.
+    private(set) var podcastArtwork: [String: URL] = [:]
+    @ObservationIgnored private var lastCheckedPodcastKey: String?
+
+    /// Resolves the current siman from contemporaryPage via the same floor lookup the siman
+    /// pill already uses, looks up citing episodes, and kicks off their artwork fetches. Only
+    /// recomputes when the resolved siman actually changes -- most page turns stay within one
+    /// teshuvah's span and shouldn't refetch on every single one.
+    private func refreshPodcastCitations() {
+        guard !contemporaryUsesSefaria,
+              let siman = TeshuvotPageManager.shared.siman(volume: contemporaryVolume.id, page: contemporaryPage)
+        else {
+            citedPodcastEpisodes = []
+            lastCheckedPodcastKey = nil
+            return
+        }
+        let key = "\(contemporaryVolume.id)|\(siman)"
+        guard key != lastCheckedPodcastKey else { return }
+        lastCheckedPodcastKey = key
+
+        let episodes = IggrosMoshePodcastService.shared.citedEpisodes(volume: contemporaryVolume.id, siman: siman)
+        citedPodcastEpisodes = episodes
+        for episode in episodes where podcastArtwork[episode.id] == nil {
+            Task { @MainActor in
+                guard let url = await IggrosMoshePodcastService.shared.artworkURL(for: episode) else { return }
+                podcastArtwork[episode.id] = url
+            }
+        }
     }
 
     /// True when Contemporary's currently-selected "book" is one of the Sefaria-digitized works
@@ -380,6 +423,9 @@ final class TextReaderViewModel {
                     contemporaryVolume = v
                 }
                 contemporaryPage = d.object(forKey: "sel_contemp_page") as? Int ?? 1
+                // contemporaryPage's didSet is suppressed under isRestoring, so this needs an
+                // explicit call to pick up citations for the just-restored position.
+                refreshPodcastCitations()
             }
         }
     }

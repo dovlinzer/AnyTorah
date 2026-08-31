@@ -1,0 +1,602 @@
+{
+ "citations": {
+  "IggrotMosheEH1": {
+   "10": [
+    "18"
+   ],
+   "63": [
+    "5",
+    "6"
+   ],
+   "64": [
+    "26"
+   ],
+   "70": [
+    "19"
+   ],
+   "71": [
+    "18",
+    "19"
+   ],
+   "76": [
+    "13"
+   ]
+  },
+  "IggrotMosheEH2": {
+   "11": [
+    "18"
+   ],
+   "13": [
+    "8"
+   ],
+   "17": [
+    "13",
+    "14"
+   ],
+   "3": [
+    "20"
+   ]
+  },
+  "IggrotMosheEH3": {
+   "14": [
+    "26"
+   ],
+   "21": [
+    "4"
+   ],
+   "22": [
+    "26"
+   ],
+   "24": [
+    "6"
+   ],
+   "3": [
+    "13"
+   ],
+   "35": [
+    "33"
+   ]
+  },
+  "IggrotMosheEH4": {
+   "13": [
+    "13"
+   ],
+   "32": [
+    "18"
+   ],
+   "70": [
+    "6"
+   ],
+   "87": [
+    "45"
+   ]
+  },
+  "IggrotMosheHM1": {
+   "42": [
+    "27"
+   ],
+   "72": [
+    "2"
+   ],
+   "93": [
+    "31"
+   ]
+  },
+  "IggrotMosheHM2": {
+   "29": [
+    "1"
+   ],
+   "34": [
+    "7"
+   ],
+   "68": [
+    "3"
+   ],
+   "74": [
+    "46",
+    "47",
+    "48"
+   ]
+  },
+  "IggrotMosheOH1": {
+   "1": [
+    "31"
+   ],
+   "126": [
+    "27"
+   ],
+   "190": [
+    "10"
+   ],
+   "98": [
+    "44"
+   ],
+   "99": [
+    "44"
+   ],
+   "Hakdama": [
+    "24"
+   ]
+  },
+  "IggrotMosheOH2": {
+   "25": [
+    "49"
+   ],
+   "50": [
+    "12"
+   ],
+   "95": [
+    "32"
+   ]
+  },
+  "IggrotMosheOH3": {
+   "12": [
+    "12"
+   ],
+   "21": [
+    "12"
+   ],
+   "25": [
+    "14"
+   ],
+   "63": [
+    "39"
+   ],
+   "64": [
+    "40"
+   ]
+  },
+  "IggrotMosheOH4": {
+   "2": [
+    "31"
+   ],
+   "49": [
+    "23"
+   ],
+   "66": [
+    "33"
+   ],
+   "75": [
+    "21"
+   ],
+   "79": [
+    "48"
+   ]
+  },
+  "IggrotMosheOH5": {
+   "10": [
+    "33"
+   ],
+   "13": [
+    "43"
+   ],
+   "20": [
+    "8",
+    "35",
+    "37"
+   ],
+   "38": [
+    "38"
+   ],
+   "43": [
+    "35"
+   ]
+  },
+  "IggrotMosheYD1": {
+   "101": [
+    "25",
+    "29"
+   ],
+   "104": [
+    "29"
+   ],
+   "110": [
+    "27"
+   ],
+   "137": [
+    "16"
+   ],
+   "139": [
+    "14"
+   ],
+   "157": [
+    "11"
+   ],
+   "160": [
+    "9",
+    "13"
+   ],
+   "47": [
+    "41"
+   ],
+   "48": [
+    "41"
+   ],
+   "49": [
+    "41"
+   ],
+   "62": [
+    "42"
+   ],
+   "72": [
+    "45"
+   ],
+   "81": [
+    "30"
+   ],
+   "82": [
+    "21"
+   ],
+   "93": [
+    "26"
+   ],
+   "96": [
+    "29"
+   ],
+   "97": [
+    "29"
+   ],
+   "98": [
+    "29"
+   ]
+  },
+  "IggrotMosheYD2": {
+   "106": [
+    "14",
+    "16"
+   ],
+   "107": [
+    "14"
+   ],
+   "11": [
+    "32"
+   ],
+   "113": [
+    "16"
+   ],
+   "117": [
+    "50"
+   ],
+   "23": [
+    "34"
+   ],
+   "27": [
+    "34"
+   ],
+   "32": [
+    "34"
+   ],
+   "35": [
+    "41"
+   ],
+   "44": [
+    "22"
+   ],
+   "45": [
+    "7"
+   ],
+   "49": [
+    "43"
+   ],
+   "53": [
+    "50"
+   ],
+   "62": [
+    "21"
+   ],
+   "7": [
+    "50"
+   ],
+   "96": [
+    "28"
+   ]
+  },
+  "IggrotMosheYD3": {
+   "106": [
+    "11"
+   ],
+   "155": [
+    "25"
+   ],
+   "19": [
+    "42"
+   ],
+   "36": [
+    "46"
+   ],
+   "43": [
+    "51"
+   ],
+   "60": [
+    "28"
+   ],
+   "71": [
+    "15"
+   ],
+   "76": [
+    "15"
+   ],
+   "78": [
+    "16"
+   ],
+   "91": [
+    "26"
+   ]
+  },
+  "IggrotMosheYD4": {
+   "11": [
+    "8"
+   ],
+   "12": [
+    "8"
+   ],
+   "17": [
+    "27"
+   ],
+   "26": [
+    "7"
+   ],
+   "34": [
+    "17"
+   ],
+   "36": [
+    "17"
+   ],
+   "38": [
+    "26"
+   ]
+  }
+ },
+ "episodes": {
+  "1": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/a-is-for-america-week-one-ep-2?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 1,
+   "title": "America; Educational Fraud"
+  },
+  "10": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-9-a-chanukkah-special-on-lighting-for-another?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 10,
+   "title": "A Chanukkah Special on lighting for another"
+  },
+  "11": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-11-conversion-can-i-convert-without-total-observance?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 11,
+   "title": "Conversion; Can I Convert Without Total Observance"
+  },
+  "12": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-12-denominations-can-you-give-kibbudim-to-conservative-and-reform-rabbis?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 12,
+   "title": "Denominations; Can you give kibbudim to Conservative and Reform Rabbis"
+  },
+  "13": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-13-denominations-conversions-and-marriages-of-conservative-and-reform?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 13,
+   "title": "Denominations; Conversions and Marriages of Conservative and Reform"
+  },
+  "14": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-14-denominations-interacting-with-reform-and-conservative-institutions?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 14,
+   "title": "Denominations; Interactions with Conservative and Reform Institutions"
+  },
+  "15": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-15-education-rav-moshes-philosophy-of-education?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 15,
+   "title": "Education; Rav Moshe's Philosophy of Education"
+  },
+  "16": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-16-girls-torah-educationcoeducation?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 16,
+   "title": "Education; Girls' Torah Education/Coeducation"
+  },
+  "17": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-17-education-rav-moshe-on-college?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 17,
+   "title": "Education; Rav Moshe on College"
+  },
+  "18": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-18-fertility-artificial-insemination?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 18,
+   "title": "Fertility - Artificial Insemination"
+  },
+  "19": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-19-fertility-permissibility-of-procuring-semen-for-ai?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 19,
+   "title": "Fertility - Permissibility of Procuring Semen for AI"
+  },
+  "2": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-2-america-tenants-rights?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 2,
+   "title": "America; Tenants' Rights"
+  },
+  "20": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-20-fertility-a-science-and-halakha-teshuvah-about-testicular-biopsy?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 20,
+   "title": "Fertility - A Science and Halakha Teshuvah about Testicular Biopsy"
+  },
+  "21": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-21-gender-begged-ishisha?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 21,
+   "title": "Gender - Begged Ish/Isha"
+  },
+  "22": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-22-gender-can-a-woman-be-a-mashgicha?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 22,
+   "title": "Gender - Can A Woman Be a Mashgicha?"
+  },
+  "23": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-23-gender-rav-moshe-on-feminism?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 23,
+   "title": "Gender - Rav Moshe on Femenism"
+  },
+  "24": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-24-halakhic-methodology-rav-moshes-philosophy-of-halakha?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 24,
+   "title": "Halakhic Methodology - Rav Moshe's Philosophy of Halakha"
+  },
+  "25": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-25-halakhic-methodology-features-and-limitations-of-rav-moshes-approach?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 25,
+   "title": "Halakhic Methodology -  Features and Limitations of Rav Moshe's Approach"
+  },
+  "26": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-26-halakhic-methodology-pasken-the-shoel-not-the-shayla?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 26,
+   "title": "Halakhic Methodology - Pasken the Shoel, Not the Shayla"
+  },
+  "27": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-27-immersion-swimming-pools-and-mesiras-nefesh?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 27,
+   "title": "Immersion - Swimming Pools and Mesiras Nefesh"
+  },
+  "28": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-28-immersion-showering-after-mikvah-tevilah-on-day-7?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 28,
+   "title": "Immersion - Showering After Mivkah & Tevilah on Day 7"
+  },
+  "29": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-29-immersion-ear-plugs-fillings-braces?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 29,
+   "title": "Immersion - Earplugs, Fillings, & Braces"
+  },
+  "3": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-3-america-the-death-penalty?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 3,
+   "title": "America; The Death Penalty"
+  },
+  "30": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-30-jewish-identity?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 30,
+   "title": "Jewish Identity - Jeans v. Bekishe"
+  },
+  "31": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-31-jewish-identity-the-kippah-part-1?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 31,
+   "title": "Jewish Identity - The Kippah, Part 1"
+  },
+  "32": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-32-jewish-identity-the-kippah-part-2?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 32,
+   "title": "Jewish Identity - The Kippdah, Part 2"
+  },
+  "33": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-33-jewish-identity-whats-in-a-name?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 33,
+   "title": "Jewish Identity - What's in a Name"
+  },
+  "34": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-34-kashrus-gelatin?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 34,
+   "title": "Kashrus - Gelatin"
+  },
+  "35": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-35-a-purim-special-on-shehecheyanu?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 35,
+   "title": "A Purim Special on Shehechiyanu"
+  },
+  "37": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-37-pre-pesach-can-a-woman-read-the-haggadah-for-a-man?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 37,
+   "title": "Pre-Pesach - Can A Woman Read the Haggadah for a Man"
+  },
+  "38": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-38-pre-pesach-afikoman-after-midnight?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 38,
+   "title": "Pre-Pesach - Afikoman After Midnight"
+  },
+  "39": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-39-pesach-are-peanuts-kitniyot?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 39,
+   "title": "Pesach - Are Peanuts Kitniyot?"
+  },
+  "4": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-4-birth-control-the-iud?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 4,
+   "title": "Birth Control; the IUD"
+  },
+  "40": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-40-pesach-gebrochts?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 40,
+   "title": "Pesach - Gebrochts"
+  },
+  "41": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-41-kashrus-cholov-yisroel?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 41,
+   "title": "Kashrus - Cholov Yisroel"
+  },
+  "42": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-42-kashrus-blended-whiskey?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 42,
+   "title": "Kashrus- Blended Whiskey"
+  },
+  "43": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-43-lifnei-iver-cigarettes-non-observants-jews?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 43,
+   "title": "Lifnei Iver - Ciggerettes, Non-Observent Jews"
+  },
+  "44": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-44-lifnei-iver-ii-non-observant-jews-and-orthodox-gatherings?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 44,
+   "title": "Lifnei Iver II - Inviting Your Non-Observant Friends for Shabbat"
+  },
+  "45": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-45-lifnei-iver-iii-weddings-and-mixed-dancing?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 45,
+   "title": "Lifnei Iver III - Weddings and Mixed Dancing"
+  },
+  "46": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-46-medical-ethics-i-patient-autonomy-and-the-right-to-choose-or-refuse-risky-procedures?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 46,
+   "title": "Medical Ethics I - Patient Autonomy and the Right to Choose or Refuse Risky Procedures"
+  },
+  "47": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-47-medical-ethics-ii-autonomy-and-end-of-life-decisions?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 47,
+   "title": "Medical Ethics II - Autonomy and End Life Decisions"
+  },
+  "48": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/medical-ethics-iii-triage-priority-of-care?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 48,
+   "title": "Medical Ethics III - Triage & Priority of Care"
+  },
+  "49": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-49-non-jews-i-prayer-in-public-schools?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 49,
+   "title": "Non Jews I - Prayer in Public Schools"
+  },
+  "5": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-5-birth-control-the-condom?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 5,
+   "title": "Birth Control; the Condom"
+  },
+  "50": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-50-non-jews-ii-drawing-boundaries?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 50,
+   "title": "Non Jews II - Drawing Boundaries"
+  },
+  "51": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-51-non-jews-iii-saying-no-to-interfaith-efforts?si=53b9634474044a28966267db949aee4b&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 51,
+   "title": "Non Jews III - Saying No to Interfaith Efforts"
+  },
+  "6": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-6-birth-control-a-womans-choice?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 6,
+   "title": "Birth Control; A Woman's Choice"
+  },
+  "7": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-7-conversion-can-a-ger-be-rosh-yeshiva?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 7,
+   "title": "Conversion; Can a Ger be Rosh Yeshiva"
+  },
+  "8": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-8-a-thanksgiving-special-on-chukat-hagoyim?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 8,
+   "title": "A Thanksgiving Special on Chukat HaGoyim"
+  },
+  "9": {
+   "audioUrl": "https://soundcloud.com/iggrosmosheatoz/episode-8-conversion-conversion-of-a-conservative-rabbi?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing",
+   "episodeNumber": 9,
+   "title": "Conversion; Conversion of a Conservative Rabbi"
+  }
+ }
+}

@@ -59,7 +59,7 @@ struct TextReaderView: View {
     // Single enum drives all sheet presentations — multiple .sheet(isPresented:) modifiers
     // on the same view interfere with each other in SwiftUI, causing the wrong sheet to show.
     private enum ActiveSheet: String, Identifiable {
-        case selector, settings, bookmarks, bookmarkEdit, chapterPicker, bookPicker, volumePicker, relatedArticles
+        case selector, settings, bookmarks, bookmarkEdit, chapterPicker, bookPicker, volumePicker, relatedArticles, podcastCitations
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet? = nil
@@ -133,6 +133,8 @@ struct TextReaderView: View {
             // so it reads as persistently present rather than buried in a row of controls.
             if vm.category == .shulchanArukh, !vm.relatedYCTPieces.isEmpty {
                 relatedArticlesTab
+            } else if isContemporaryPdfMode, !vm.citedPodcastEpisodes.isEmpty {
+                podcastCitationTab
             }
         }
         // When the text changes (load() fires) while in bothPanels layout, reload the right panel.
@@ -182,6 +184,8 @@ struct TextReaderView: View {
                 volumePickerSheet
             case .relatedArticles:
                 relatedArticlesSheet
+            case .podcastCitations:
+                podcastCitationsSheet
             }
         }
         .task {
@@ -1601,6 +1605,112 @@ struct TextReaderView: View {
         } else {
             placeholder
         }
+    }
+
+    // MARK: - Iggros Moshe podcast citations (Contemporary Teshuvot only)
+
+    /// Trailing-edge tab, same docked-to-edge mechanism as `relatedArticlesTab`, but made "a
+    /// little more visible" per explicit request: shows the first cited episode's real
+    /// SoundCloud artwork (once loaded) at a noticeably larger size than that tab's icon+count,
+    /// with a small headphones badge distinguishing it from the book-icon Related Articles tab.
+    private var podcastCitationTab: some View {
+        Button {
+            activeSheet = .podcastCitations
+        } label: {
+            VStack(spacing: 4) {
+                ZStack(alignment: .bottomTrailing) {
+                    podcastArtworkImage(for: vm.citedPodcastEpisodes[0], size: 64)
+                    Image(systemName: "headphones")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(4)
+                        .background(Circle().fill(Color.black.opacity(0.65)))
+                        .offset(x: 4, y: 4)
+                }
+                if vm.citedPodcastEpisodes.count > 1 {
+                    Text("\(vm.citedPodcastEpisodes.count)")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white)
+                }
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 8)
+            .background(Color.black.opacity(0.55))
+            .clipShape(UnevenRoundedRectangle(topLeadingRadius: 10, bottomLeadingRadius: 10))
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func podcastArtworkImage(for episode: PodcastEpisodeCitation, size: CGFloat) -> some View {
+        let placeholder = RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(Color.white.opacity(0.15))
+            .overlay {
+                Image(systemName: "headphones")
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+            .frame(width: size, height: size)
+
+        if let url = vm.podcastArtwork[episode.id] {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().aspectRatio(contentMode: .fill)
+                        .frame(width: size, height: size)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                default:
+                    placeholder
+                }
+            }
+        } else {
+            placeholder
+        }
+    }
+
+    /// Lists every "Iggros Moshe A to Z" podcast episode (soundcloud.com/iggrosmosheatoz,
+    /// Rabbi Dov Linzer) discussing the current siman — see IggrosMoshePodcastService. Tapping a
+    /// row opens it externally via SafariView, matching Related YCT Articles' own pattern; no
+    /// in-app playback (explicit non-goal, this is a "here's where to find it" indicator).
+    private var podcastCitationsSheet: some View {
+        NavigationStack {
+            List(vm.citedPodcastEpisodes) { episode in
+                Button {
+                    guard let url = URL(string: episode.audioUrl) else { return }
+                    externalArticleURL = IdentifiableURL(url: url)
+                } label: {
+                    HStack(alignment: .center, spacing: 10) {
+                        podcastArtworkImage(for: episode, size: 56)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Episode \(episode.episodeNumber)")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(appFg.opacity(0.6))
+                            Text(episode.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(appFg)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(Color.clear)
+                .listRowSeparatorTint(appFg.opacity(0.12))
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(appBg)
+            .navigationTitle("Iggros Moshe A to Z")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { activeSheet = nil }
+                        .foregroundStyle(appFg)
+                }
+            }
+        }
+        .background(appBg)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .sheet(item: $externalArticleURL) { item in SafariView(url: item.url) }
     }
 
     // MARK: - Nishmat HaBayit siman picker (titled list, grouped by Part — no numeric wheel)
