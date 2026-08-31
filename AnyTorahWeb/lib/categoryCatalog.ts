@@ -5,6 +5,7 @@ import { TextCatalog } from "./textCatalog";
 import type { ReaderCategory } from "./commentaryPools";
 import { rambamIntroductions } from "./rambamIntroductions";
 import { stripNikud } from "./hebrewUtils";
+import { TESHUVOT_RISHONIM, teshuvotMaxSiman } from "./textModels";
 
 export interface CategoryItem {
   id: number;
@@ -89,6 +90,23 @@ export function getCategoryGroups(category: ReaderCategory, hebrewMode = false):
           })),
         },
       ];
+    case "teshuvot": {
+      // Century-grouped, matching native's work picker — TESHUVOT_RISHONIM is already declared
+      // in chronological order, so consecutive same-century runs group naturally. `count` here
+      // is just Volume 1's ceiling (a reasonable single-volume fallback for generic callers like
+      // bookmarks' name lookup); Reader.tsx computes the real, volume-aware max itself via
+      // teshuvotMaxSiman since a multi-volume work's true ceiling depends on which volume is
+      // selected, not just which work.
+      const groups: CategoryGroup[] = [];
+      for (const work of TESHUVOT_RISHONIM) {
+        const name = displayName(work.displayName, work.hebrewName, hebrewMode);
+        const item = { id: work.id, name, count: teshuvotMaxSiman(work.id, 1) };
+        const last = groups[groups.length - 1];
+        if (last && last.name === work.century) last.items.push(item);
+        else groups.push({ name: work.century, items: [item] });
+      }
+      return groups;
+    }
   }
 }
 
@@ -132,14 +150,16 @@ export function getChapterUnitLabel(category: ReaderCategory, hebrewMode = false
     switch (category) {
       case "talmud": return "דף";
       case "shulchanArukh":
-      case "tur": return "סימן";
+      case "tur":
+      case "teshuvot": return "סימן";
       default: return "פרק";
     }
   }
   switch (category) {
     case "talmud": return "daf";
     case "shulchanArukh":
-    case "tur": return "siman";
+    case "tur":
+    case "teshuvot": return "siman";
     default: return "ch.";
   }
 }
@@ -172,5 +192,8 @@ export function getCategoryDisplayName(category: ReaderCategory, hebrewMode = fa
     case "rambam": return hebrewMode ? "רמב״ם" : "Rambam";
     case "tur": return hebrewMode ? "טור" : "Tur";
     case "shulchanArukh": return hebrewMode ? "שולחן ערוך" : "Shulchan Arukh";
+    // "Rishonim" only for now — this tab covers just that subcategory (see textModels.ts's
+    // TESHUVOT_RISHONIM doc comment); revisit this label once Acharonim is ported alongside it.
+    case "teshuvot": return hebrewMode ? "שו״ת ראשונים" : "Teshuvot Rishonim";
   }
 }

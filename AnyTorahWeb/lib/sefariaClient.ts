@@ -245,6 +245,10 @@ export function ref(
     case "midrash":
       // Midrash uses verse-based navigation; this fallback shouldn't be called.
       return "";
+    case "teshuvot":
+      // Teshuvot builds its own ref via textModels.ts's teshuvotSefariaRef (work/volume/siman,
+      // not a book/chapter pair) — this fallback shouldn't be called.
+      return "";
   }
 }
 

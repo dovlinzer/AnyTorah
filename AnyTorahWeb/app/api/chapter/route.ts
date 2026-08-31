@@ -5,6 +5,7 @@ import {
   fetchTosefta,
   fetchYerushalmi,
   fetchYerushalmiHalakhaCount,
+  fetchBoth,
   ref as buildRef,
   SefariaNoTextError,
   processedHebrew,
@@ -16,7 +17,7 @@ import {
 } from "@/lib/sefariaClient";
 import { displayName, type CommentaryType } from "@/lib/commentaryTypes";
 import type { TextCategory, TextSegment, SATextMode } from "@/lib/textModels";
-import { contentSegment } from "@/lib/textModels";
+import { contentSegment, teshuvotSefariaRef } from "@/lib/textModels";
 import { rambamIntroductions } from "@/lib/rambamIntroductions";
 import { TextCatalog } from "@/lib/textCatalog";
 
@@ -52,7 +53,7 @@ function isCommentaryType(value: string): value is CommentaryType {
   return Object.prototype.hasOwnProperty.call(displayName, value);
 }
 
-const VALID_CATEGORIES: TextCategory[] = ["tanakh", "mishnah", "talmud", "rambam", "shulchanArukh", "tur", "midrash"];
+const VALID_CATEGORIES: TextCategory[] = ["tanakh", "mishnah", "talmud", "rambam", "shulchanArukh", "tur", "midrash", "teshuvot"];
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -114,6 +115,21 @@ export async function GET(request: NextRequest) {
     if (category === "talmud") {
       const segments = await fetchFullDaf(index, chapter);
       return NextResponse.json({ ref: buildRef("talmud", index, chapter), segments: plainText(segments, category) });
+    }
+    // Teshuvot: a work/volume/siman address, not a book/chapter one — build the literal Sefaria
+    // ref directly (teshuvotSefariaRef) and fetch it flat, same as Midrash's native-mode branch
+    // in the iOS/Android ViewModel. No commentary, no depth-3 range fix (each ref already
+    // resolves to one siman's own paragraphs).
+    if (category === "teshuvot") {
+      const volume = Number(searchParams.get("volume")) || 1;
+      const refStr = teshuvotSefariaRef(index, volume, chapter);
+      const { hebrew, english } = await fetchBoth(refStr);
+      const count = Math.max(hebrew.length, english.length);
+      const segments: TextSegment[] = [];
+      for (let i = 0; i < count; i++) {
+        segments.push(contentSegment(i, hebrew[i] ?? "", english[i] ?? "", null));
+      }
+      return NextResponse.json({ ref: refStr, segments: plainText(segments, category) });
     }
     // Rambam "chapter 0" is a synthetic introduction — the work's bundled mitzvot-list header
     // (Chabad.org) — rendered with no Sefaria fetch, matching the native app.

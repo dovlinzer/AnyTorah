@@ -29,7 +29,8 @@ import type { TextCategory } from "./textModels";
 // piggyback on Mishnah's/Talmud's Sefaria-fetch mechanics (ref format, HTML processing, depth-3
 // fixes) via the existing category+subcategory contract in sefariaClient.ts/the API routes.
 export type ReaderCategory =
-  | "tanakh" | "mishnah" | "tosefta" | "talmud" | "yerushalmi" | "rambam" | "tur" | "shulchanArukh";
+  | "tanakh" | "mishnah" | "tosefta" | "talmud" | "yerushalmi" | "rambam" | "tur" | "shulchanArukh"
+  | "teshuvot";
 
 /** Translates a UI-level ReaderCategory into the underlying TextCategory (+ subcategory flag)
  *  that sefariaClient.ts and the API routes understand. */
@@ -192,6 +193,17 @@ export function getPoolInfo(category: ReaderCategory, index: number): PoolInfo {
         groups: [turPool],
         groupLabels: [null],
         isAvailable: () => true,
+        fallbackCandidates: [],
+      };
+    case "teshuvot":
+      // No commentary panel at all, matching native — Reader.tsx hides the panel entirely for
+      // this category rather than rendering it with zero tabs.
+      return {
+        contextKey: "teshuvot",
+        defaultSlots: [],
+        groups: [[]],
+        groupLabels: [null],
+        isAvailable: () => false,
         fallbackCandidates: [],
       };
     case "tanakh":

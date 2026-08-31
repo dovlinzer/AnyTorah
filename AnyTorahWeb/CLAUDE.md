@@ -1509,3 +1509,93 @@ with no way to get a closer look at a specific section. Implementation notes:
 - The former "click anywhere on the image to open full size" behavior was replaced with a small
   explicit "Full size" link below the zoom controls — keeping the click-to-navigate behavior on
   the image itself would have fought with click-and-drag-to-pan.
+
+## Teshuvot Rishonim — shipped (Acharonim/Contemporary not yet ported)
+
+Ported from native's Teshuvot feature (see `AnyTorah/CLAUDE.md`'s "Teshuvot" section for the
+full native history/design rationale) — Rishonim subcategory only, as the first of a staged
+port; Acharonim (functionally identical per the user) and Contemporary (Nishmat HaBayit,
+Iggros Moshe scanned pages + podcast citations, YCT related-articles linked to SA simanim) are
+native-only for now.
+
+**New top-level tab, no commentary panel at all** — matches native exactly (Midrash and
+Teshuvot are the only categories with zero commentary). `ReaderCategory` gained `"teshuvot"`
+(`lib/commentaryPools.ts`); `getPoolInfo` returns an empty pool (`groups: [[]]`, `isAvailable:
+() => false`) and `Reader.tsx` doesn't render `CommentaryPanel`/its resize handle at all for
+this category (rather than rendering it empty) — the text panel's existing `flex-1` (already
+used whenever `!showDaf`) fills the freed width automatically, no layout changes needed.
+
+**Data model — `lib/textModels.ts`'s `TESHUVOT_RISHONIM`/`TeshuvotWorkDef`/`TeshuvotVolume`** —
+a straight line-by-line port of native's `TeshuvotWork`/`TeshuvotVolume` (Swift/Kotlin) for
+just the 13 Rishonim cases, including all of native's hard-won Sefaria-ref corrections (Rashba
+is 5 separately-titled top-level indices, only parts IV–VII kept; Maharam defaults to the
+Cremona edition; Maharik has no separate Shoresh level; etc. — see native's own doc comment,
+copied verbatim into this file). `maxSiman` uses the same "Sefaria-confirmed ceiling where
+known, else a generous 400 placeholder" policy — an overshoot just surfaces the ordinary
+"no text found" error, not a crash.
+
+**Work → Volume → Siman, both plain `<select>`s, not modal wheels.** The work picker reuses the
+exact same `getCategoryGroups` → `<select><optgroup>` pattern every other category's book/
+tractate picker already uses (`lib/categoryCatalog.ts`'s new `"teshuvot"` case groups
+`TESHUVOT_RISHONIM` by century, relying on the array already being in chronological order so
+consecutive same-century runs group for free) — no new picker component needed. The volume
+picker (Part/Klal/Chelek — Rashba, Rosh, Terumat HaDeshen, Sefer HaTashbetz) is a second plain
+`<select>`, shown only when `work.volumeLabel` is set, positioned right after the work select in
+`Reader.tsx`'s toolbar (same slot Yerushalmi's halakha stepper sits in for its own category).
+Native's century-divider-rows-inside-a-wheel and "Alphabetical Order" setting have no web
+equivalent yet — a plain grouped `<select>` doesn't have that constraint (real, non-selectable
+`<optgroup>` labels), so there was nothing to port there.
+
+**Selection state — new `volume?: number` field on `Selection`, not a repurposed existing one.**
+Reusing `halakha` (Yerushalmi's own extra dimension) was considered and rejected: `halakha` is
+threaded through several Yerushalmi-specific call sites (`isYerushalmi`, `halakhaValue`,
+`handleYerushalmiHalakhaChange`, the halakha picker), and overloading it for an unrelated
+category would have been a confusing, easy-to-regress shortcut for saving one field. `volume`
+defaults to 1 (`INITIAL_SELECTION.teshuvot`); `handleIndexChange` resets it to 1 on a work
+change (alongside the existing chapter reset) and a new `handleTeshuvotVolumeChange` resets
+siman to 1 on a volume change, mirroring the existing chapter-reset-on-work-change pattern.
+
+**Siman ceiling needs the volume, not just the work — `getChapterMax` doesn't have that
+parameter.** Rather than widening that function's shared signature (used by every other
+category, none of which have this extra dimension), `Reader.tsx` computes `chapterMax` directly
+via a new `teshuvotMaxSiman(workId, volume)` when `category === "teshuvot"`, falling back to the
+generic `getChapterMax` otherwise. `getCategoryGroups`' teshuvot items still set a fallback
+`count` (Volume 1's ceiling) for any generic caller that only wants the work's name (e.g.
+bookmarks' `getItemName`), but nothing in the reader itself uses that fallback for the real
+siman range.
+
+**API route (`app/api/chapter/route.ts`) — bypasses `fetchChapter` entirely**, same as the
+Tosefta/Yerushalmi branches above it: a Teshuvot ref is a literal work/volume/siman address
+(`teshuvotSefariaRef`, `lib/textModels.ts`), not a book+chapter pair that `ref()`
+(`lib/sefariaClient.ts`) knows how to build — that function's switch gained a `"teshuvot"` stub
+case (`return ""`, mirroring the existing `"midrash"` stub) purely so `TextCategory` could stay
+exhaustive; it's never actually called for this category. The route calls `fetchBoth(refStr)`
+directly and zips the flat he/en arrays into segments with no depth-3 range fix — unlike Tur/SA/
+Rambam, a Teshuvot ref already resolves to exactly one siman's own paragraphs, so there's no
+bare-ref truncation to work around. `textCategoryMeta` (a dead, pre-`getPoolInfo`/
+`categoryCatalog` scaffold from the Phase 1 mechanical port — confirmed unused anywhere at
+runtime) still got a `teshuvot` entry purely because it's a `Record<TextCategory, ...>` and
+TypeScript requires every key.
+
+**Not ported / known gaps, left for a later pass**: Acharonim (31 more works) and Contemporary
+(Nishmat HaBayit's bespoke titled picker, Iggros Moshe's page-image reader, podcast citations,
+YCT related-articles) — see `AnyTorah/CLAUDE.md`'s Teshuvot section for what those need.
+Bookmarks/Highlights/Notebook all fall through to the generic `getItemName`/`getChapterUnitLabel`
+path for this category, which doesn't know about the volume dimension — a bookmark on a
+multi-volume work (Rashba, Rosh, Terumat HaDeshen, Sefer HaTashbetz) restores to volume 1
+regardless of which volume was actually open, and its display label omits the Part/Klal/Chelek
+number entirely. Century group headers and the century-divider/Alphabetical-Order native
+concepts have no Hebrew localization or web equivalent yet either. None of these block the
+reading experience itself; flagged here rather than fixed, since they weren't part of what was
+asked for this pass.
+
+**Verified live** (browser preview, English mode): Rashi siman 1 (no volume picker, correct
+Hebrew-only content — Sefaria has no English translation for this work, confirmed via the raw
+API response, not a bug), Rashba's volume picker (Part IV–VII, correct ref per part, siman
+range following the part), Rosh Klal 3 siman 2, Sefer HaTashbetz Part IV, and Terumat HaDeshen
+Part II all fetched real content via direct `/api/chapter` calls. Hebrew/RTL mode confirmed: tab
+label "שו״ת ראשונים", siman unit "סימן", volume pill "חלק ז" (Rashba Part VII), full toolbar
+mirroring. `tsc --noEmit`, `next build` both clean; `npm run lint`'s 3 errors are pre-existing
+(`react-hooks/preserve-manual-memoization` on `stepReading`, `refs-during-render` on the segment
+map, `set-state-in-effect` on `SourceSheetModal.tsx`) — none in code this pass touched. Not yet
+committed.

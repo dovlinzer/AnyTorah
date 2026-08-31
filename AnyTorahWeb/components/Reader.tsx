@@ -36,7 +36,7 @@ import {
   type Bookmark,
 } from "@/lib/bookmarks";
 import type { YomiToday, YomiResult } from "@/lib/yomiService";
-import { toHebrewNumeral } from "@/lib/textModels";
+import { toHebrewNumeral, teshuvotWork, teshuvotMaxSiman } from "@/lib/textModels";
 import { saveHighlights, loadAndReconcileHighlights, findHighlight, type Highlight } from "@/lib/highlights";
 import { anchorKey, stripAnchorHTML, buildSegmentLabel, type TextAnchor } from "@/lib/textAnchor";
 import HighlightMark from "@/components/HighlightMark";
@@ -59,7 +59,7 @@ interface ChapterResponse {
 }
 
 const READER_CATEGORIES: ReaderCategory[] =
-  ["tanakh", "mishnah", "tosefta", "talmud", "yerushalmi", "rambam", "tur", "shulchanArukh"];
+  ["tanakh", "mishnah", "tosefta", "talmud", "yerushalmi", "rambam", "tur", "shulchanArukh", "teshuvot"];
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(Math.max(n, min), max);
@@ -841,7 +841,10 @@ function NavChevrons({
   );
 }
 
-type Selection = Record<ReaderCategory, { index: number; chapter: number; halakha?: number }>;
+type Selection = Record<
+  ReaderCategory,
+  { index: number; chapter: number; halakha?: number; /** Teshuvot only — 1-based volume/part/klal position. */ volume?: number }
+>;
 
 const INITIAL_SELECTION: Selection = {
   tanakh: { index: 0, chapter: 1 },
@@ -852,6 +855,7 @@ const INITIAL_SELECTION: Selection = {
   rambam: { index: 0, chapter: getChapterMin("rambam", 0) },
   tur: { index: 0, chapter: 1 },
   shulchanArukh: { index: 0, chapter: 1 },
+  teshuvot: { index: 0, chapter: 1, volume: 1 },
 };
 
 // Reads a position (category/index/chapter/halakha/amud) encoded in the URL's query string by
@@ -1021,11 +1025,16 @@ export default function Reader() {
   const mainSegmentGap = 16 * fontSizeSpacingScale(mainFontSizeLevel);
   const mainLineGap = 6 * fontSizeSpacingScale(mainFontSizeLevel);
 
-  const { index, chapter, halakha } = selection[category];
+  const { index, chapter, halakha, volume } = selection[category];
   const groups = useMemo(() => getCategoryGroups(category, hebrewMode), [category, hebrewMode]);
   const chapterMin = getChapterMin(category, index);
-  const chapterMax = getChapterMax(category, index);
+  // Teshuvot's siman ceiling depends on which volume/part/klal is selected, not just the work —
+  // getChapterMax (shared across every category) has no volume dimension, so this overrides it
+  // for just this one category rather than widening that generic function's signature.
+  const volumeValue = volume ?? 1;
+  const chapterMax = category === "teshuvot" ? teshuvotMaxSiman(index, volumeValue) : getChapterMax(category, index);
   const chapterUnit = getChapterUnitLabel(category, hebrewMode);
+  const currentTeshuvotWork = category === "teshuvot" ? teshuvotWork(index) : null;
 
   // Scanned daf image — shown as its own column alongside the digital text (Talmud only).
   const [talmudPages, setTalmudPages] = useState<TalmudPages | null>(null);
@@ -1121,7 +1130,12 @@ export default function Reader() {
   const handleIndexChange = (id: number) => {
     setSelection((s) => ({
       ...s,
-      [category]: { index: id, chapter: getChapterMin(category, id), halakha: category === "yerushalmi" ? 1 : undefined },
+      [category]: {
+        index: id,
+        chapter: getChapterMin(category, id),
+        halakha: category === "yerushalmi" ? 1 : undefined,
+        volume: category === "teshuvot" ? 1 : undefined,
+      },
     }));
   };
   const handleChapterChange = useCallback(
@@ -1133,6 +1147,11 @@ export default function Reader() {
     },
     [category],
   );
+  // Teshuvot only — changing volume/part/klal resets siman to 1, since each volume has its own
+  // siman range (mirrors handleIndexChange's chapter reset on a work change).
+  const handleTeshuvotVolumeChange = useCallback((v: number) => {
+    setSelection((s) => ({ ...s, teshuvot: { ...s.teshuvot, volume: v, chapter: 1 } }));
+  }, []);
   const handleYerushalmiHalakhaChange = useCallback((h: number) => {
     setSelection((s) => ({ ...s, yerushalmi: { ...s.yerushalmi, halakha: h } }));
   }, []);
@@ -1171,6 +1190,7 @@ export default function Reader() {
   const subcategoryQuery = subcategory ? `&subcategory=${subcategory}` : "";
   const halakhaQuery = subcategory === "yerushalmi" ? `&halakha=${halakhaValue}` : "";
   const saTextModeQuery = category === "shulchanArukh" && saTextMode === "nikud" ? "&saTextMode=nikud" : "";
+  const volumeQuery = category === "teshuvot" ? `&volume=${volumeValue}` : "";
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1178,7 +1198,7 @@ export default function Reader() {
     setError(null);
     const commentariesQuery = commentariesKey ? `&commentaries=${commentariesKey}` : "";
     fetch(
-      `/api/chapter?category=${fetchCategory}&index=${index}&chapter=${chapter}${commentariesQuery}${subcategoryQuery}${halakhaQuery}${saTextModeQuery}`,
+      `/api/chapter?category=${fetchCategory}&index=${index}&chapter=${chapter}${commentariesQuery}${subcategoryQuery}${halakhaQuery}${saTextModeQuery}${volumeQuery}`,
       { signal: controller.signal },
     )
       .then(async (res) => {
@@ -1199,7 +1219,7 @@ export default function Reader() {
       .finally(() => setLoading(false));
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchCategory, index, chapter, commentariesKey, subcategoryQuery, halakhaQuery, saTextModeQuery]);
+  }, [fetchCategory, index, chapter, commentariesKey, subcategoryQuery, halakhaQuery, saTextModeQuery, volumeQuery]);
 
   // Talmud amud a/b jump — scroll-only (both amudim are always loaded together). Resets to
   // "a" on every new daf/tractate/category, matching the expectation that a daf opens at 2a —
@@ -2002,6 +2022,20 @@ export default function Reader() {
             )}
           </select>
 
+          {currentTeshuvotWork?.volumeLabel && (
+            <select
+              value={volumeValue}
+              onChange={(e) => handleTeshuvotVolumeChange(Number(e.target.value))}
+              className="shrink-0 rounded border border-border bg-background px-2 py-1 text-sm"
+            >
+              {currentTeshuvotWork.volumes.map((v, i) => (
+                <option key={v.label} value={i + 1}>
+                  {hebrewMode ? currentTeshuvotWork.volumeLabelHebrew : currentTeshuvotWork.volumeLabel} {hebrewMode ? v.hebrewLabel : v.label}
+                </option>
+              ))}
+            </select>
+          )}
+
           <span className="shrink-0 text-sm opacity-60">{chapterUnit}</span>
           <CommitInput
             value={chapter}
@@ -2357,60 +2391,67 @@ export default function Reader() {
           </>
         )}
 
-        {/* Commentary sits to the right of this handle, so dragging right shrinks it. */}
-        <ResizeHandle onDrag={(delta) => adjustCommentaryWidth(delta)} />
+        {/* Teshuvot has no commentary at all, matching native — the panel and its resize handle
+            are omitted entirely rather than shown empty; the text panel's own flex-1 (see
+            `showDaf ? "flex-none" : "flex-1"` above) fills the space automatically. */}
+        {category !== "teshuvot" && (
+          <>
+            {/* Commentary sits to the right of this handle, so dragging right shrinks it. */}
+            <ResizeHandle onDrag={(delta) => adjustCommentaryWidth(delta)} />
 
-        <div
-          className="min-h-0 shrink-0 overflow-hidden rounded-lg border border-border bg-card"
-          style={{ width: commentaryWidth }}
-        >
-          <CommentaryPanel
-            category={category}
-            index={index}
-            chapter={chapter}
-            displayMode={commentaryDisplayMode}
-            onDisplayModeChange={setCommentaryDisplayMode}
-            poolInfo={poolInfo}
-            slots={slots}
-            effectiveSlots={effectiveSlots}
-            onSlotsChange={setSlots}
-            talmudAmud={category === "talmud" ? talmudAmud : undefined}
-            mainSegmentCount={category === "rambam" ? data?.segments.length : undefined}
-            fontSizeLevel={commentaryFontSizeLevel}
-            onFontSizeLevelChange={setCommentaryFontSizeLevel}
-            hebrewMode={hebrewMode}
-            halakha={isYerushalmi ? halakha : undefined}
-            getHighlight={(segmentIndex, paragraphIndex, commentaryType) =>
-              highlightsLookup.get(anchorKey(buildAnchor("commentary", segmentIndex, paragraphIndex, commentaryType)))
-            }
-            onHighlightQuickPick={(segmentIndex, paragraphIndex, commentaryType, colorIndex, heQuote, enQuote) =>
-              handleQuickPickHighlight(
-                buildAnchor("commentary", segmentIndex, paragraphIndex, commentaryType),
-                colorIndex,
-                heQuote,
-                enQuote,
-              )
-            }
-            onHighlightOpenEditor={(segmentIndex, paragraphIndex, commentaryType, heQuote, enQuote) =>
-              handleOpenHighlightEditor(
-                buildAnchor("commentary", segmentIndex, paragraphIndex, commentaryType),
-                heQuote,
-                enQuote,
-              )
-            }
-            onInsertToNotebook={
-              notebookOpen
-                ? (segmentIndex, paragraphIndex, commentaryType, amud, segmentLabel, quoteHe, quoteEn) =>
-                    notebookInsertRef.current?.(
-                      buildAnchor("commentary", segmentIndex, paragraphIndex, commentaryType, amud, segmentLabel),
-                      quoteHe,
-                      quoteEn,
-                    )
-                : undefined
-            }
-            onActiveTypeChange={(type) => setReadingFocus({ source: "commentary", commentaryType: type })}
-          />
-        </div>
+            <div
+              className="min-h-0 shrink-0 overflow-hidden rounded-lg border border-border bg-card"
+              style={{ width: commentaryWidth }}
+            >
+              <CommentaryPanel
+                category={category}
+                index={index}
+                chapter={chapter}
+                displayMode={commentaryDisplayMode}
+                onDisplayModeChange={setCommentaryDisplayMode}
+                poolInfo={poolInfo}
+                slots={slots}
+                effectiveSlots={effectiveSlots}
+                onSlotsChange={setSlots}
+                talmudAmud={category === "talmud" ? talmudAmud : undefined}
+                mainSegmentCount={category === "rambam" ? data?.segments.length : undefined}
+                fontSizeLevel={commentaryFontSizeLevel}
+                onFontSizeLevelChange={setCommentaryFontSizeLevel}
+                hebrewMode={hebrewMode}
+                halakha={isYerushalmi ? halakha : undefined}
+                getHighlight={(segmentIndex, paragraphIndex, commentaryType) =>
+                  highlightsLookup.get(anchorKey(buildAnchor("commentary", segmentIndex, paragraphIndex, commentaryType)))
+                }
+                onHighlightQuickPick={(segmentIndex, paragraphIndex, commentaryType, colorIndex, heQuote, enQuote) =>
+                  handleQuickPickHighlight(
+                    buildAnchor("commentary", segmentIndex, paragraphIndex, commentaryType),
+                    colorIndex,
+                    heQuote,
+                    enQuote,
+                  )
+                }
+                onHighlightOpenEditor={(segmentIndex, paragraphIndex, commentaryType, heQuote, enQuote) =>
+                  handleOpenHighlightEditor(
+                    buildAnchor("commentary", segmentIndex, paragraphIndex, commentaryType),
+                    heQuote,
+                    enQuote,
+                  )
+                }
+                onInsertToNotebook={
+                  notebookOpen
+                    ? (segmentIndex, paragraphIndex, commentaryType, amud, segmentLabel, quoteHe, quoteEn) =>
+                        notebookInsertRef.current?.(
+                          buildAnchor("commentary", segmentIndex, paragraphIndex, commentaryType, amud, segmentLabel),
+                          quoteHe,
+                          quoteEn,
+                        )
+                    : undefined
+                }
+                onActiveTypeChange={(type) => setReadingFocus({ source: "commentary", commentaryType: type })}
+              />
+            </div>
+          </>
+        )}
 
         {notebookOpen && !notebookFloating && (
           <>

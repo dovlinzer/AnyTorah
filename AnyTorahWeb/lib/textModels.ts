@@ -12,7 +12,8 @@ export type TextCategory =
   | "rambam"
   | "shulchanArukh"
   | "tur"
-  | "midrash";
+  | "midrash"
+  | "teshuvot";
 
 export type SegmentLabelStyle = "verse" | "mishnah" | "halakha" | "sif" | "none";
 
@@ -65,6 +66,12 @@ export const textCategoryMeta: Record<TextCategory, TextCategoryMeta> = {
   midrash: {
     displayName: "Midrash",
     hebrewName: "מדרש",
+    defaultCommentaries: [],
+    segmentLabelStyle: "none",
+  },
+  teshuvot: {
+    displayName: "Teshuvot",
+    hebrewName: "שו״ת",
     defaultCommentaries: [],
     segmentLabelStyle: "none",
   },
@@ -484,3 +491,154 @@ export const commentaryLayoutDisplayName: Record<CommentaryLayout, string> = {
   right: "Right-side panel",
   both: "Left and right panels",
 };
+
+// MARK: - Teshuvot Rishonim
+//
+// Ported from AnyTorah/AnyTorah/Models/TextModels.swift's TeshuvotWork/TeshuvotVolume —
+// Rishonim subcategory only. Native also has Acharonim and Contemporary (Nishmat HaBayit,
+// Iggros Moshe scanned pages + podcast citations, YCT related-articles) — not ported here yet,
+// staged for a later pass. No commentary panel for this category, matching native exactly.
+//
+// Ref data verified against live Sefaria content 2026-08-24/25 (see AnyTorah/CLAUDE.md's
+// Teshuvot section) — several titles differ from a naive guess (e.g. Rashba is 5 separately
+// titled top-level Sefaria indices, not one title with a numeric volume; Maharik has no
+// separate "Shoresh" volume level — Sefaria's own Siman numbering already is the Shoresh
+// numbering). `maxSiman` is the Sefaria-confirmed ceiling where known, or
+// PLACEHOLDER_MAX_SIMAN (a generous bound — an overshoot just surfaces the ordinary "no text
+// found" error, not a crash) elsewhere.
+
+export interface TeshuvotVolume {
+  label: string;
+  hebrewLabel: string;
+  /** Sefaria ref with a literal "{siman}" placeholder — see teshuvotSefariaRef. */
+  refTemplate: string;
+  maxSiman: number;
+}
+
+export interface TeshuvotWorkDef {
+  id: number;
+  displayName: string;
+  hebrewName: string;
+  century: string;
+  /** Label for the volume picker ("Part"/"Klal"/"Chelek"); null hides the volume picker. */
+  volumeLabel: string | null;
+  volumeLabelHebrew: string | null;
+  /** Never empty — a flat work (volumeLabel === null) is still exactly one entry. */
+  volumes: TeshuvotVolume[];
+}
+
+const PLACEHOLDER_MAX_SIMAN = 400;
+
+function flatVolume(refTemplate: string, maxSiman: number): TeshuvotVolume[] {
+  return [{ label: "1", hebrewLabel: "1", refTemplate, maxSiman }];
+}
+
+export const TESHUVOT_RISHONIM: TeshuvotWorkDef[] = [
+  {
+    id: 0, displayName: "Rashi", hebrewName: "רש״י", century: "11th–12th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Teshuvot Rashi {siman}", 382),
+  },
+  {
+    id: 1, displayName: "Ri Migash", hebrewName: "ר״י מיגאש", century: "11th–12th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Teshuvot HaRi Migash {siman}", 214),
+  },
+  {
+    id: 2, displayName: "Rambam", hebrewName: "רמב״ם", century: "11th–12th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Teshuvot HaRambam {siman}", 293),
+  },
+  {
+    id: 3, displayName: "Rashba", hebrewName: "רשב״א", century: "13th Century",
+    volumeLabel: "Part", volumeLabelHebrew: "חלק",
+    // Wheel positions 1-4 map to Sefaria's separately-titled parts IV-VII (I-III excluded —
+    // part I is real for only 5 of 413 simanim, parts II/III were never digitized).
+    volumes: ["IV", "V", "VI", "VII"].map((numeral, i) => ({
+      label: numeral,
+      hebrewLabel: toHebrewNumeral(i + 4),
+      refTemplate: `Teshuvot haRashba part ${numeral} {siman}`,
+      maxSiman: [330, 293, 286, 540][i],
+    })),
+  },
+  {
+    id: 4, displayName: "Maharam", hebrewName: "מהר״ם מרוטנבורג", century: "13th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    // Sefaria carries 4 separately-paginated printed editions with no shared siman numbering;
+    // this defaults to the earliest (Cremona), a simple flat siman list.
+    volumes: flatVolume("Teshuvot Maharam, Cremona Edition {siman}", PLACEHOLDER_MAX_SIMAN),
+  },
+  {
+    id: 5, displayName: "Maharach Or Zarua", hebrewName: "מהר״ח אור זרוע", century: "13th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Maharach Or Zarua Responsa {siman}", 261),
+  },
+  {
+    id: 6, displayName: "Rosh", hebrewName: "רא״ש", century: "14th Century",
+    volumeLabel: "Klal", volumeLabelHebrew: "כלל",
+    volumes: Array.from({ length: 108 }, (_, i) => ({
+      label: `${i + 1}`,
+      hebrewLabel: toHebrewNumeral(i + 1),
+      refTemplate: `Teshuvot HaRosh ${i + 1}:{siman}`,
+      maxSiman: PLACEHOLDER_MAX_SIMAN,
+    })),
+  },
+  {
+    id: 7, displayName: "Ran", hebrewName: "ר״ן", century: "14th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Teshuvot HaRan {siman}", 77),
+  },
+  {
+    id: 8, displayName: "Rivash", hebrewName: "ריב״ש", century: "14th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Teshuvot HaRivash {siman}", 518),
+  },
+  {
+    id: 9, displayName: "Maharil", hebrewName: "מהרי״ל", century: "15th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Teshuvot Maharil {siman}", PLACEHOLDER_MAX_SIMAN),
+  },
+  {
+    id: 10, displayName: "Terumat HaDeshen", hebrewName: "תרומת הדשן", century: "15th Century",
+    volumeLabel: "Part", volumeLabelHebrew: "חלק",
+    volumes: ["I", "II"].map((numeral, i) => ({
+      label: numeral,
+      hebrewLabel: toHebrewNumeral(i + 1),
+      refTemplate: `Terumat HaDeshen, Part ${numeral} {siman}`,
+      maxSiman: [354, PLACEHOLDER_MAX_SIMAN][i],
+    })),
+  },
+  {
+    id: 11, displayName: "Maharik", hebrewName: "מהרי״ק", century: "15th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Teshuvot Maharik {siman}", 197),
+  },
+  {
+    id: 12, displayName: "Sefer HaTashbetz", hebrewName: "תשב״ץ", century: "15th Century",
+    volumeLabel: "Chelek", volumeLabelHebrew: "חלק",
+    volumes: ["I", "II", "III", "IV"].map((numeral, i) => ({
+      label: numeral,
+      hebrewLabel: toHebrewNumeral(i + 1),
+      refTemplate: `Sefer HaTashbetz, Part ${numeral} {siman}`,
+      maxSiman: PLACEHOLDER_MAX_SIMAN,
+    })),
+  },
+];
+
+export function teshuvotWork(id: number): TeshuvotWorkDef {
+  return TESHUVOT_RISHONIM.find((w) => w.id === id) ?? TESHUVOT_RISHONIM[0];
+}
+
+function teshuvotVolumeAt(work: TeshuvotWorkDef, volume: number): TeshuvotVolume {
+  const idx = Math.min(Math.max(0, volume - 1), work.volumes.length - 1);
+  return work.volumes[idx];
+}
+
+export function teshuvotSefariaRef(workId: number, volume: number, siman: number): string {
+  const work = teshuvotWork(workId);
+  return teshuvotVolumeAt(work, volume).refTemplate.replace("{siman}", String(siman));
+}
+
+export function teshuvotMaxSiman(workId: number, volume: number): number {
+  return teshuvotVolumeAt(teshuvotWork(workId), volume).maxSiman;
+}
