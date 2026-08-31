@@ -26,3 +26,7 @@ AnyTorahAndroid/local.properties
 *.bak
 __pycache__/
 *.pyc
+
+# Iggros Moshe batch indexing scratch data — regenerable, not source
+tools/iggros_moshe_page_cache/
+tools/iggros_moshe_batch_state.json
