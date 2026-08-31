@@ -1597,5 +1597,67 @@ Part II all fetched real content via direct `/api/chapter` calls. Hebrew/RTL mod
 label "שו״ת ראשונים", siman unit "סימן", volume pill "חלק ז" (Rashba Part VII), full toolbar
 mirroring. `tsc --noEmit`, `next build` both clean; `npm run lint`'s 3 errors are pre-existing
 (`react-hooks/preserve-manual-memoization` on `stepReading`, `refs-during-render` on the segment
-map, `set-state-in-effect` on `SourceSheetModal.tsx`) — none in code this pass touched. Not yet
-committed.
+map, `set-state-in-effect` on `SourceSheetModal.tsx`) — none in code this pass touched. Committed
+(`be803d1`) and pushed to `main` — live on the Vercel deployment.
+
+## Teshuvot — its own tab section, and a reference-lookup side panel — shipped
+
+Two follow-up requests from live use of the Rishonim port above, same day.
+
+**Teshuvot moved out of the main category capsule into its own labeled group.** The header's
+`<div className={tabsContainerClass}>` (one rounded-full segmented-control capsule of buttons)
+now sits inside a wrapping `flex flex-wrap items-center gap-3` alongside a *second*, independent
+capsule: a small "Teshuvot"/"שו״ת" label followed by 3 pills — Rishonim (real, clickable — sets
+`category` to `"teshuvot"`, same as before), and disabled "Acharonim"/"אחרונים" and
+"Contemporary"/"בני זמננו" placeholders (`opacity-40 cursor-not-allowed`, `title="Coming soon"`)
+for the two subcategories not ported yet — mirrors native's own "future era, not built yet"
+disabled-placeholder pattern for this exact feature (see `AnyTorah/CLAUDE.md`'s Teshuvot Home-
+screen section). `READER_CATEGORIES.filter((c) => c !== "teshuvot")` feeds the main capsule now;
+the Teshuvot capsule's 3 buttons are hand-written rather than data-driven, since only one of the
+three is real. When Acharonim ships, replace the disabled placeholder with a real button the
+same way Rishonim's was added, and reconsider whether a `teshuvotSubcategory` dimension is worth
+introducing at that point (not needed yet with only one real subcategory).
+
+**Reference panel — a second, independent mini-reader, Teshuvot-only.** Addresses "the text is
+dense with no commentary panel" and, more directly, "I want to pull up a pasuk or a Shulchan
+Arukh siman a teshuvah is quoting, alongside it" — raised together, and the second framing is
+what got built (a commentary-panel-shaped empty-space filler was considered and explicitly
+rejected in favor of this). New `components/ReferencePanel.tsx`: its own category tabs (all of
+`REFERENCE_CATEGORIES` — every `ReaderCategory` including Teshuvot itself, since one teshuvah
+can cite another), its own book/work + volume + chapter/siman/halakha selects (small, plain
+`<select>`/`<input type="number">` controls, not the main reader's richer wheel/modal pickers),
+its own Hebrew/English/Both `DisplayModePill`, and its own `/api/chapter` fetch — entirely
+separate state and network calls from the main teshuvah reader. Deliberately has **no commentary
+panel of its own** (that would need a 3rd navigation dimension nested inside a panel that's
+already a "nice to have," not proportionate for v1) and **no highlights/bookmarks/notebook
+integration** (out of scope — this is a quick look-up surface, not a peer reading pane).
+
+**Rendering reuses the main panel's HTML-safety split**: `category === "shulchanArukh" || "tur"`
+gets `dangerouslySetInnerHTML` for Hebrew (server-sanitized `sa-mark`/`dm-mark` spans only —
+without this, SA/Tur's inline commentary-marker `<span>` tags would show as literal text instead
+of rendering as `(א)`/`{א}` brackets), Talmud/Mishnah English similarly for its `en-editorial`
+bold-glue spans; every other case renders the segment as a plain text child. Verified live
+against Shulchan Arukh Orach Chayim 1 in the panel — markers render correctly, not as raw tags.
+
+**Toggle + position controls sit in the main toolbar, gated on `category === "teshuvot"`** —
+same slot/pattern as the existing daf-image show/hide + left/middle position controls
+(`VerticalDivider` + a toggle pill + a 2-button position sub-pill), just Left/Right instead of
+Left/Middle. New persisted state: `refPanelOpen`/`refPanelPosition`/`refPanelWidth`
+(`localStorage` keys `anytorah:refPanelOpen`/`refPanelPosition`/`refPanelWidth`, same
+load/store pattern as `dafPosition`/`commentaryWidth`).
+
+**Layout — one render site, repositioned via CSS `order`, not two conditional blocks.** The
+first implementation rendered `<ReferencePanel>` from two separate places in the JSX (one for
+`refPanelPosition === "left"`, one for `"right"`) — this looked right but silently remounted the
+component on every position toggle (different call site in the tree ⇒ different React identity
+⇒ full state reset), so switching sides while mid-lookup reset the panel back to Tanakh/
+Bereishit. Fixed by rendering it from exactly one place, wrapped in a `<div style={{order:
+refPanelPosition === "left" ? -1 : 1}}>` — `order: -1` sorts before every sibling at the default
+`order: 0` (the daf-image-left block, the text column, the notebook panel), `order: 1` sorts
+after all of them, regardless of where in the DOM the wrapper actually sits. The `ResizeHandle`
+lives inside that same wrapper, on whichever side actually borders the text column (before the
+panel div for `"left"`, after it for `"right"`), with `adjustRefPanelWidth(delta, sign)` taking
+an explicit `+1`/`-1` sign so one function covers both directions (dragging toward the text
+column always grows the panel, dragging away always shrinks it, regardless of which side).
+**Real bug found and fixed via live testing, not caught by `tsc`/lint/build** — confirmed by
+setting Shulchan Arukh in the panel, toggling Left→Right, and seeing the selection survive.

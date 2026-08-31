@@ -15,6 +15,7 @@ import {
   getStartAmud,
 } from "@/lib/categoryCatalog";
 import CommentaryPanel from "@/components/CommentaryPanel";
+import ReferencePanel from "@/components/ReferencePanel";
 import SASimanPicker from "@/components/SASimanPicker";
 import NumberPickerModal from "@/components/NumberPickerModal";
 import DafImagePanel from "@/components/DafImagePanel";
@@ -285,6 +286,55 @@ const COMMENTARY_WIDTH_DEFAULT = 380;
 const NOTEBOOK_WIDTH_DEFAULT = 380;
 const PANEL_WIDTH_MIN = 260;
 const PANEL_WIDTH_MAX = 800;
+
+// Reference panel (Teshuvot only) — a second, independent mini-reader for pulling up a text
+// being cited (a pasuk, a Shulchan Arukh siman, etc.) alongside the teshuvah, without leaving
+// it. Only exists for Teshuvot because that's the one category with no commentary panel
+// occupying the freed-up width; see ReferencePanel.tsx for the panel itself.
+const REF_PANEL_OPEN_KEY = "anytorah:refPanelOpen";
+const REF_PANEL_POSITION_KEY = "anytorah:refPanelPosition";
+const REF_PANEL_WIDTH_KEY = "anytorah:refPanelWidth";
+const REF_PANEL_WIDTH_DEFAULT = 420;
+
+type RefPanelPosition = "left" | "right";
+
+function loadRefPanelOpen(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(REF_PANEL_OPEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function storeRefPanelOpen(open: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(REF_PANEL_OPEN_KEY, open ? "1" : "0");
+    schedulePreferencesSync();
+  } catch {
+    // localStorage unavailable — toggle just won't persist.
+  }
+}
+
+function loadRefPanelPosition(): RefPanelPosition {
+  if (typeof window === "undefined") return "right";
+  try {
+    return window.localStorage.getItem(REF_PANEL_POSITION_KEY) === "left" ? "left" : "right";
+  } catch {
+    return "right";
+  }
+}
+
+function storeRefPanelPosition(pos: RefPanelPosition) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(REF_PANEL_POSITION_KEY, pos);
+    schedulePreferencesSync();
+  } catch {
+    // localStorage unavailable — position choice just won't persist.
+  }
+}
 
 // Notebook "pop out" — floats the panel in a draggable/resizable window instead of docking it
 // in-flow. Position/size are independent of notebookWidth (the docked width), since a floated
@@ -1069,6 +1119,9 @@ export default function Reader() {
   const [notebookWidth, setNotebookWidthState] = useState(NOTEBOOK_WIDTH_DEFAULT);
   const [notebookFloating, setNotebookFloatingState] = useState(false);
   const [notebookFloatRect, setNotebookFloatRectState] = useState<NotebookFloatRect>(defaultNotebookFloatRect);
+  const [refPanelOpen, setRefPanelOpenState] = useState(false);
+  const [refPanelPosition, setRefPanelPositionState] = useState<RefPanelPosition>("right");
+  const [refPanelWidth, setRefPanelWidthState] = useState(REF_PANEL_WIDTH_DEFAULT);
   useEffect(() => {
     setDafPositionState(loadDafPosition());
     setNarrowWidthState(loadStoredWidth(NARROW_WIDTH_KEY, NARROW_WIDTH_DEFAULT));
@@ -1076,10 +1129,31 @@ export default function Reader() {
     setNotebookWidthState(loadStoredWidth(NOTEBOOK_WIDTH_KEY, NOTEBOOK_WIDTH_DEFAULT));
     setNotebookFloatingState(loadNotebookFloating());
     setNotebookFloatRectState(loadNotebookFloatRect());
+    setRefPanelOpenState(loadRefPanelOpen());
+    setRefPanelPositionState(loadRefPanelPosition());
+    setRefPanelWidthState(loadStoredWidth(REF_PANEL_WIDTH_KEY, REF_PANEL_WIDTH_DEFAULT));
   }, []);
   const setDafPosition = (pos: DafPosition) => {
     setDafPositionState(pos);
     storeDafPosition(pos);
+  };
+  const toggleRefPanelOpen = () => {
+    setRefPanelOpenState((prev) => {
+      const next = !prev;
+      storeRefPanelOpen(next);
+      return next;
+    });
+  };
+  const setRefPanelPosition = (pos: RefPanelPosition) => {
+    setRefPanelPositionState(pos);
+    storeRefPanelPosition(pos);
+  };
+  const adjustRefPanelWidth = (deltaX: number, sign: 1 | -1) => {
+    setRefPanelWidthState((w) => {
+      const next = clamp(w + sign * deltaX, PANEL_WIDTH_MIN, PANEL_WIDTH_MAX);
+      storeWidth(REF_PANEL_WIDTH_KEY, next);
+      return next;
+    });
   };
   const adjustNarrowWidth = (deltaX: number) => {
     setNarrowWidthState((w) => {
@@ -1913,17 +1987,41 @@ export default function Reader() {
           dir={hebrewMode ? "rtl" : "ltr"}
           className="mb-6 flex flex-wrap shrink-0 items-center justify-between gap-3"
         >
-          <div className={tabsContainerClass}>
-            {READER_CATEGORIES.map((c) => (
-              <button
-                key={c}
-                onClick={() => setCategory(c)}
-                className={tabButtonClass}
-                style={category === c ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
-              >
-                {getCategoryDisplayName(c, hebrewMode)}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className={tabsContainerClass}>
+              {READER_CATEGORIES.filter((c) => c !== "teshuvot").map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setCategory(c)}
+                  className={tabButtonClass}
+                  style={category === c ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+                >
+                  {getCategoryDisplayName(c, hebrewMode)}
+                </button>
+              ))}
+            </div>
+            {/* Teshuvot gets its own labeled group, separate from the main category capsule — it's
+                conceptually a sibling tier (Rishonim/Acharonim/Contemporary), not just another book
+                category. Only Rishonim is wired up so far; the other two render disabled, matching
+                native's own "future era, not built yet" placeholder pattern for this exact feature. */}
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="text-xs opacity-60">{hebrewMode ? "שו״ת" : "Teshuvot"}</span>
+              <div className={tabsContainerClass}>
+                <button
+                  onClick={() => setCategory("teshuvot")}
+                  className={tabButtonClass}
+                  style={category === "teshuvot" ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+                >
+                  {hebrewMode ? "ראשונים" : "Rishonim"}
+                </button>
+                <button disabled title="Coming soon" className={`${tabButtonClass} cursor-not-allowed opacity-40`}>
+                  {hebrewMode ? "אחרונים" : "Acharonim"}
+                </button>
+                <button disabled title="Coming soon" className={`${tabButtonClass} cursor-not-allowed opacity-40`}>
+                  {hebrewMode ? "בני זמננו" : "Contemporary"}
+                </button>
+              </div>
+            </div>
           </div>
           {/* overflow-x-auto: on a narrow viewport this group (toggles + bookmark + notebook
               buttons) can still be wider than the space left after the tabs above take their
@@ -2133,6 +2231,38 @@ export default function Reader() {
           </div>
         )}
 
+        {category === "teshuvot" && <VerticalDivider />}
+        {category === "teshuvot" && (
+          <div dir={hebrewMode ? "rtl" : "ltr"} className="flex shrink-0 items-center gap-3">
+            <button
+              onClick={toggleRefPanelOpen}
+              className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+              style={refPanelOpen ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+            >
+              {hebrewMode
+                ? refPanelOpen ? "הסתר מקור" : "הצג מקור"
+                : refPanelOpen ? "Hide reference" : "Look up a source"}
+            </button>
+
+            {refPanelOpen && (
+              <div className="flex shrink-0 items-center gap-1 rounded-full border border-border px-1 py-1 text-sm">
+                {(["left", "right"] as const).map((pos) => (
+                  <button
+                    key={pos}
+                    onClick={() => setRefPanelPosition(pos)}
+                    className="rounded-full px-2.5 py-1 transition-colors"
+                    style={
+                      refPanelPosition === pos ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined
+                    }
+                  >
+                    {hebrewMode ? (pos === "left" ? "שמאל" : "ימין") : pos === "left" ? "Left" : "Right"}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Opens this exact daf/amud on Mercava (themercava.com/app) in a real popup window
             (not a plain new-tab link) — Mercava has no public reverse-lookup for its own internal
             page ids, so the id table this reads (lib/mercava.ts, the `mercava_daf_ids` Supabase
@@ -2221,6 +2351,27 @@ export default function Reader() {
       </div>
 
       <div className="flex min-h-0 flex-1">
+        {/* A single render site regardless of left/right — CSS `order` repositions it instead of
+            two separate conditional blocks, so toggling position doesn't remount ReferencePanel
+            (which would otherwise reset whatever the user was mid-lookup on back to Tanakh/
+            Bereishit, since its selection state lives inside the component itself). */}
+        {category === "teshuvot" && refPanelOpen && (
+          <div className="flex shrink-0" style={{ order: refPanelPosition === "left" ? -1 : 1 }}>
+            {refPanelPosition === "right" && (
+              <ResizeHandle onDrag={(delta) => adjustRefPanelWidth(delta, -1)} />
+            )}
+            <div
+              className="min-h-0 shrink-0 overflow-hidden rounded-lg border border-border bg-card"
+              style={{ width: refPanelWidth }}
+            >
+              <ReferencePanel hebrewMode={hebrewMode} />
+            </div>
+            {refPanelPosition === "left" && (
+              <ResizeHandle onDrag={(delta) => adjustRefPanelWidth(delta, 1)} />
+            )}
+          </div>
+        )}
+
         {showDaf && dafPosition === "left" && (
           <>
             <div className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card p-2">
@@ -2230,7 +2381,6 @@ export default function Reader() {
             <ResizeHandle onDrag={(delta) => adjustNarrowWidth(-delta)} />
           </>
         )}
-
         <div
           className={`flex min-h-0 min-w-0 flex-col ${showDaf ? "flex-none" : "flex-1"}`}
           style={showDaf ? { width: narrowWidth } : undefined}
