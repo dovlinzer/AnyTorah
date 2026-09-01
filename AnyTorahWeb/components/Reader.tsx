@@ -15,7 +15,7 @@ import {
   getStartAmud,
 } from "@/lib/categoryCatalog";
 import CommentaryPanel from "@/components/CommentaryPanel";
-import ReferencePanel from "@/components/ReferencePanel";
+import ReferencePanel, { type ReferenceSelection } from "@/components/ReferencePanel";
 import SASimanPicker from "@/components/SASimanPicker";
 import NumberPickerModal from "@/components/NumberPickerModal";
 import DafImagePanel from "@/components/DafImagePanel";
@@ -290,11 +290,17 @@ const PANEL_WIDTH_MAX = 800;
 // Reference/text panel (Teshuvot only) — a second, independent mini-reader for pulling up a
 // text being cited (a pasuk, a Shulchan Arukh siman, etc.) alongside the teshuvah, without
 // leaving it. Only exists for Teshuvot because that's the one category with no commentary panel
-// occupying the freed-up width; see ReferencePanel.tsx for the panel itself. Always docks on the
-// left (no position choice — kept deliberately simple per explicit user request).
+// occupying the freed-up width; see ReferencePanel.tsx for the panel itself. Sits to the right
+// of the teshuvah text (order: Teshuvah, Text, Commentators), with an independently-toggleable
+// Commentators panel of its own — Reader.tsx owns that panel's pool/slots/width, fed by
+// ReferencePanel's onSelectionChange callback, so it's a true sibling panel rather than
+// something nested inside ReferencePanel itself.
 const REF_PANEL_OPEN_KEY = "anytorah:refPanelOpen";
 const REF_PANEL_WIDTH_KEY = "anytorah:refPanelWidth";
 const REF_PANEL_WIDTH_DEFAULT = 420;
+const REF_COMMENTARY_OPEN_KEY = "anytorah:refCommentaryOpen";
+const REF_COMMENTARY_WIDTH_KEY = "anytorah:refCommentaryWidth";
+const REF_COMMENTARY_WIDTH_DEFAULT = 340;
 
 function loadRefPanelOpen(): boolean {
   if (typeof window === "undefined") return false;
@@ -309,6 +315,25 @@ function storeRefPanelOpen(open: boolean) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(REF_PANEL_OPEN_KEY, open ? "1" : "0");
+    schedulePreferencesSync();
+  } catch {
+    // localStorage unavailable — toggle just won't persist.
+  }
+}
+
+function loadRefCommentaryOpen(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(REF_COMMENTARY_OPEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function storeRefCommentaryOpen(open: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(REF_COMMENTARY_OPEN_KEY, open ? "1" : "0");
     schedulePreferencesSync();
   } catch {
     // localStorage unavailable — toggle just won't persist.
@@ -1100,6 +1125,8 @@ export default function Reader() {
   const [notebookFloatRect, setNotebookFloatRectState] = useState<NotebookFloatRect>(defaultNotebookFloatRect);
   const [refPanelOpen, setRefPanelOpenState] = useState(false);
   const [refPanelWidth, setRefPanelWidthState] = useState(REF_PANEL_WIDTH_DEFAULT);
+  const [refCommentaryOpen, setRefCommentaryOpenState] = useState(false);
+  const [refCommentaryWidth, setRefCommentaryWidthState] = useState(REF_COMMENTARY_WIDTH_DEFAULT);
   useEffect(() => {
     setDafPositionState(loadDafPosition());
     setNarrowWidthState(loadStoredWidth(NARROW_WIDTH_KEY, NARROW_WIDTH_DEFAULT));
@@ -1109,6 +1136,8 @@ export default function Reader() {
     setNotebookFloatRectState(loadNotebookFloatRect());
     setRefPanelOpenState(loadRefPanelOpen());
     setRefPanelWidthState(loadStoredWidth(REF_PANEL_WIDTH_KEY, REF_PANEL_WIDTH_DEFAULT));
+    setRefCommentaryOpenState(loadRefCommentaryOpen());
+    setRefCommentaryWidthState(loadStoredWidth(REF_COMMENTARY_WIDTH_KEY, REF_COMMENTARY_WIDTH_DEFAULT));
   }, []);
   const setDafPosition = (pos: DafPosition) => {
     setDafPositionState(pos);
@@ -1121,16 +1150,53 @@ export default function Reader() {
       return next;
     });
   };
-  // Panel always docks on the left, so dragging the handle right (positive delta, moving into
-  // the text column) always grows it — no position-dependent sign needed, unlike the commentary/
-  // notebook panels on the right, which shrink when dragged in the same direction.
+  const toggleRefCommentaryOpen = () => {
+    setRefCommentaryOpenState((prev) => {
+      const next = !prev;
+      storeRefCommentaryOpen(next);
+      return next;
+    });
+  };
+  // Panel sits to the right of the teshuvah text (order: Teshuvah, Text, Commentators), same
+  // side as the main reader's own commentary panel — dragging the handle right shrinks it.
   const adjustRefPanelWidth = (deltaX: number) => {
     setRefPanelWidthState((w) => {
-      const next = clamp(w + deltaX, PANEL_WIDTH_MIN, PANEL_WIDTH_MAX);
+      const next = clamp(w - deltaX, PANEL_WIDTH_MIN, PANEL_WIDTH_MAX);
       storeWidth(REF_PANEL_WIDTH_KEY, next);
       return next;
     });
   };
+  // The Commentators panel is the rightmost of the three, so it follows the same "drag right
+  // shrinks" convention as every other right-side panel in this app.
+  const adjustRefCommentaryWidth = (deltaX: number) => {
+    setRefCommentaryWidthState((w) => {
+      const next = clamp(w - deltaX, PANEL_WIDTH_MIN, PANEL_WIDTH_MAX);
+      storeWidth(REF_COMMENTARY_WIDTH_KEY, next);
+      return next;
+    });
+  };
+  // The Text panel's own current selection, reported up via ReferencePanel's onSelectionChange —
+  // Reader.tsx uses this to drive the sibling Commentators panel (its pool/slots/etc.), since
+  // that panel is a true sibling in the layout, not nested inside ReferencePanel itself.
+  const [refSelection, setRefSelection] = useState<ReferenceSelection>({
+    category: "tanakh", index: 0, chapter: 1, volume: 1, halakha: 1, segmentCount: 0,
+  });
+  const refPoolInfo = useMemo(
+    () => getPoolInfo(refSelection.category, refSelection.index),
+    [refSelection.category, refSelection.index],
+  );
+  const refCommentaryAvailable = refPoolInfo.groups.some((g) => g.length > 0);
+  const [refSlots, setRefSlots] = useState<CommentaryType[]>(refPoolInfo.defaultSlots);
+  useEffect(() => {
+    setRefSlots(refPoolInfo.defaultSlots);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refPoolInfo.contextKey]);
+  const refEffectiveSlots = useMemo(
+    () => computeEffectiveSlots(refSlots, refPoolInfo.isAvailable, refPoolInfo.fallbackCandidates),
+    [refSlots, refPoolInfo],
+  );
+  const [refCommentaryDisplayMode, setRefCommentaryDisplayMode] = useState<TextDisplayMode>("both");
+  const [refCommentaryFontSizeLevel, setRefCommentaryFontSizeLevel] = useState(0);
   const adjustNarrowWidth = (deltaX: number) => {
     setNarrowWidthState((w) => {
       const next = clamp(w + deltaX, PANEL_WIDTH_MIN, PANEL_WIDTH_MAX);
@@ -2220,6 +2286,21 @@ export default function Reader() {
                 ? refPanelOpen ? "הסתר טקסט" : "הצג טקסט"
                 : refPanelOpen ? "Hide text panel" : "Show text panel"}
             </button>
+            {/* Only meaningful once the text panel is open, and only when whatever it's currently
+                showing actually has real commentary (mirrors the main reader's own empty-pool
+                Teshuvot case) — source order right after the text-panel button so the dir flip
+                above lands it correctly (to the right in English, to the left in Hebrew). */}
+            {refPanelOpen && refCommentaryAvailable && (
+              <button
+                onClick={toggleRefCommentaryOpen}
+                className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+                style={refCommentaryOpen ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+              >
+                {hebrewMode
+                  ? refCommentaryOpen ? "הסתר מפרשים" : "הצג מפרשים"
+                  : refCommentaryOpen ? "Hide Commentators" : "Show Commentators"}
+              </button>
+            )}
           </div>
         )}
 
@@ -2311,19 +2392,6 @@ export default function Reader() {
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {category === "teshuvot" && refPanelOpen && (
-          <>
-            <div
-              className="min-h-0 shrink-0 overflow-hidden rounded-lg border border-border bg-card"
-              style={{ width: refPanelWidth }}
-            >
-              <ReferencePanel hebrewMode={hebrewMode} />
-            </div>
-            {/* Text sits to the right of this handle, so dragging right grows the panel. */}
-            <ResizeHandle onDrag={(delta) => adjustRefPanelWidth(delta)} />
-          </>
-        )}
-
         {showDaf && dafPosition === "left" && (
           <>
             <div className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card p-2">
@@ -2481,6 +2549,55 @@ export default function Reader() {
             <DisplayModePill mode={textDisplayMode} onChange={setTextDisplayMode} />
           </div>
         </div>
+
+        {/* Order left to right: Teshuvah (above), Text, Commentators — the Text panel sits to
+            the right of the teshuvah, same side as the main reader's own commentary panel, and
+            the Commentators panel (for whatever the Text panel is currently showing) sits to
+            the right of that in turn. */}
+        {category === "teshuvot" && refPanelOpen && (
+          <>
+            {/* Text sits to the left of this handle, so dragging right shrinks the panel. */}
+            <ResizeHandle onDrag={(delta) => adjustRefPanelWidth(delta)} />
+            <div
+              className="min-h-0 shrink-0 overflow-hidden rounded-lg border border-border bg-card"
+              style={{ width: refPanelWidth }}
+            >
+              <ReferencePanel hebrewMode={hebrewMode} onSelectionChange={setRefSelection} />
+            </div>
+          </>
+        )}
+
+        {category === "teshuvot" && refPanelOpen && refCommentaryOpen && refCommentaryAvailable && (
+          <>
+            {/* The Text panel sits to the left of this handle, so dragging right shrinks the
+                Commentators panel. */}
+            <ResizeHandle onDrag={(delta) => adjustRefCommentaryWidth(delta)} />
+            <div
+              className="min-h-0 shrink-0 overflow-hidden rounded-lg border border-border bg-card"
+              style={{ width: refCommentaryWidth }}
+            >
+              <CommentaryPanel
+                category={refSelection.category}
+                index={refSelection.index}
+                chapter={refSelection.chapter}
+                displayMode={refCommentaryDisplayMode}
+                onDisplayModeChange={setRefCommentaryDisplayMode}
+                poolInfo={refPoolInfo}
+                slots={refSlots}
+                effectiveSlots={refEffectiveSlots}
+                onSlotsChange={setRefSlots}
+                mainSegmentCount={refSelection.category === "rambam" ? refSelection.segmentCount : undefined}
+                fontSizeLevel={refCommentaryFontSizeLevel}
+                onFontSizeLevelChange={setRefCommentaryFontSizeLevel}
+                hebrewMode={hebrewMode}
+                halakha={refSelection.category === "yerushalmi" ? refSelection.halakha : undefined}
+                getHighlight={() => undefined}
+                onHighlightQuickPick={() => {}}
+                onHighlightOpenEditor={() => {}}
+              />
+            </div>
+          </>
+        )}
 
         {showDaf && dafPosition === "middle" && (
           <>

@@ -1718,3 +1718,73 @@ correctly. `tsc --noEmit` and `next build` clean; `npm run lint` sits at 24 prob
 1 warning) — the 1 new error over the previous round's baseline is `ReferencePanel.tsx`'s new
 slots-reset effect, the same accepted `react-hooks/set-state-in-effect` pattern already
 pervasive throughout this file, not a new class of issue.
+
+### Reference panel, second follow-up — moved to the right, gained a true sibling Commentators panel
+
+Three more explicit requests, same day.
+
+**Panel order is now Teshuvah → Text → Commentators, left to right** — the user's first request
+("leave it on the left") turned out to be a misstatement, corrected to "the text panel should be
+on the right." `adjustRefPanelWidth`'s formula flipped from `w + deltaX` (grow-when-dragging-
+right, correct for a left-docked panel) to `w - deltaX` (shrink-when-dragging-right), matching
+every other right-docked panel in this app (commentary, notebook) — and the panel+handle block
+moved in the JSX from the very start of the row's flex children to right after the main
+teshuvah-text `<div>` closes, so it renders (and, since this row has no `dir` flip, always
+visually sits) to the text's right.
+
+**Commentators is now a true sibling panel, not nested inside `ReferencePanel`.** The previous
+round's design (a `w-[280px]` fixed column inside `ReferencePanel`'s own render) didn't match
+"like it is when you are in a main text mode" — the main reader's Text and Commentary are two
+independent, independently-resizable flex siblings, not one nested inside the other. Restructured:
+- `ReferencePanel.tsx` dropped all of its own commentary code (the `poolInfo`/`slots`/
+  `CommentaryPanel` import, the in-panel "Commentary" toggle) and instead exports a
+  `ReferenceSelection` interface (`{category, index, chapter, volume, halakha, segmentCount}`)
+  and takes a new required `onSelectionChange` prop, called from a `useEffect` on every selection/
+  fetch-result change — it's now purely a text navigator+renderer again, identical in shape to
+  the very first version before commentary was added.
+- `Reader.tsx` owns everything about the Commentators panel: a `refSelection` state (fed by that
+  callback), its own `refPoolInfo`/`refSlots`/`refEffectiveSlots` (`getPoolInfo`/
+  `computeEffectiveSlots`, slots reset on `refPoolInfo.contextKey` change — same pattern as the
+  main reader's own `poolInfo`/`slots`, just namespaced with a `ref` prefix and, like the Text
+  panel itself, not persisted to `localStorage`), its own `refCommentaryOpen`/`refCommentaryWidth`
+  (persisted, same load/store pattern as `refPanelOpen`/`refPanelWidth`) and
+  `refCommentaryDisplayMode`/`refCommentaryFontSizeLevel`. Renders a real second `<CommentaryPanel
+  ...>` instance, sourced from `refSelection` instead of the main reader's own `category`/`index`/
+  `chapter` — same component, same props shape (`getHighlight`/etc. still no-op'd, no highlight
+  infra for this lookup surface), genuinely independent instance and state from the main
+  teshuvah's own (hidden) commentary machinery.
+- Its own `ResizeHandle`, to the right of the Text panel's, same "drag right shrinks" convention.
+
+**Toggle button relocated + renamed "Show/Hide Commentators."** Previously a small pill inside
+`ReferencePanel`'s own toolbar (a reasonable place when the panel owned its own commentary, but
+wrong once that state moved out); now a second button in `Reader.tsx`'s main toolbar, in the same
+`dir`-wrapped cluster as "Show/Hide text panel" and placed right after it in source order —
+exactly the mirroring convention this toolbar already uses everywhere else (see "Toolbar layout"
+near the top of this file): in English that reads text-panel-button-then-Commentators (visually
+left-then-right), and since this cluster's own `dir` flips with `hebrewMode`, Hebrew mirrors it
+to Commentators-then-text-panel (visually right-then-left) — exactly the "R in English, L in
+Hebrew" the user asked for, with no special-casing needed beyond normal source order. Gated on
+`refPanelOpen && refCommentaryAvailable` — hidden until the Text panel is open (per "if text
+panel is on, then automatically a commentators button appears"), and hidden again if whatever
+the Text panel is currently showing has no real commentary (referencing another Teshuvah).
+Closing the Text panel hides the Commentators panel too (nested render condition), but does
+**not** reset `refCommentaryOpen` itself — reopening the Text panel brings Commentators back
+automatically if it was open before, verified live.
+
+**Note on the content row's own mirroring**: the `<div className="flex min-h-0 flex-1">` wrapping
+Teshuvah/Text/Commentators (and, for other categories, Text/Commentary) has no `dir` attribute
+of its own and inherits none from an ancestor — unlike the toolbar rows above it, this row's
+visual order is **not** direction-dependent, in either language. This isn't new to this feature;
+the pre-existing Text↔Commentary pair for every other category has always behaved the same way.
+Confirmed live in Hebrew mode: order stayed Teshuvah→Text→Commentators left-to-right exactly as
+in English, only the buttons/toolbars above (which do carry their own `dir`) actually mirrored.
+
+Verified live end-to-end: text panel now opens on the right (teshuvah stays leftmost), Show/Hide
+Commentators appears only once the text panel is open and disappears again when it closes,
+clicking it opens a real, independently-resizable Onkelos/Rashi/Ramban strip for Tanakh/Bereshit
+(the Text panel's default selection) sitting to the Text panel's right, closing and reopening the
+Text panel correctly restores Commentators' visibility, and Hebrew mode mirrors the toolbar
+buttons (Commentators lands to the left of the text-panel button, reading right-to-left) while
+correctly leaving the 3-panel order itself unmirrored. `tsc --noEmit` and `next build` clean;
+`npm run lint` unchanged at 24 problems (23 errors, 1 warning) from the previous round — no new
+lint class introduced despite the restructuring.
