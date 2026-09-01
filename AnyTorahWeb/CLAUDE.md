@@ -1661,3 +1661,60 @@ an explicit `+1`/`-1` sign so one function covers both directions (dragging towa
 column always grows the panel, dragging away always shrinks it, regardless of which side).
 **Real bug found and fixed via live testing, not caught by `tsc`/lint/build** — confirmed by
 setting Shulchan Arukh in the panel, toggling Left→Right, and seeing the selection survive.
+
+### Reference panel follow-up, same day — renamed, gained its own commentary panel, position choice dropped
+
+Three explicit requests after trying the panel above live.
+
+**Renamed "reference" → "text panel"** everywhere user-facing ("Look up a source"/"Hide
+reference" → "Show text panel"/"Hide text panel", Hebrew "הצג מקור"/"הסתר מקור" → "הצג טקסט"/
+"הסתר טקסט") — "reference" implied it would auto-pull up whatever the teshuvah was citing; it's
+actually a blank mini-reader the user navigates manually, so "reference" oversold it.
+
+**Left/Right position choice removed — always docks left.** Per explicit "let's just leave it on
+the left for simplicity's sake." Deleted `RefPanelPosition`/`REF_PANEL_POSITION_KEY`/
+`loadRefPanelPosition`/`storeRefPanelPosition`/the Left/Right pill pair entirely, along with the
+`order`-based single-render-site trick the previous round added specifically to survive position
+toggling — no longer needed with only one position. `adjustRefPanelWidth` dropped its `sign`
+parameter too (dragging right always grows the panel now, since the handle is always on its
+right/text-column side) and the panel+handle collapsed back to one plain conditional block at
+the very start of the row's flex children, same shape as the very first (pre-order-fix) attempt.
+
+**Commentary panel — inside ReferencePanel itself, not a second toggle in Reader.tsx's
+toolbar.** The ask was "if text panel is on, then automatically a commentary panel on/off choice
+appears" — implemented as a small "Commentary"/"מפרשים" pill inside `ReferencePanel`'s own
+toolbar row (next to its `DisplayModePill`), not in the main reader's outer toolbar. Reasoning:
+the toggle's relevance depends on *which category the reference panel itself is currently
+showing* (a Teshuvot-referencing-Teshuvot lookup has no real commentary, same as the main
+reader), and that state lives inside `ReferencePanel`, not in `Reader.tsx` — keeping the control
+local avoided lifting the panel's whole selection state up to the parent just to gate one
+button's visibility. `commentaryAvailable = poolInfo.groups.some((g) => g.length > 0)` hides the
+toggle entirely when there's nothing real to show (mirrors the main reader's own empty-pool
+Teshuvot case) rather than showing a button that would only ever open an empty panel.
+- Off by default, per-category `slots`/`effectiveSlots` computed the same way Reader.tsx does
+  (`getPoolInfo`/`computeEffectiveSlots`), reset to `poolInfo.defaultSlots` on a
+  `poolInfo.contextKey` change — but **not persisted** to `localStorage` (unlike the main
+  reader's own slots, which survive reloads per book/context). Deliberate v1 simplification,
+  consistent with this panel's existing "no persistence of its own state" scope note.
+  `CommentaryPanel` is reused as-is; `getHighlight`/`onHighlightQuickPick`/`onHighlightOpenEditor`
+  (required props, no highlight infra here) are wired to no-ops.
+- Layout: the reference panel's own body became a `flex` row — text stays `flex-1 min-w-0`,
+  commentary is a **fixed** `w-[280px]` column with a left border, not independently resizable —
+  the outer panel's own drag handle (against the main teshuvah text) is the only resize control;
+  adding a second nested one was judged disproportionate for what's meant to stay a quick
+  look-up surface, not a peer of the main two-panel reader.
+
+**Visual — Teshuvot's own tab group made more prominent.** A `VerticalDivider` now separates the
+main category capsule from the "Teshuvot" label group (there was daylight between them via `gap`
+before, but no visible rule), and the label itself went from `text-xs opacity-60` (small, muted
+gray) to `text-sm font-semibold` (no opacity override, so it renders at the theme's full
+foreground color — black in light mode) per explicit request to make it bigger and not gray.
+
+Verified live: toggle renamed correctly in both languages, panel always opens on the left with
+no position control visible, "Commentary" pill opens a working Onkelos/Rashi/Ramban tab strip
+inside the panel (Tanakh default slots) while the main teshuvah text is untouched, resize handle
+still works with the simplified single-block layout, and the Teshuvot label/divider render
+correctly. `tsc --noEmit` and `next build` clean; `npm run lint` sits at 24 problems (23 errors,
+1 warning) — the 1 new error over the previous round's baseline is `ReferencePanel.tsx`'s new
+slots-reset effect, the same accepted `react-hooks/set-state-in-effect` pattern already
+pervasive throughout this file, not a new class of issue.

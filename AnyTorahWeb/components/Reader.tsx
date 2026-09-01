@@ -287,16 +287,14 @@ const NOTEBOOK_WIDTH_DEFAULT = 380;
 const PANEL_WIDTH_MIN = 260;
 const PANEL_WIDTH_MAX = 800;
 
-// Reference panel (Teshuvot only) — a second, independent mini-reader for pulling up a text
-// being cited (a pasuk, a Shulchan Arukh siman, etc.) alongside the teshuvah, without leaving
-// it. Only exists for Teshuvot because that's the one category with no commentary panel
-// occupying the freed-up width; see ReferencePanel.tsx for the panel itself.
+// Reference/text panel (Teshuvot only) — a second, independent mini-reader for pulling up a
+// text being cited (a pasuk, a Shulchan Arukh siman, etc.) alongside the teshuvah, without
+// leaving it. Only exists for Teshuvot because that's the one category with no commentary panel
+// occupying the freed-up width; see ReferencePanel.tsx for the panel itself. Always docks on the
+// left (no position choice — kept deliberately simple per explicit user request).
 const REF_PANEL_OPEN_KEY = "anytorah:refPanelOpen";
-const REF_PANEL_POSITION_KEY = "anytorah:refPanelPosition";
 const REF_PANEL_WIDTH_KEY = "anytorah:refPanelWidth";
 const REF_PANEL_WIDTH_DEFAULT = 420;
-
-type RefPanelPosition = "left" | "right";
 
 function loadRefPanelOpen(): boolean {
   if (typeof window === "undefined") return false;
@@ -314,25 +312,6 @@ function storeRefPanelOpen(open: boolean) {
     schedulePreferencesSync();
   } catch {
     // localStorage unavailable — toggle just won't persist.
-  }
-}
-
-function loadRefPanelPosition(): RefPanelPosition {
-  if (typeof window === "undefined") return "right";
-  try {
-    return window.localStorage.getItem(REF_PANEL_POSITION_KEY) === "left" ? "left" : "right";
-  } catch {
-    return "right";
-  }
-}
-
-function storeRefPanelPosition(pos: RefPanelPosition) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(REF_PANEL_POSITION_KEY, pos);
-    schedulePreferencesSync();
-  } catch {
-    // localStorage unavailable — position choice just won't persist.
   }
 }
 
@@ -1120,7 +1099,6 @@ export default function Reader() {
   const [notebookFloating, setNotebookFloatingState] = useState(false);
   const [notebookFloatRect, setNotebookFloatRectState] = useState<NotebookFloatRect>(defaultNotebookFloatRect);
   const [refPanelOpen, setRefPanelOpenState] = useState(false);
-  const [refPanelPosition, setRefPanelPositionState] = useState<RefPanelPosition>("right");
   const [refPanelWidth, setRefPanelWidthState] = useState(REF_PANEL_WIDTH_DEFAULT);
   useEffect(() => {
     setDafPositionState(loadDafPosition());
@@ -1130,7 +1108,6 @@ export default function Reader() {
     setNotebookFloatingState(loadNotebookFloating());
     setNotebookFloatRectState(loadNotebookFloatRect());
     setRefPanelOpenState(loadRefPanelOpen());
-    setRefPanelPositionState(loadRefPanelPosition());
     setRefPanelWidthState(loadStoredWidth(REF_PANEL_WIDTH_KEY, REF_PANEL_WIDTH_DEFAULT));
   }, []);
   const setDafPosition = (pos: DafPosition) => {
@@ -1144,13 +1121,12 @@ export default function Reader() {
       return next;
     });
   };
-  const setRefPanelPosition = (pos: RefPanelPosition) => {
-    setRefPanelPositionState(pos);
-    storeRefPanelPosition(pos);
-  };
-  const adjustRefPanelWidth = (deltaX: number, sign: 1 | -1) => {
+  // Panel always docks on the left, so dragging the handle right (positive delta, moving into
+  // the text column) always grows it — no position-dependent sign needed, unlike the commentary/
+  // notebook panels on the right, which shrink when dragged in the same direction.
+  const adjustRefPanelWidth = (deltaX: number) => {
     setRefPanelWidthState((w) => {
-      const next = clamp(w + sign * deltaX, PANEL_WIDTH_MIN, PANEL_WIDTH_MAX);
+      const next = clamp(w + deltaX, PANEL_WIDTH_MIN, PANEL_WIDTH_MAX);
       storeWidth(REF_PANEL_WIDTH_KEY, next);
       return next;
     });
@@ -2004,8 +1980,9 @@ export default function Reader() {
                 conceptually a sibling tier (Rishonim/Acharonim/Contemporary), not just another book
                 category. Only Rishonim is wired up so far; the other two render disabled, matching
                 native's own "future era, not built yet" placeholder pattern for this exact feature. */}
+            <VerticalDivider />
             <div className="flex shrink-0 items-center gap-2">
-              <span className="text-xs opacity-60">{hebrewMode ? "שו״ת" : "Teshuvot"}</span>
+              <span className="text-sm font-semibold">{hebrewMode ? "שו״ת" : "Teshuvot"}</span>
               <div className={tabsContainerClass}>
                 <button
                   onClick={() => setCategory("teshuvot")}
@@ -2240,26 +2217,9 @@ export default function Reader() {
               style={refPanelOpen ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
             >
               {hebrewMode
-                ? refPanelOpen ? "הסתר מקור" : "הצג מקור"
-                : refPanelOpen ? "Hide reference" : "Look up a source"}
+                ? refPanelOpen ? "הסתר טקסט" : "הצג טקסט"
+                : refPanelOpen ? "Hide text panel" : "Show text panel"}
             </button>
-
-            {refPanelOpen && (
-              <div className="flex shrink-0 items-center gap-1 rounded-full border border-border px-1 py-1 text-sm">
-                {(["left", "right"] as const).map((pos) => (
-                  <button
-                    key={pos}
-                    onClick={() => setRefPanelPosition(pos)}
-                    className="rounded-full px-2.5 py-1 transition-colors"
-                    style={
-                      refPanelPosition === pos ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined
-                    }
-                  >
-                    {hebrewMode ? (pos === "left" ? "שמאל" : "ימין") : pos === "left" ? "Left" : "Right"}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
@@ -2351,25 +2311,17 @@ export default function Reader() {
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {/* A single render site regardless of left/right — CSS `order` repositions it instead of
-            two separate conditional blocks, so toggling position doesn't remount ReferencePanel
-            (which would otherwise reset whatever the user was mid-lookup on back to Tanakh/
-            Bereishit, since its selection state lives inside the component itself). */}
         {category === "teshuvot" && refPanelOpen && (
-          <div className="flex shrink-0" style={{ order: refPanelPosition === "left" ? -1 : 1 }}>
-            {refPanelPosition === "right" && (
-              <ResizeHandle onDrag={(delta) => adjustRefPanelWidth(delta, -1)} />
-            )}
+          <>
             <div
               className="min-h-0 shrink-0 overflow-hidden rounded-lg border border-border bg-card"
               style={{ width: refPanelWidth }}
             >
               <ReferencePanel hebrewMode={hebrewMode} />
             </div>
-            {refPanelPosition === "left" && (
-              <ResizeHandle onDrag={(delta) => adjustRefPanelWidth(delta, 1)} />
-            )}
-          </div>
+            {/* Text sits to the right of this handle, so dragging right grows the panel. */}
+            <ResizeHandle onDrag={(delta) => adjustRefPanelWidth(delta)} />
+          </>
         )}
 
         {showDaf && dafPosition === "left" && (
