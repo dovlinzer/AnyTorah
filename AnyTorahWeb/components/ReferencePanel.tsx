@@ -11,7 +11,10 @@ import {
   getCategoryDisplayName,
 } from "@/lib/categoryCatalog";
 import { fetchCategoryFor, type ReaderCategory } from "@/lib/commentaryPools";
+import { fontSizePx, fontSizeLineHeight } from "@/lib/fontSizeLevels";
 import DisplayModePill from "@/components/DisplayModePill";
+import FontSizeSlider from "@/components/FontSizeSlider";
+import SASimanPicker from "@/components/SASimanPicker";
 
 // Every category is offered here, including Teshuvot itself (one teshuvah can cite another) —
 // this is a second, independent mini-reader, not scoped to whatever the main panel is showing.
@@ -43,10 +46,11 @@ function clamp(n: number, min: number, max: number): number {
  * A second, self-contained text reader — pulled up in a side panel (see Reader.tsx's
  * refPanelOpen) so a Teshuvah citing a pasuk or a Shulchan Arukh siman can be looked up without
  * losing your place in the main text. Its own category tabs and book/work + volume + chapter
- * pickers. Text-only — the Commentators panel for whatever this shows is a separate sibling
- * panel Reader.tsx renders itself (see onSelectionChange below), not nested in here, so it looks
- * and resizes exactly like the main reader's own Text/Commentary pair. No highlights/bookmarks/
- * notebook integration and no persistence of its own position — it always opens back on Tanakh/
+ * pickers (a named siman picker for Shulchan Arukh/Tur, matching the main reader). Text-only —
+ * the Commentators panel for whatever this shows is a separate sibling panel Reader.tsx renders
+ * itself (see onSelectionChange below), not nested in here, so it looks and resizes exactly like
+ * the main reader's own Text/Commentary pair. No highlights/bookmarks/notebook integration and
+ * no persistence of its own position/font size/display mode — it always opens back on Tanakh/
  * Bereishit. Accepted v1 gaps, not oversights; this is scoped to "look something up alongside
  * the teshuvah," not a full peer of the main reader.
  */
@@ -62,7 +66,11 @@ export default function ReferencePanel({
   const [chapter, setChapter] = useState(1);
   const [halakha, setHalakha] = useState(1);
   const [volume, setVolume] = useState(1);
-  const [displayMode, setDisplayMode] = useState<TextDisplayMode>("both");
+  // Text language defaults to Hebrew-only on every fresh open — matches the app-wide "assume
+  // Hebrew" default for any newly-opened panel, independent of the interface language toggle.
+  const [displayMode, setDisplayMode] = useState<TextDisplayMode>("source");
+  const [fontSizeLevel, setFontSizeLevel] = useState(0);
+  const [simanPickerOpen, setSimanPickerOpen] = useState(false);
   const [data, setData] = useState<ReferenceResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +78,7 @@ export default function ReferencePanel({
   const groups = getCategoryGroups(category, hebrewMode);
   const { fetchCategory, subcategory } = fetchCategoryFor(category);
   const isYerushalmi = category === "yerushalmi";
+  const usesNamedSimanPicker = category === "shulchanArukh" || category === "tur";
   const currentWork = category === "teshuvot" ? teshuvotWork(index) : null;
   const chapterMin = getChapterMin(category, index);
   const chapterMax = category === "teshuvot" ? teshuvotMaxSiman(index, volume) : getChapterMax(category, index);
@@ -128,9 +137,20 @@ export default function ReferencePanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, index, chapter, volume, halakha, data]);
 
+  const hebrewFontPx = fontSizePx(18, fontSizeLevel);
+  const englishFontPx = fontSizePx(14, fontSizeLevel);
+  const lineHeight = fontSizeLineHeight(fontSizeLevel);
+
   return (
-    <div dir={hebrewMode ? "rtl" : "ltr"} className="flex h-full flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border p-2">
+    // No `dir` here — this wrapper (and the content area below) must stay direction-neutral so
+    // the segment rows' own flex-row-reverse (driven by which *content* language is shown, not
+    // the interface language) isn't fought by an inherited ancestor `dir`. Only the toolbar rows
+    // (top nav, bottom footer) — which should flip with the interface language, same as every
+    // other toolbar in this app — get their own explicit `dir` below. A real bug, found live:
+    // wrapping the whole panel in `dir={hebrewMode ...}` put paragraph numbers on the wrong side
+    // whenever the interface language was Hebrew, regardless of which text language was shown.
+    <div className="flex h-full flex-col">
+      <div dir={hebrewMode ? "rtl" : "ltr"} className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border p-2">
         <select
           value={category}
           onChange={(e) => setCategory(e.target.value as ReaderCategory)}
@@ -179,6 +199,16 @@ export default function ReferencePanel({
           onChange={(e) => setChapter(clamp(Number(e.target.value) || chapterMin, chapterMin, chapterMax))}
           className="w-14 rounded border border-border bg-background px-1 py-1 text-xs"
         />
+        {usesNamedSimanPicker && (
+          <button
+            onClick={() => setSimanPickerOpen(true)}
+            aria-label={hebrewMode ? "עיין בסימנים" : "Browse simanim"}
+            title={hebrewMode ? "עיין בסימנים" : "Browse simanim"}
+            className="shrink-0 rounded-full border border-border px-2 py-1 text-xs opacity-70 transition-opacity hover:opacity-100"
+          >
+            ▾
+          </button>
+        )}
         {isYerushalmi && (
           <>
             <span className="text-xs opacity-60">:</span>
@@ -190,7 +220,6 @@ export default function ReferencePanel({
             />
           </>
         )}
-        <DisplayModePill mode={displayMode} onChange={setDisplayMode} />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {loading && <p className="py-8 text-center text-sm opacity-60">Loading…</p>}
@@ -217,11 +246,11 @@ export default function ReferencePanel({
                           <p
                             dir="rtl"
                             lang="he"
-                            style={{ fontFamily: "var(--font-hebrew)", fontSize: 18, lineHeight: 1.5 }}
+                            style={{ fontFamily: "var(--font-hebrew)", fontSize: hebrewFontPx, lineHeight }}
                             dangerouslySetInnerHTML={{ __html: seg.hebrewHTML }}
                           />
                         ) : (
-                          <p dir="rtl" lang="he" style={{ fontFamily: "var(--font-hebrew)", fontSize: 18, lineHeight: 1.5, whiteSpace: "pre-line" }}>
+                          <p dir="rtl" lang="he" style={{ fontFamily: "var(--font-hebrew)", fontSize: hebrewFontPx, lineHeight, whiteSpace: "pre-line" }}>
                             {seg.hebrewHTML}
                           </p>
                         )
@@ -230,11 +259,11 @@ export default function ReferencePanel({
                         useBoldHtml ? (
                           <p
                             className="opacity-90"
-                            style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line" }}
+                            style={{ fontSize: englishFontPx, lineHeight, whiteSpace: "pre-line" }}
                             dangerouslySetInnerHTML={{ __html: seg.englishHTML }}
                           />
                         ) : (
-                          <p className="opacity-90" style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line" }}>
+                          <p className="opacity-90" style={{ fontSize: englishFontPx, lineHeight, whiteSpace: "pre-line" }}>
                             {seg.englishHTML}
                           </p>
                         )
@@ -247,6 +276,25 @@ export default function ReferencePanel({
           </>
         )}
       </div>
+      <div
+        dir={hebrewMode ? "rtl" : "ltr"}
+        className="flex shrink-0 items-center justify-between gap-3 border-t border-border px-3 py-1"
+      >
+        <DisplayModePill mode={displayMode} onChange={setDisplayMode} />
+        <FontSizeSlider label="Text" level={fontSizeLevel} onChange={setFontSizeLevel} hebrewMode={hebrewMode} />
+      </div>
+      {simanPickerOpen && usesNamedSimanPicker && (
+        <SASimanPicker
+          section={index}
+          currentSiman={chapter}
+          onSelect={(s) => {
+            setChapter(s);
+            setSimanPickerOpen(false);
+          }}
+          onClose={() => setSimanPickerOpen(false)}
+          hebrewMode={hebrewMode}
+        />
+      )}
     </div>
   );
 }

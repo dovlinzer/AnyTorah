@@ -998,8 +998,8 @@ export default function Reader() {
   // persists under its own key (see loadStoredDisplayMode/storeDisplayMode above) — previously
   // these weren't persisted at all, so a stored hebrewMode="on" would silently revert the
   // display mode to "both" on every reload even though the toggle itself "stuck".
-  const [textDisplayMode, setTextDisplayModeState] = useState<TextDisplayMode>("both");
-  const [commentaryDisplayMode, setCommentaryDisplayModeState] = useState<TextDisplayMode>("both");
+  const [textDisplayMode, setTextDisplayModeState] = useState<TextDisplayMode>("source");
+  const [commentaryDisplayMode, setCommentaryDisplayModeState] = useState<TextDisplayMode>("source");
   const setTextDisplayMode = (mode: TextDisplayMode) => {
     setTextDisplayModeState(mode);
     storeDisplayMode(TEXT_DISPLAY_MODE_KEY, mode);
@@ -1038,14 +1038,13 @@ export default function Reader() {
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // Restores each panel's own stored display mode. Falls back to whatever hebrewMode's *stored*
-  // value already implies (source when RTL, both otherwise) rather than hardcoding "both", so a
-  // returning user whose hebrewMode was already on before this per-panel key existed doesn't see
-  // one extra stale reload — see the comment on loadStoredDisplayMode above.
+  // Restores each panel's own stored display mode. A user with no stored per-panel preference
+  // yet (first visit, or before this key existed) defaults to Hebrew-only text — "assume Hebrew"
+  // is the app-wide default for any freshly-opened panel, independent of the interface-language
+  // toggle — rather than "both". See the comment on loadStoredDisplayMode above.
   useEffect(() => {
-    const hebrewFallback: TextDisplayMode = loadStoredHebrewMode() === true ? "source" : "both";
-    setTextDisplayModeState(loadStoredDisplayMode(TEXT_DISPLAY_MODE_KEY) ?? hebrewFallback);
-    setCommentaryDisplayModeState(loadStoredDisplayMode(COMMENTARY_DISPLAY_MODE_KEY) ?? hebrewFallback);
+    setTextDisplayModeState(loadStoredDisplayMode(TEXT_DISPLAY_MODE_KEY) ?? "source");
+    setCommentaryDisplayModeState(loadStoredDisplayMode(COMMENTARY_DISPLAY_MODE_KEY) ?? "source");
   }, []);
   const [mainFontSizeLevel, setMainFontSizeLevelState] = useState(0);
   const [commentaryFontSizeLevel, setCommentaryFontSizeLevelState] = useState(0);
@@ -1195,7 +1194,7 @@ export default function Reader() {
     () => computeEffectiveSlots(refSlots, refPoolInfo.isAvailable, refPoolInfo.fallbackCandidates),
     [refSlots, refPoolInfo],
   );
-  const [refCommentaryDisplayMode, setRefCommentaryDisplayMode] = useState<TextDisplayMode>("both");
+  const [refCommentaryDisplayMode, setRefCommentaryDisplayMode] = useState<TextDisplayMode>("source");
   const [refCommentaryFontSizeLevel, setRefCommentaryFontSizeLevel] = useState(0);
   const adjustNarrowWidth = (deltaX: number) => {
     setNarrowWidthState((w) => {

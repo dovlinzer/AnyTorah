@@ -1788,3 +1788,62 @@ buttons (Commentators lands to the left of the text-panel button, reading right-
 correctly leaving the 3-panel order itself unmirrored. `tsc --noEmit` and `next build` clean;
 `npm run lint` unchanged at 24 problems (23 errors, 1 warning) from the previous round — no new
 lint class introduced despite the restructuring.
+
+### Reference panel, third follow-up — font-size footer, a real RTL bug fix, named SA/Tur siman picker
+
+Three fixes plus one app-wide default change, same day.
+
+**Font-size slider + display-mode pill moved to a bottom footer**, matching the main reader's
+own panels exactly (see "Font-size sliders and the display-mode pill" near the top of this file)
+— `ReferencePanel` had a `DisplayModePill` in its top toolbar and no font-size control at all.
+Added a local (unpersisted) `fontSizeLevel` state, `fontSizePx`/`fontSizeLineHeight` driving the
+Hebrew/English paragraph styles (previously hardcoded `18`/`14`/`1.5`), and a `justify-between`
+footer row (`DisplayModePill` first, `FontSizeSlider` second) below the content area.
+
+**Real bug, found from user report: paragraph numbers sat on the wrong (left) side whenever the
+*interface* language was Hebrew** — independent of which *text* language was showing, and not
+reproducible in the main reader's own Text/Commentary panels. Root cause: `ReferencePanel`'s
+outermost `<div>` had `dir={hebrewMode ? "rtl" : "ltr"}`, which cascaded into the segment-row
+`<div className={... flex-row-reverse ...}>` below it. That row's own reversal is *already*
+content-language-driven (`displayMode !== "translation"`), matching the main reader's identical
+pattern — but the main reader's equivalent row has no ancestor `dir` to fight with, since dir
+flips there are applied per-toolbar-row, never on a container that also wraps the reading
+content. Fixed by removing `dir` from `ReferencePanel`'s root and its content `<div>` entirely,
+and adding it explicitly only to the two toolbar rows (top nav, bottom footer) instead — same
+selective-application pattern the main reader already uses, just not one this panel had followed
+originally. Verified via a `getBoundingClientRect()` check in the browser (not just eyeballing a
+screenshot): the label's left edge sits to the right of the paragraph's own left edge with
+Hebrew interface + Hebrew text, confirming right-side placement.
+
+**Named siman picker for Shulchan Arukh/Tur, reusing `SASimanPicker` as-is** — previously the
+Text panel only had a bare numeric `<input>` for every category, including SA/Tur, unlike the
+main reader's topic-grouped, titled picker. Added a `usesNamedSimanPicker` flag
+(`category === "shulchanArukh" || "tur"`) gating a small "▾ Browse simanim" button next to the
+siman input, opening `<SASimanPicker section={index} currentSiman={chapter} .../>` — the exact
+same component and section-id convention (SA sections and Tur sections share ids 0-3) the main
+reader already uses, zero new picker code needed. Not extended to a generic browse-modal for
+every other category — only SA/Tur were asked for, and everything else already has a plain
+numeric input that's adequate for their simpler chapter/daf addressing.
+
+**App-wide default: every freshly-opened panel now defaults to Hebrew-only text, not
+Hebrew+English** — per explicit request ("any time a new panel opens or the website is loaded
+from scratch... assume text language is Hebrew"). Changed the *default* value only, everywhere a
+`TextDisplayMode` state starts unset — `Reader.tsx`'s `textDisplayMode`/`commentaryDisplayMode`
+initial `useState`, the `loadStoredDisplayMode(...) ?? hebrewFallback` restore effect (the
+`hebrewFallback` conditional-on-interface-language computation was dropped entirely — a user
+with no stored per-panel preference yet now always gets `"source"`, regardless of the interface-
+language toggle's own stored value), `ReferencePanel`'s own `displayMode`, and the reference
+Commentators panel's `refCommentaryDisplayMode`. **Deliberately did not touch
+`setHebrewMode`'s own toggle behavior** (interface language ON → text `"source"`, OFF → text
+`"both"`) — that's a separate, already-shipped, explicitly-requested feature (see "Auto-defaults
+on toggle" near the top of this file) about what happens when the user *actively toggles*
+interface language, not about first-load/fresh-panel defaults; the two didn't need to be
+conflated, and leaving the toggle's own reset behavior alone was the smaller, safer change.
+Verified live after `localStorage.clear()` + reload: main Tanakh panel and its commentary panel
+both load Hebrew-only by default; opening the Text panel and the Commentators panel both do too.
+
+Verified live throughout: font-size slider changes both languages' size in the Text panel,
+Hebrew-interface-mode paragraph numbers confirmed right-aligned via direct DOM measurement, and
+the SA siman picker opens, lists real topic-grouped siman titles, and jumps correctly on
+selection. `tsc --noEmit`, `next build`, and `npm run lint` (24 problems, unchanged baseline) all
+clean.
