@@ -13,6 +13,7 @@ import {
   getCategoryDisplayName,
   getTalmudSefariaName,
   getStartAmud,
+  type TeshuvotGroupBy,
 } from "@/lib/categoryCatalog";
 import CommentaryPanel from "@/components/CommentaryPanel";
 import ReferencePanel, { type ReferenceSelection } from "@/components/ReferencePanel";
@@ -37,7 +38,8 @@ import {
   type Bookmark,
 } from "@/lib/bookmarks";
 import type { YomiToday, YomiResult } from "@/lib/yomiService";
-import { toHebrewNumeral, teshuvotWork, teshuvotMaxSiman } from "@/lib/textModels";
+import { toHebrewNumeral, teshuvotWork, teshuvotMaxSiman, NISHMAT_HABAYIT_WORK_ID } from "@/lib/textModels";
+import NishmatHaBayitSimanPicker from "@/components/NishmatHaBayitSimanPicker";
 import { saveHighlights, loadAndReconcileHighlights, findHighlight, type Highlight } from "@/lib/highlights";
 import { anchorKey, stripAnchorHTML, buildSegmentLabel, type TextAnchor } from "@/lib/textAnchor";
 import HighlightMark from "@/components/HighlightMark";
@@ -208,6 +210,30 @@ function storeReverseNavigation(on: boolean) {
     schedulePreferencesSync();
   } catch {
     // localStorage unavailable — toggle just won't persist.
+  }
+}
+
+// Teshuvot work-list ordering — century-grouped (default, matches native's chronological work
+// wheel) or a flat alphabetical list (per explicit user request). Applies to both the Rishonim
+// and Acharonim tabs alike; independent of hebrewMode.
+const TESHUVOT_GROUP_BY_KEY = "anytorah:teshuvotGroupBy";
+
+function loadTeshuvotGroupBy(): TeshuvotGroupBy {
+  if (typeof window === "undefined") return "century";
+  try {
+    return window.localStorage.getItem(TESHUVOT_GROUP_BY_KEY) === "alphabetical" ? "alphabetical" : "century";
+  } catch {
+    return "century";
+  }
+}
+
+function storeTeshuvotGroupBy(v: TeshuvotGroupBy) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(TESHUVOT_GROUP_BY_KEY, v);
+    schedulePreferencesSync();
+  } catch {
+    // localStorage unavailable — choice just won't persist.
   }
 }
 
@@ -728,6 +754,37 @@ function ReverseNavToggle({
   );
 }
 
+/** Dropdown choosing whether the Teshuvot work list (Rishonim and Acharonim alike) groups by
+ *  century or lists every work in one flat alphabetical run — sits right after the Teshuvot pill
+ *  group in the header, per explicit user request. Sized to match the rest of that row's
+ *  Hebrew-mode-aware bump, same convention as HebrewModeToggle/ReverseNavToggle above. */
+function TeshuvotGroupByToggle({
+  value,
+  onChange,
+  hebrewMode,
+}: {
+  value: TeshuvotGroupBy;
+  onChange: (v: TeshuvotGroupBy) => void;
+  hebrewMode: boolean;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as TeshuvotGroupBy)}
+      aria-label={hebrewMode ? "סדר רשימת שו״ת" : "Teshuvot list order"}
+      title={hebrewMode ? "סדר רשימת שו״ת" : "Teshuvot list order"}
+      className={
+        hebrewMode
+          ? "shrink-0 rounded-full border border-border bg-background px-3 py-2 text-base transition-colors hover:border-[var(--accent)]"
+          : "shrink-0 rounded-full border border-border bg-background px-2 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
+      }
+    >
+      <option value="century">{hebrewMode ? "לפי מאה" : "By Century"}</option>
+      <option value="alphabetical">{hebrewMode ? "א-ת" : "A–Z"}</option>
+    </select>
+  );
+}
+
 /** Thin vertical rule separating the Text and Commentary control groups. */
 function VerticalDivider() {
   return <div className="h-8 w-px shrink-0 self-center bg-border" />;
@@ -911,6 +968,7 @@ const INITIAL_SELECTION: Selection = {
   shulchanArukh: { index: 0, chapter: 1 },
   teshuvot: { index: 0, chapter: 1, volume: 1 },
   teshuvotAcharonim: { index: 13, chapter: 1, volume: 1 },
+  teshuvotContemporary: { index: 44, chapter: 1, volume: 1 },
 };
 
 // Reads a position (category/index/chapter/halakha/amud) encoded in the URL's query string by
@@ -993,6 +1051,12 @@ export default function Reader() {
   const setReverseNavigation = (on: boolean) => {
     setReverseNavigationState(on);
     storeReverseNavigation(on);
+  };
+  const [teshuvotGroupBy, setTeshuvotGroupByState] = useState<TeshuvotGroupBy>("century");
+  useEffect(() => setTeshuvotGroupByState(loadTeshuvotGroupBy()), []);
+  const setTeshuvotGroupBy = (v: TeshuvotGroupBy) => {
+    setTeshuvotGroupByState(v);
+    storeTeshuvotGroupBy(v);
   };
   // Text and commentary each get their own Hebrew/English/both toggle — some users want to
   // read the main text in "both" but skim commentary in English-only, or vice versa. Each
@@ -1079,14 +1143,19 @@ export default function Reader() {
   const mainSegmentGap = 16 * fontSizeSpacingScale(mainFontSizeLevel);
   const mainLineGap = 6 * fontSizeSpacingScale(mainFontSizeLevel);
 
-  // Rishonim and Acharonim are two peer tabs over the same underlying TeshuvotWorkDef lookup
-  // (see textModels.ts's ALL_TESHUVOT_WORKS) — most of the reader's Teshuvot-specific branching
-  // applies identically to both, so this single flag replaces what would otherwise be a dozen
-  // scattered `category === "teshuvot"` checks that Acharonim would silently fall through.
-  const isTeshuvot = category === "teshuvot" || category === "teshuvotAcharonim";
+  // Rishonim, Acharonim, and Contemporary are three peer tabs over the same underlying
+  // TeshuvotWorkDef lookup (see textModels.ts's ALL_TESHUVOT_WORKS) — most of the reader's
+  // Teshuvot-specific branching applies identically to all three, so this single flag replaces
+  // what would otherwise be a dozen scattered `category === "teshuvot"` checks that a new tab
+  // would silently fall through.
+  const isTeshuvot =
+    category === "teshuvot" || category === "teshuvotAcharonim" || category === "teshuvotContemporary";
 
   const { index, chapter, halakha, volume } = selection[category];
-  const groups = useMemo(() => getCategoryGroups(category, hebrewMode), [category, hebrewMode]);
+  const groups = useMemo(
+    () => getCategoryGroups(category, hebrewMode, teshuvotGroupBy),
+    [category, hebrewMode, teshuvotGroupBy],
+  );
   const chapterMin = getChapterMin(category, index);
   // Teshuvot's siman ceiling depends on which volume/part/klal is selected, not just the work —
   // getChapterMax (shared across every category) has no volume dimension, so this overrides it
@@ -1095,6 +1164,9 @@ export default function Reader() {
   const chapterMax = isTeshuvot ? teshuvotMaxSiman(index, volumeValue) : getChapterMax(category, index);
   const chapterUnit = getChapterUnitLabel(category, hebrewMode);
   const currentTeshuvotWork = isTeshuvot ? teshuvotWork(index) : null;
+  // Nishmat HaBayit has no numeric Siman address on Sefaria — its own titled-list picker
+  // (NishmatHaBayitSimanPicker) replaces the ordinary numeric chapter stepper's "browse" button.
+  const isNishmatHaBayit = currentTeshuvotWork?.id === NISHMAT_HABAYIT_WORK_ID;
 
   // Scanned daf image — shown as its own column alongside the digital text (Talmud only).
   const [talmudPages, setTalmudPages] = useState<TalmudPages | null>(null);
@@ -1506,13 +1578,19 @@ export default function Reader() {
   const [simanPickerOpen, setSimanPickerOpen] = useState(false);
   const [numberPickerOpen, setNumberPickerOpen] = useState(false);
   const [halakhaPickerOpen, setHalakhaPickerOpen] = useState(false);
+  const [nishmatPickerOpen, setNishmatPickerOpen] = useState(false);
 
   // SA and Tur share the same named-siman picker (SASimanPicker) — Tur's simanim carry the same
   // topic names/numbering as SA's (SA closely follows Tur's own siman structure), so the same
-  // lib/saSimanNames.ts data is reused as-is rather than transcribing a second copy. Every other
-  // category uses the generic bare-number NumberPickerModal.
-  const openChapterPicker = () =>
-    category === "shulchanArukh" || category === "tur" ? setSimanPickerOpen(true) : setNumberPickerOpen(true);
+  // lib/saSimanNames.ts data is reused as-is rather than transcribing a second copy. Nishmat
+  // HaBayit gets its own titled-list picker (see isNishmatHaBayit above) since its responsa have
+  // no numeric siman address at all. Every other category uses the generic bare-number
+  // NumberPickerModal.
+  const openChapterPicker = () => {
+    if (isNishmatHaBayit) setNishmatPickerOpen(true);
+    else if (category === "shulchanArukh" || category === "tur") setSimanPickerOpen(true);
+    else setNumberPickerOpen(true);
+  };
 
   // Rambam's synthetic chapter 0 is the work's bundled mitzvot-list header, not a real chapter —
   // show a text label instead of "0" (which also renders as an empty string in Hebrew numeral
@@ -1881,14 +1959,14 @@ export default function Reader() {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       if (e.altKey || e.metaKey || e.ctrlKey) return;
-      if (simanPickerOpen || numberPickerOpen || halakhaPickerOpen) return;
+      if (simanPickerOpen || numberPickerOpen || halakhaPickerOpen || nishmatPickerOpen) return;
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       stepReading(e.key === "ArrowRight" ? 1 : -1);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [category, chapter, chapterMin, chapterMax, talmudAmud, simanPickerOpen, numberPickerOpen, halakhaPickerOpen, stepReading]);
+  }, [category, chapter, chapterMin, chapterMax, talmudAmud, simanPickerOpen, numberPickerOpen, halakhaPickerOpen, nishmatPickerOpen, stepReading]);
 
   useEffect(() => {
     if (category !== "talmud") return;
@@ -2051,8 +2129,11 @@ export default function Reader() {
             </div>
             {/* Teshuvot gets its own labeled group, separate from the main category capsule — it's
                 conceptually a sibling tier (Rishonim/Acharonim/Contemporary), not just another book
-                category. Rishonim and Acharonim are both wired up now; Contemporary still renders
-                disabled, matching native's own "future era, not built yet" placeholder pattern. */}
+                category. All three are wired up now — Contemporary here covers only the
+                Sefaria-digitized works (Mishpetei Uziel, Benei Banim, B'mareh HaBazak, Nishmat
+                HaBayit); Iggros Moshe (page-image-based, not a Sefaria ref) and the Lindenbaum
+                Center (a Sefaria source-sheet Collection, not a text index — folded into a future
+                "YCT halakha pieces" pass) are deliberately not ported. */}
             <VerticalDivider />
             <div className="flex shrink-0 items-center gap-2">
               <span className="text-sm font-semibold">{hebrewMode ? "שו״ת" : "Teshuvot"}</span>
@@ -2071,11 +2152,16 @@ export default function Reader() {
                 >
                   {hebrewMode ? "אחרונים" : "Acharonim"}
                 </button>
-                <button disabled title="Coming soon" className={`${tabButtonClass} cursor-not-allowed opacity-40`}>
+                <button
+                  onClick={() => setCategory("teshuvotContemporary")}
+                  className={tabButtonClass}
+                  style={category === "teshuvotContemporary" ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+                >
                   {hebrewMode ? "בני זמננו" : "Contemporary"}
                 </button>
               </div>
             </div>
+            <TeshuvotGroupByToggle value={teshuvotGroupBy} onChange={setTeshuvotGroupBy} hebrewMode={hebrewMode} />
           </div>
           {/* overflow-x-auto: on a narrow viewport this group (toggles + bookmark + notebook
               buttons) can still be wider than the space left after the tabs above take their
@@ -2182,7 +2268,8 @@ export default function Reader() {
             >
               {currentTeshuvotWork.volumes.map((v, i) => (
                 <option key={v.label} value={i + 1}>
-                  {hebrewMode ? currentTeshuvotWork.volumeLabelHebrew : currentTeshuvotWork.volumeLabel} {hebrewMode ? v.hebrewLabel : v.label}
+                  {hebrewMode ? currentTeshuvotWork.volumeLabelHebrew : currentTeshuvotWork.volumeLabel}{" "}
+                  {hebrewMode ? (v.pickerHebrewLabel ?? v.hebrewLabel) : v.label}
                 </option>
               ))}
             </select>
@@ -2198,8 +2285,16 @@ export default function Reader() {
           />
           <button
             onClick={openChapterPicker}
-            aria-label={category === "shulchanArukh" || category === "tur" ? "Browse simanim" : "Browse chapters"}
-            title={category === "shulchanArukh" || category === "tur" ? "Browse simanim" : "Browse chapters"}
+            aria-label={
+              isNishmatHaBayit ? "Browse responsa"
+                : category === "shulchanArukh" || category === "tur" ? "Browse simanim"
+                  : "Browse chapters"
+            }
+            title={
+              isNishmatHaBayit ? "Browse responsa"
+                : category === "shulchanArukh" || category === "tur" ? "Browse simanim"
+                  : "Browse chapters"
+            }
             className="shrink-0 rounded-full border border-border px-2 py-1 text-xs opacity-70 transition-opacity hover:opacity-100"
           >
             ▾
@@ -2712,6 +2807,18 @@ export default function Reader() {
             setSimanPickerOpen(false);
           }}
           onClose={() => setSimanPickerOpen(false)}
+          hebrewMode={hebrewMode}
+        />
+      )}
+
+      {nishmatPickerOpen && isNishmatHaBayit && (
+        <NishmatHaBayitSimanPicker
+          currentSiman={chapter}
+          onSelect={(siman) => {
+            handleChapterChange(siman);
+            setNishmatPickerOpen(false);
+          }}
+          onClose={() => setNishmatPickerOpen(false)}
           hebrewMode={hebrewMode}
         />
       )}

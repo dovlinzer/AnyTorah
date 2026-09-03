@@ -1510,7 +1510,7 @@ with no way to get a closer look at a specific section. Implementation notes:
   explicit "Full size" link below the zoom controls — keeping the click-to-navigate behavior on
   the image itself would have fought with click-and-drag-to-pan.
 
-## Teshuvot Rishonim — shipped (Acharonim shipped separately below; Contemporary not yet ported)
+## Teshuvot Rishonim — shipped (Acharonim and Contemporary shipped separately below)
 
 Ported from native's Teshuvot feature (see `AnyTorah/CLAUDE.md`'s "Teshuvot" section for the
 full native history/design rationale) — Rishonim subcategory only, as the first of a staged
@@ -1577,18 +1577,19 @@ bare-ref truncation to work around. `textCategoryMeta` (a dead, pre-`getPoolInfo
 runtime) still got a `teshuvot` entry purely because it's a `Record<TextCategory, ...>` and
 TypeScript requires every key.
 
-**Not ported / known gaps, left for a later pass**: Contemporary (Nishmat HaBayit's bespoke
-titled picker, Iggros Moshe's page-image reader, podcast citations, YCT related-articles) — see
-`AnyTorah/CLAUDE.md`'s Teshuvot section for what those need. (Acharonim itself has since shipped
-— see "Teshuvot Acharonim — shipped" further below.) Bookmarks/Highlights/Notebook all fall
-through to the generic `getItemName`/`getChapterUnitLabel` path for this category (and for
-`teshuvotAcharonim`), which doesn't know about the volume dimension — a bookmark on a
+**Not ported / known gaps, left for a later pass**: Iggros Moshe's page-image reader + podcast
+citations, and the YCT-related-articles feature — see `AnyTorah/CLAUDE.md`'s Teshuvot section
+for what those need; deliberately out of scope (see "Teshuvot Contemporary — shipped" below for
+what *is* now ported). (Acharonim itself has since shipped — see "Teshuvot Acharonim — shipped"
+further below.) Bookmarks/Highlights/Notebook all fall through to the generic `getItemName`/
+`getChapterUnitLabel` path for this category (and for `teshuvotAcharonim`/
+`teshuvotContemporary`), which doesn't know about the volume dimension — a bookmark on a
 multi-volume work (Rashba, Rosh, Terumat HaDeshen, Sefer HaTashbetz) restores to volume 1
 regardless of which volume was actually open, and its display label omits the Part/Klal/Chelek
-number entirely. Century group headers and the century-divider/Alphabetical-Order native
-concepts have no Hebrew localization or web equivalent yet either. None of these block the
-reading experience itself; flagged here rather than fixed, since they weren't part of what was
-asked for this pass.
+number entirely. Century group headers have no Hebrew localization yet either (the
+century/alphabetical ordering choice itself has since shipped as a real toggle — see "Teshuvot
+work-list ordering" below). None of these block the reading experience itself; flagged here
+rather than fixed, since they weren't part of what was asked for this pass.
 
 **Verified live** (browser preview, English mode): Rashi siman 1 (no volume picker, correct
 Hebrew-only content — Sefaria has no English translation for this work, confirmed via the raw
@@ -1901,3 +1902,114 @@ Commentators panel still opens correctly for a non-Teshuvot text-panel selection
 Bereshit's Onkelos/Rashi/Ramban). `tsc --noEmit` and `next build` clean; `npm run lint` dropped
 from 24 to 23 problems (one fewer `set-state-in-effect` instance — the deleted volume-reset
 effect — not a new class of issue).
+
+## Teshuvot work-list ordering — century vs. alphabetical toggle (shipped)
+
+A small `<select>` (`TeshuvotGroupByToggle`, `Reader.tsx`) sits immediately after the Teshuvot
+pill group (Rishonim/Acharonim/Contemporary) in the header — placed as the *next* flex sibling
+in source order within that dir-flipped row, so it lands to the pill group's right in English
+(LTR "after") and to its left in Hebrew (RTL "after"), per explicit request. Lets the user
+switch the Rishonim/Acharonim work `<select>` between century-grouped (default, `<optgroup>`
+per century) and a single flat alphabetical list — mirrors native's own "Teshuvot Alphabetical
+Order" Settings toggle (see `AnyTorah/CLAUDE.md`'s "Century dividers... Alphabetical Order"
+section), just surfaced inline here rather than in a separate settings screen.
+
+- `lib/categoryCatalog.ts`'s `getCategoryGroups` gained a third optional param,
+  `teshuvotGroupBy: TeshuvotGroupBy = "century"` (`"century" | "alphabetical"`) — irrelevant to
+  every category except `"teshuvot"`/`"teshuvotAcharonim"`, which branch to the existing
+  `teshuvotCenturyGroups` helper or a new `teshuvotAlphabeticalGroup` (single group, no century
+  header, sorted via `localeCompare` with the Hebrew/English locale matching `hebrewMode` so
+  "alphabetical" sorts by whichever name is actually displayed). Every other `getCategoryGroups`
+  call site (bookmarks.ts, ReferencePanel.tsx, the `getChapterMax`/`getCategoryItemName` lookups
+  in this same file) omits the param and gets the century-grouped default — order doesn't matter
+  for an id-based lookup, so nothing else needed to change.
+- Persisted the same way as every other reader preference (`anytorah:teshuvotGroupBy`
+  localStorage key + `loadTeshuvotGroupBy`/`storeTeshuvotGroupBy`, mirroring
+  `REVERSE_NAV_KEY`'s exact shape) and added to `lib/preferences.ts`'s `FIXED_PREFERENCE_KEYS` so
+  it round-trips through the existing cross-device sync blob alongside the other ~12 keys there.
+- Deliberately does **not** apply to Contemporary — that tab's book picker is a flat,
+  declaration-order list in native too (Iggros Moshe first, then the rest in source order, never
+  century-grouped), so `getCategoryGroups`'s `"teshuvotContemporary"` case ignores the
+  `teshuvotGroupBy` param entirely and always returns one flat group.
+
+Verified live: switching to "A–Z" while on Acharonim re-sorts all 31 works into one flat
+alphabetical `<select>` (Admat Kodesh → Torat Netanel) with no century `<optgroup>`s; switching
+tabs to Rishonim keeps the same alphabetical choice and correctly alphabetizes Rishonim's own
+13-work list instead; switching back to "By Century" restores the original chronological
+grouping exactly on both tabs. Hebrew mode places the toggle to the pill group's left, confirmed
+via screenshot. `tsc`/`lint`/`build` all clean (lint: 22 of 24 problems are the same
+pre-existing accepted `set-state-in-effect`/`refs` pattern; the new `loadTeshuvotGroupBy` effect
+adds one more instance of that same already-accepted class, not a new category).
+
+## Teshuvot Contemporary — shipped (Sefaria-digitized works only; Iggros Moshe and the YCT halakha pieces deliberately excluded, per explicit user direction)
+
+Ported from native's Contemporary subcategory (see `AnyTorah/CLAUDE.md`'s "Contemporary — 5
+Sefaria-digitized works added alongside Iggros Moshe" section) — but only the 4 works that
+resolve to an ordinary Sefaria ref: **Mishpetei Uziel, Benei Banim, B'mareh HaBazak, Nishmat
+HaBayit**. Excluded, per explicit instruction: **Iggros Moshe** (page-image/scanned-PDF based,
+not a Sefaria ref — a fundamentally different data shape, see native's own "PDF/scanned-page
+based, not Sefaria" section) and the **Lindenbaum Center** (a Sefaria *Collection* of source
+sheets, not a text index — folded into a future "YCT halakha pieces" pass, also explicitly
+deferred this round alongside the pre-existing Related-YCT-Articles feature, neither of which
+exist in this web port at all).
+
+**`teshuvotContemporary` is a third peer `ReaderCategory`**, exactly the same architecture as
+Acharonim: `fetchCategoryFor` maps it to `{fetchCategory: "teshuvot"}` with no subcategory flag,
+so `/api/chapter/route.ts` needed zero changes. `TESHUVOT_CONTEMPORARY: TeshuvotWorkDef[]`
+(`lib/textModels.ts`) uses global ids **44–47** (Mishpetei Uziel, Benei Banim, B'mareh HaBazak,
+Nishmat HaBayit, in that order — matching native's own Contemporary book-picker order), folded
+into `ALL_TESHUVOT_WORKS` alongside Rishonim/Acharonim so `teshuvotWork`/`teshuvotSefariaRef`/
+`teshuvotMaxSiman` all work unchanged. `getPoolInfo`/`getChapterUnitLabel`/
+`getCategoryDisplayName` each gained a `"teshuvotContemporary"` case (no commentary, "siman"/
+"סימן" unit, "Contemporary"/"שו״ת בני זמננו" display name); `getCategoryGroups`'s new case
+returns one flat, declaration-order group — Contemporary was never century-grouped in native
+either, so it ignores the century/alphabetical toggle described above entirely. `Reader.tsx`'s
+`isTeshuvot` flag gained a third disjunct (`|| category === "teshuvotContemporary"`), and the
+previously-disabled "Contemporary" pill is now a real button.
+
+**Mishpetei Uziel — Volume × Tur-order-section flattening, same trick as Rav Pealim/Shoel
+uMeshiv above**, 18 combined-label entries (e.g. "Volume I, OC"). Introduces
+`TeshuvotVolume.pickerHebrewLabel?: string` (new optional field, ported from native's field of
+the same name) — the volume `<select>` already always shows the full, un-abbreviated word (no
+space constraint, unlike a compact nav pill), so in Hebrew mode it now prefers
+`pickerHebrewLabel` (e.g. "חלק א, אורח חיים") over the abbreviated `hebrewLabel` ("חלק א, או״ח")
+when a volume has one — populated only for Mishpetei Uziel so far, matching native's own
+"retrofitted here only" scope note. Benei Banim (4 flat volumes) and B'mareh HaBazak (10 flat
+volumes) needed no new mechanism at all — same numbered-volumes shape already used throughout
+Rishonim/Acharonim.
+
+**Nishmat HaBayit — bespoke titled-list picker, not the numeric wheel**, matching native's own
+special-cased design: this work has no numeric Siman address on Sefaria at all (each responsum
+is an individually-titled node, grouped into 5 real Parts — Pregnancy 8, Birth 13, Pregnancy
+Loss 3, Nursing 5, Contraception 34 = 63 total). Ported as:
+- `NishmatHaBayitSiman` interface + `NISHMAT_HABAYIT_SIMANIM: NishmatHaBayitSiman[]`
+  (`lib/textModels.ts`) — all 63 entries transcribed verbatim from native's own array (itself
+  generated from a live Sefaria raw-index fetch, not hand-typed, per native's doc comment).
+  `number` is a synthetic 1–63 index reused as this work's ordinary `chapter`/siman value, so no
+  new selection-state plumbing was needed — same trick native used.
+- `teshuvotSefariaRef` special-cases `workId === NISHMAT_HABAYIT_WORK_ID` (exported constant,
+  `= 47`) to look up the complete literal ref string from `NISHMAT_HABAYIT_SIMANIM` instead of
+  template-substituting a `TeshuvotVolume.refTemplate` — this work's `ref` embeds each
+  responsum's full node title and isn't `{siman}`-formulaic. Its `TeshuvotWorkDef` entry still
+  carries one dummy flat `TeshuvotVolume` (empty `refTemplate`, `maxSiman: 63`), same as every
+  other flat work needs for the interface to stay uniform.
+- **New component `NishmatHaBayitSimanPicker.tsx`** — copied SASimanPicker's grouped-modal-list
+  shape (sticky Part headers, scroll-to-active-row, Escape-to-close) rather than SASimanPicker
+  itself, since the grouping source differs (consecutive `partEnglish`/`partHebrew` runs in an
+  already-Part-ordered array, vs. a separate topic-lookup table) and each row shows a full
+  responsum title instead of a bare number. `Reader.tsx`'s `isNishmatHaBayit` flag
+  (`currentTeshuvotWork?.id === NISHMAT_HABAYIT_WORK_ID`) redirects the existing "Browse
+  chapters" ▾ button (`openChapterPicker`) to this new picker instead of the generic
+  `NumberPickerModal` — same three-way branch shape `openChapterPicker` already used for SA/Tur's
+  `SASimanPicker` vs. everything else.
+
+Verified live: Mishpetei Uziel loads Volume I, OC siman 1 by default with real Hebrew content;
+its work `<select>` lists all 4 Contemporary works and its volume `<select>` lists all 18
+flattened entries; Benei Banim and B'mareh HaBazak both fetch real bilingual content on their
+first volume/siman; Nishmat HaBayit loads with no volume picker shown (flat work) and its own
+"Browse responsa" ▾ button opens the new titled picker grouped by Part — selecting siman 30
+("Family Planning following Childbirth", Part V/Contraception) loads the correct real content
+and the text panel's caption shows the true node title. Hebrew mode: work names and Mishpetei
+Uziel's un-abbreviated `pickerHebrewLabel` volume list both correct. Checked for React console
+errors on a fresh (non-HMR-patched) tab — none; `tsc --noEmit`, `npm run lint` (24 problems,
+same accepted baseline class as above), and `npm run build` all clean.

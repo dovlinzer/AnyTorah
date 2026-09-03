@@ -30,19 +30,20 @@ import type { TextCategory } from "./textModels";
 // fixes) via the existing category+subcategory contract in sefariaClient.ts/the API routes.
 export type ReaderCategory =
   | "tanakh" | "mishnah" | "tosefta" | "talmud" | "yerushalmi" | "rambam" | "tur" | "shulchanArukh"
-  | "teshuvot" | "teshuvotAcharonim";
+  | "teshuvot" | "teshuvotAcharonim" | "teshuvotContemporary";
 
 /** Translates a UI-level ReaderCategory into the underlying TextCategory (+ subcategory flag)
- *  that sefariaClient.ts and the API routes understand. Teshuvot Acharonim shares Rishonim's
- *  fetch mechanism entirely (both are just a global TeshuvotWorkDef id into the same combined
- *  lookup array — see textModels.ts's ALL_TESHUVOT_WORKS) — no subcategory flag needed, unlike
- *  Tosefta/Yerushalmi, since the API route doesn't need to know which tab the id came from. */
+ *  that sefariaClient.ts and the API routes understand. Teshuvot Acharonim/Contemporary both
+ *  share Rishonim's fetch mechanism entirely (all three are just a global TeshuvotWorkDef id
+ *  into the same combined lookup array — see textModels.ts's ALL_TESHUVOT_WORKS) — no
+ *  subcategory flag needed, unlike Tosefta/Yerushalmi, since the API route doesn't need to know
+ *  which tab the id came from. */
 export function fetchCategoryFor(
   category: ReaderCategory,
 ): { fetchCategory: TextCategory; subcategory?: "tosefta" | "yerushalmi" } {
   if (category === "tosefta") return { fetchCategory: "mishnah", subcategory: "tosefta" };
   if (category === "yerushalmi") return { fetchCategory: "talmud", subcategory: "yerushalmi" };
-  if (category === "teshuvotAcharonim") return { fetchCategory: "teshuvot" };
+  if (category === "teshuvotAcharonim" || category === "teshuvotContemporary") return { fetchCategory: "teshuvot" };
   return { fetchCategory: category };
 }
 
@@ -201,6 +202,7 @@ export function getPoolInfo(category: ReaderCategory, index: number): PoolInfo {
       };
     case "teshuvot":
     case "teshuvotAcharonim":
+    case "teshuvotContemporary":
       // No commentary panel at all, matching native — Reader.tsx hides the panel entirely for
       // this category rather than rendering it with zero tabs.
       return {

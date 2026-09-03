@@ -513,6 +513,10 @@ export interface TeshuvotVolume {
   /** Sefaria ref with a literal "{siman}" placeholder — see teshuvotSefariaRef. */
   refTemplate: string;
   maxSiman: number;
+  /** Un-abbreviated Hebrew label for the volume-picker select only — falls back to hebrewLabel
+   *  when absent. Only Mishpetei Uziel populates this so far (its hebrewLabel abbreviates
+   *  Tur-order sections, e.g. "או״ח") — see native's own doc comment on this same field. */
+  pickerHebrewLabel?: string;
 }
 
 export interface TeshuvotWorkDef {
@@ -945,9 +949,182 @@ export const TESHUVOT_ACHARONIM: TeshuvotWorkDef[] = [
   },
 ];
 
+// MARK: - Teshuvot Contemporary
+//
+// Ported from AnyTorah/AnyTorah/Models/TextModels.swift's TeshuvotWork Contemporary cases —
+// Sefaria-digitized modern responsa only (Iggros Moshe is page-image-based, not a Sefaria ref,
+// and isn't ported here; the Lindenbaum Center is a Sefaria *Collection* of source sheets, not a
+// text index, and is deliberately deferred to a future "YCT halakha pieces" pass). Global ids
+// continue from Acharonim's 13-43. Declaration order is the Contemporary book-picker's own order
+// (see getCategoryGroups's "teshuvotContemporary" case, a flat list with no century grouping —
+// Contemporary was never century-grouped in native either). Ref data verified against live
+// Sefaria content 2026-08-30 (see AnyTorah/CLAUDE.md's "Contemporary — 5 Sefaria-digitized
+// works" section).
+export const TESHUVOT_CONTEMPORARY: TeshuvotWorkDef[] = [
+  {
+    id: 44, displayName: "Mishpetei Uziel", hebrewName: "משפטי עוזיאל", century: "Contemporary",
+    volumeLabel: "Volume", volumeLabelHebrew: "חלק",
+    // Volume x Tur-order section, flattened — Sefaria splits each of Rav Uziel's 9 printed
+    // volumes into 1-5 named sections rather than one continuous siman count per volume.
+    volumes: (() => {
+      const entries: { vol: string; volHe: string; disp: string; dispHe: string; name: string; count: number }[] = [
+        { vol: "I", volHe: "א", disp: "OC", dispHe: "או״ח", name: "Orach Chayim", count: 26 },
+        { vol: "I", volHe: "א", disp: "YD", dispHe: "יו״ד", name: "Yoreh De'ah", count: 30 },
+        { vol: "I", volHe: "א", disp: "Omissions", dispHe: "השמטות", name: "Omissions", count: 5 },
+        { vol: "II", volHe: "ב", disp: "YD", dispHe: "יו״ד", name: "Yoreh De'ah", count: 66 },
+        { vol: "III", volHe: "ג", disp: "OC", dispHe: "או״ח", name: "Orach Chayim", count: 81 },
+        { vol: "III", volHe: "ג", disp: "Addenda", dispHe: "מלואים", name: "Addenda", count: 8 },
+        { vol: "IV", volHe: "ד", disp: "CM", dispHe: "חו״מ", name: "Choshen Mishpat", count: 47 },
+        { vol: "IV", volHe: "ד", disp: "General Topics", dispHe: "ענינים כלליים", name: "General Topics", count: 19 },
+        { vol: "V", volHe: "ה", disp: "EH", dispHe: "אה״ע", name: "Even HaEzer", count: 89 },
+        { vol: "VI", volHe: "ו", disp: "YD", dispHe: "יו״ד", name: "Yoreh De'ah", count: 131 },
+        { vol: "VI", volHe: "ו", disp: "Addenda", dispHe: "מלואים", name: "Addenda", count: 6 },
+        { vol: "VII", volHe: "ז", disp: "EH", dispHe: "אה״ע", name: "Even HaEzer", count: 49 },
+        { vol: "VIII", volHe: "ח", disp: "OC", dispHe: "או״ח", name: "Orach Chayim", count: 62 },
+        { vol: "IX", volHe: "ט", disp: "OC", dispHe: "או״ח", name: "Orach Chayim", count: 9 },
+        { vol: "IX", volHe: "ט", disp: "YD", dispHe: "יו״ד", name: "Yoreh De'ah", count: 49 },
+        { vol: "IX", volHe: "ט", disp: "EH", dispHe: "אה״ע", name: "Even HaEzer", count: 2 },
+        { vol: "IX", volHe: "ט", disp: "CM", dispHe: "חו״מ", name: "Choshen Mishpat", count: 3 },
+        { vol: "IX", volHe: "ט", disp: "General Topics", dispHe: "ענינים כלליים", name: "General Topics", count: 3 },
+      ];
+      // Un-abbreviated Hebrew for the volume-picker select only (pickerHebrewLabel) — the nav
+      // pill-equivalent parts of the UI keep the standard Tur-order abbreviation (hebrewLabel).
+      const fullSectionHe: Record<string, string> = {
+        "או״ח": "אורח חיים", "יו״ד": "יורה דעה", "אה״ע": "אבן העזר", "חו״מ": "חושן משפט",
+      };
+      return entries.map((e) => ({
+        label: `${e.vol}, ${e.disp}`,
+        hebrewLabel: `${e.volHe}, ${e.dispHe}`,
+        refTemplate: `Mishpetei Uziel, Volume ${e.vol}, ${e.name} {siman}`,
+        maxSiman: e.count,
+        pickerHebrewLabel: fullSectionHe[e.dispHe] ? `${e.volHe}, ${fullSectionHe[e.dispHe]}` : undefined,
+      }));
+    })(),
+  },
+  {
+    id: 45, displayName: "Benei Banim", hebrewName: "בני בנים", century: "Contemporary",
+    volumeLabel: "Volume", volumeLabelHebrew: "חלק",
+    volumes: ["I", "II", "III", "IV"].map((numeral, i) => ({
+      label: numeral,
+      hebrewLabel: toHebrewNumeral(i + 1),
+      refTemplate: `Responsa Benei Banim, Volume ${numeral} {siman}`,
+      maxSiman: [44, 52, 45, 28][i],
+    })),
+  },
+  {
+    id: 46, displayName: "B'mareh HaBazak", hebrewName: "במראה הבזק", century: "Contemporary",
+    volumeLabel: "Volume", volumeLabelHebrew: "חלק",
+    // 10 flat volumes (Siman/Seif, no further sub-sections) from Kollel Eretz Chemda.
+    volumes: ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"].map((numeral, i) => ({
+      label: numeral,
+      hebrewLabel: toHebrewNumeral(i + 1),
+      refTemplate: `B'Mareh HaBazak Volume ${numeral} {siman}`,
+      maxSiman: [100, 120, 156, 140, 53, 102, 114, 41, 48, 100][i],
+    })),
+  },
+  {
+    // Flat — no real volume level (volumeLabel is null, like every other flat work above), so
+    // this is the one dummy entry every TeshuvotWorkDef needs. refTemplate is never actually
+    // used for this work — teshuvotSefariaRef below special-cases this id to look up the real
+    // ref from NISHMAT_HABAYIT_SIMANIM instead, since the ref embeds each responsum's full title
+    // and isn't "{siman}"-formulaic. maxSiman is the synthetic 1-63 siman count.
+    id: 47, displayName: "Nishmat HaBayit", hebrewName: "נשמת הבית", century: "Contemporary",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("", 63),
+  },
+];
+
+/** Global id of the one Teshuvot work with a bespoke titled-list siman picker instead of the
+ *  ordinary numeric wheel — see NISHMAT_HABAYIT_SIMANIM and teshuvotSefariaRef's special case. */
+export const NISHMAT_HABAYIT_WORK_ID = 47;
+
+/** One responsum entry in Nishmat HaBayit's picker — this work has no numeric Siman address type
+ *  on Sefaria (each responsum is an individually-titled node, grouped into 5 real Parts), so it
+ *  needs its own titled-list picker (NishmatHaBayitSimanPicker.tsx) instead of the generic
+ *  numeric chapter stepper. `number` is a synthetic 1-63 sequential index (not part of Sefaria's
+ *  own data) reused as this work's ordinary `chapter`/siman value, so the existing
+ *  selection-state plumbing needs no new type. `ref` is the complete literal Sefaria ref string
+ *  (embeds the full node title) — there's no "{siman}"-template substitution here, unlike
+ *  TeshuvotVolume, since the ref isn't formulaic. Ported verbatim from native's
+ *  NishmatHaBayitSiman.all, generated there from a live Sefaria raw-index fetch. */
+export interface NishmatHaBayitSiman {
+  number: number;
+  partEnglish: string;
+  partHebrew: string;
+  titleEnglish: string;
+  titleHebrew: string;
+  ref: string;
+}
+
+export const NISHMAT_HABAYIT_SIMANIM: NishmatHaBayitSiman[] = [
+  { number: 1, partEnglish: "Pregnancy", partHebrew: "היריון", titleEnglish: "Panty Liners during the Seven Neki'im When Trying to Conceive", titleHebrew: "תחתונית בז' נקיים באישה המנסה להרות", ref: "Nishmat HaBayit, Part I; Pregnancy, Siman 1; Panty Liners during the Seven Neki'im When Trying to Conceive" },
+  { number: 2, partEnglish: "Pregnancy", partHebrew: "היריון", titleEnglish: "Onot Perishah at the Beginning of Pregnancy", titleHebrew: "עונות פרישה בהתחלת היריון", ref: "Nishmat HaBayit, Part I; Pregnancy, Siman 2; Onot Perishah at the Beginning of Pregnancy" },
+  { number: 3, partEnglish: "Pregnancy", partHebrew: "היריון", titleEnglish: "Blood in Urine during Pregnancy", titleHebrew: "דם בשתן בזמן ההיריון", ref: "Nishmat HaBayit, Part I; Pregnancy, Siman 3; Blood in Urine during Pregnancy" },
+  { number: 4, partEnglish: "Pregnancy", partHebrew: "היריון", titleEnglish: "Spotting and Bleeding during Pregnancy", titleHebrew: "כתמים ודימומים בזמן היריון", ref: "Nishmat HaBayit, Part I; Pregnancy, Siman 4; Spotting and Bleeding during Pregnancy" },
+  { number: 5, partEnglish: "Pregnancy", partHebrew: "היריון", titleEnglish: "Blood on an Ultrasound Transducer", titleHebrew: "דם במכשיר אולטרסאונד", ref: "Nishmat HaBayit, Part I; Pregnancy, Siman 5; Blood on an Ultrasound Transducer" },
+  { number: 6, partEnglish: "Pregnancy", partHebrew: "היריון", titleEnglish: "Bleeding from Placenta Previa", titleHebrew: "דימומים בהיריון בסיכון בעקבות שליית פתח", ref: "Nishmat HaBayit, Part I; Pregnancy, Siman 6; Bleeding from Placenta Previa" },
+  { number: 7, partEnglish: "Pregnancy", partHebrew: "היריון", titleEnglish: "Bleeding after Cervical Cerclage", titleHebrew: "ראיית דם לאחר תפירת צוואר הרחם", ref: "Nishmat HaBayit, Part I; Pregnancy, Siman 7; Bleeding after Cervical Cerclage" },
+  { number: 8, partEnglish: "Pregnancy", partHebrew: "היריון", titleEnglish: "Mikveh Immersion during Pregnancy", titleHebrew: "טבילה בהיריון", ref: "Nishmat HaBayit, Part I; Pregnancy, Siman 8; Mikveh Immersion during Pregnancy" },
+  { number: 9, partEnglish: "Birth", partHebrew: "לידה", titleEnglish: "Cervical Dilation and the Onset of Labor", titleHebrew: "דין פתיחת צוואר הרחם כהתחלת לידה", ref: "Nishmat HaBayit, Part II; Birth, Siman 9; Cervical Dilation and the Onset of Labor" },
+  { number: 10, partEnglish: "Birth", partHebrew: "לידה", titleEnglish: "Does Expulsion of the Mucus Plug Render a Woman Niddah?", titleHebrew: "האם יציאת הפקק הרירי אוסרת?", ref: "Nishmat HaBayit, Part II; Birth, Siman 10; Does Expulsion of the Mucus Plug Render a Woman Niddah?" },
+  { number: 11, partEnglish: "Birth", partHebrew: "לידה", titleEnglish: "Does Membrane Stripping Render a Woman Niddah?", titleHebrew: "האם פעולת הפרדת קרומים ('סטריפינג') אוסרת?", ref: "Nishmat HaBayit, Part II; Birth, Siman 11; Does Membrane Stripping Render a Woman Niddah?" },
+  { number: 12, partEnglish: "Birth", partHebrew: "לידה", titleEnglish: "Does the Rupture of Membranes Render a Woman Niddah?", titleHebrew: "האם ירידת מים אוסרת?", ref: "Nishmat HaBayit, Part II; Birth, Siman 12; Does the Rupture of Membranes Render a Woman Niddah?" },
+  { number: 13, partEnglish: "Birth", partHebrew: "לידה", titleEnglish: "Assistance of the Husband in the Delivery Room", titleHebrew: "סיוע הבעל בחדר לידה", ref: "Nishmat HaBayit, Part II; Birth, Siman 13; Assistance of the Husband in the Delivery Room" },
+  { number: 14, partEnglish: "Birth", partHebrew: "לידה", titleEnglish: "Mokh Dahuk and Bedikot following Birth", titleHebrew: "מוך דחוק ובדיקות ז' נקיים לאחר לידה", ref: "Nishmat HaBayit, Part II; Birth, Siman 14; Mokh Dahuk and Bedikot following Birth" },
+  { number: 15, partEnglish: "Birth", partHebrew: "לידה", titleEnglish: "Counting Seven Neki'im following a Caesarean Section", titleHebrew: "ספירת ז' נקיים לאחר ניתוח קיסרי", ref: "Nishmat HaBayit, Part II; Birth, Siman 15; Counting Seven Neki'im following a Caesarean Section" },
+  { number: 16, partEnglish: "Birth", partHebrew: "לידה", titleEnglish: "Observation of Blood by a Physician during the Postpartum Examination", titleHebrew: "ראיית דם על ידי רופא בבדיקה לאחר הלידה", ref: "Nishmat HaBayit, Part II; Birth, Siman 16; Observation of Blood by a Physician during the Postpartum Examination" },
+  { number: 17, partEnglish: "Birth", partHebrew: "לידה", titleEnglish: "Attributing Bleeding to Hemorrhoids, Postpartum", titleHebrew: "תלייה בטחורים בז' נקיים לאחר לידה", ref: "Nishmat HaBayit, Part II; Birth, Siman 17; Attributing Bleeding to Hemorrhoids, Postpartum" },
+  { number: 18, partEnglish: "Birth", partHebrew: "לידה", titleEnglish: "Hefsek Taharah after Sunset, Postpartum", titleHebrew: "הפסק טהרה ביולדת לאחר שקיעה", ref: "Nishmat HaBayit, Part II; Birth, Siman 18; Hefsek Taharah after Sunset, Postpartum" },
+  { number: 19, partEnglish: "Birth", partHebrew: "לידה", titleEnglish: "Onot Perishah and Establishing a Veset, Postpartum", titleHebrew: "עונות פרישה וקביעת וסת בכ\"ד חודש לאחר לידה", ref: "Nishmat HaBayit, Part II; Birth, Siman 19; Onot Perishah and Establishing a Veset, Postpartum" },
+  { number: 20, partEnglish: "Birth", partHebrew: "לידה", titleEnglish: "Bedikot with Uterine Prolapse", titleHebrew: "בדיקות ז' נקיים במצב צניחת רחם", ref: "Nishmat HaBayit, Part II; Birth, Siman 20; Bedikot with Uterine Prolapse" },
+  { number: 21, partEnglish: "Birth", partHebrew: "לידה", titleEnglish: "Attributing Blood to a Petza during the Seven Neki'im", titleHebrew: "תלייה בפצע בז' נקיים", ref: "Nishmat HaBayit, Part II; Birth, Siman 21; Attributing Blood to a Petza during the Seven Neki'im" },
+  { number: 22, partEnglish: "Pregnancy Loss", partHebrew: "אובדן היריון", titleEnglish: "Counting Seven Neki'im following D&C", titleHebrew: "ספירת ז' נקיים לאחר גרידה", ref: "Nishmat HaBayit, Part III; Pregnancy Loss, Siman 22; Counting Seven Neki'im following D&C" },
+  { number: 23, partEnglish: "Pregnancy Loss", partHebrew: "אובדן היריון", titleEnglish: "Onot Perishah following a Miscarriage", titleHebrew: "עונות פרישה לאחר הפלה", ref: "Nishmat HaBayit, Part III; Pregnancy Loss, Siman 23; Onot Perishah following a Miscarriage" },
+  { number: 24, partEnglish: "Pregnancy Loss", partHebrew: "אובדן היריון", titleEnglish: "Reducing Bedikot following a Miscarriage", titleHebrew: "הפחתת בדיקות באישה שעברה הפלה", ref: "Nishmat HaBayit, Part III; Pregnancy Loss, Siman 24; Reducing Bedikot following a Miscarriage" },
+  { number: 25, partEnglish: "Nursing", partHebrew: "הנקה", titleEnglish: "The Law of Hargashah (Sensation of Menses)", titleHebrew: "בדין הרגשה", ref: "Nishmat HaBayit, Part IV; Nursing, Siman 25; The Law of Hargashah (Sensation of Menses)" },
+  { number: 26, partEnglish: "Nursing", partHebrew: "הנקה", titleEnglish: "Pain and Reduced Libido", titleHebrew: "כאב וחוסר עניין ביחסים", ref: "Nishmat HaBayit, Part IV; Nursing, Siman 26; Pain and Reduced Libido" },
+  { number: 27, partEnglish: "Nursing", partHebrew: "הנקה", titleEnglish: "Blood on Toilet Paper", titleHebrew: "דם על נייר קינוח", ref: "Nishmat HaBayit, Part IV; Nursing, Siman 27; Blood on Toilet Paper" },
+  { number: 28, partEnglish: "Nursing", partHebrew: "הנקה", titleEnglish: "Breastfeeding a Toddler after an Interruption", titleHebrew: "המשך הנקה לאחר הפסקה בפעוט", ref: "Nishmat HaBayit, Part IV; Nursing, Siman 28; Breastfeeding a Toddler after an Interruption" },
+  { number: 29, partEnglish: "Nursing", partHebrew: "הנקה", titleEnglish: "Passing a Baby between Parents during Niddut", titleHebrew: "העברת תינוק בין ההורים בימי הנידות", ref: "Nishmat HaBayit, Part IV; Nursing, Siman 29; Passing a Baby between Parents during Niddut" },
+  { number: 30, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Family Planning following Childbirth", titleHebrew: "בדין דחיית היריון אחר לידה", ref: "Nishmat HaBayit, Part V; Contraception, Siman 30; Family Planning following Childbirth" },
+  { number: 31, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Contraception after Several Births", titleHebrew: "מניעת היריון לאחר כמה לידות", ref: "Nishmat HaBayit, Part V; Contraception, Siman 31; Contraception after Several Births" },
+  { number: 32, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "IUD Use and the Ranking of Contraceptive Options", titleHebrew: "שימוש בהתקן תוך רחמי ודירוג אמצעי מניעה", ref: "Nishmat HaBayit, Part V; Contraception, Siman 32; IUD Use and the Ranking of Contraceptive Options" },
+  { number: 33, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Condom Use When Pregnancy Is Contra Indicated", titleHebrew: "שימוש בקונדום במקרה של סכנה להרות", ref: "Nishmat HaBayit, Part V; Contraception, Siman 33; Condom Use When Pregnancy Is Contra Indicated" },
+  { number: 34, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Spermicide Use", titleHebrew: "שימוש בקוטל זרע", ref: "Nishmat HaBayit, Part V; Contraception, Siman 34; Spermicide Use" },
+  { number: 35, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Diaphragm Use", titleHebrew: "שימוש בדיאפרגמה", ref: "Nishmat HaBayit, Part V; Contraception, Siman 35; Diaphragm Use" },
+  { number: 36, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Emergency Contraception; The \"Morning After\" Pill", titleHebrew: "בדין גלולת 'היום שאחרי'", ref: "Nishmat HaBayit, Part V; Contraception, Siman 36; Emergency Contraception; The \"Morning After\" Pill" },
+  { number: 37, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Depo Provera (Progesterone Injection)", titleHebrew: "שימוש בזריקת פרוגסטרון", ref: "Nishmat HaBayit, Part V; Contraception, Siman 37; Depo Provera (Progesterone Injection)" },
+  { number: 38, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Onot Perishah with Hormonal Contraception", titleHebrew: "עונת פרישה וסילוק דמים בעת נטילת גלולות", ref: "Nishmat HaBayit, Part V; Contraception, Siman 38; Onot Perishah with Hormonal Contraception" },
+  { number: 39, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Establishing a Veset with Hormonal Contraception", titleHebrew: "קביעת וסת לגלולות", ref: "Nishmat HaBayit, Part V; Contraception, Siman 39; Establishing a Veset with Hormonal Contraception" },
+  { number: 40, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Onot Perishah When Stopping Hormonal Contraception", titleHebrew: "עונת פרישה בתום השימוש בגלולות", ref: "Nishmat HaBayit, Part V; Contraception, Siman 40; Onot Perishah When Stopping Hormonal Contraception" },
+  { number: 41, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Extending the Cycle via Hormonal Contraception", titleHebrew: "נטילת גלולות ברצף", ref: "Nishmat HaBayit, Part V; Contraception, Siman 41; Extending the Cycle via Hormonal Contraception" },
+  { number: 42, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "When Staining Renders a Woman Niddah", titleHebrew: "מתי הופכים כתמים למחזור?", ref: "Nishmat HaBayit, Part V; Contraception, Siman 42; When Staining Renders a Woman Niddah" },
+  { number: 43, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Post Coital Bleeding with Hormonal Contraception", titleHebrew: "דם לאחר תשמיש בנוטלת גלולות", ref: "Nishmat HaBayit, Part V; Contraception, Siman 43; Post Coital Bleeding with Hormonal Contraception" },
+  { number: 44, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Staining on a Panty Liner or Synthetic Clothing", titleHebrew: "כתמים על תחתונית ובגד סינתטי", ref: "Nishmat HaBayit, Part V; Contraception, Siman 44; Staining on a Panty Liner or Synthetic Clothing" },
+  { number: 45, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "A Suspected Lesion and Stain Location on a Bedikah Cloth", titleHebrew: "חשש לפצע ומיקום הדם על העד", ref: "Nishmat HaBayit, Part V; Contraception, Siman 45; A Suspected Lesion and Stain Location on a Bedikah Cloth" },
+  { number: 46, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "When a Contraceptive Pill Is Not Absorbed, Recommendations", titleHebrew: "המלצה בעקבות אי ספיגת גלולה", ref: "Nishmat HaBayit, Part V; Contraception, Siman 46; When a Contraceptive Pill Is Not Absorbed, Recommendations" },
+  { number: 47, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Mikveh Immersion with a Hormonal Patch", titleHebrew: "טבילה עם מדבקה הורמונלית", ref: "Nishmat HaBayit, Part V; Contraception, Siman 47; Mikveh Immersion with a Hormonal Patch" },
+  { number: 48, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Bedikot with a Contraceptive Ring", titleHebrew: "בדיקות ז' נקיים עם נובה רינג", ref: "Nishmat HaBayit, Part V; Contraception, Siman 48; Bedikot with a Contraceptive Ring" },
+  { number: 49, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Immersion with a Contraceptive Ring", titleHebrew: "טבילה עם נובה רינג", ref: "Nishmat HaBayit, Part V; Contraception, Siman 49; Immersion with a Contraceptive Ring" },
+  { number: 50, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Insertion of an IUD during the Seven Neki'im", titleHebrew: "הכנסת התקן תוך רחמי בז' נקיים", ref: "Nishmat HaBayit, Part V; Contraception, Siman 50; Insertion of an IUD during the Seven Neki'im" },
+  { number: 51, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Does Removal of an IUD Render a Woman Niddah?", titleHebrew: "האם הוצאת התקן תוך רחמי מטמאת?", ref: "Nishmat HaBayit, Part V; Contraception, Siman 51; Does Removal of an IUD Render a Woman Niddah?" },
+  { number: 52, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Bleeding from an Abrasion Caused by an IUD", titleHebrew: "דימום מפצע הנגרם ע\"י התקן תוך רחמי", ref: "Nishmat HaBayit, Part V; Contraception, Siman 52; Bleeding from an Abrasion Caused by an IUD" },
+  { number: 53, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Premenstrual Staining", titleHebrew: "בדין כתמים המקדימים את המחזור", ref: "Nishmat HaBayit, Part V; Contraception, Siman 53; Premenstrual Staining" },
+  { number: 54, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Colors on Bedikah Cloths", titleHebrew: "צבעים בעדי בדיקה", ref: "Nishmat HaBayit, Part V; Contraception, Siman 54; Colors on Bedikah Cloths" },
+  { number: 55, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Bedikot of Onot Perishah When a Woman Experiences Spotting", titleHebrew: "בדיקות בעונת פרישה באישה המרבה להכתים", ref: "Nishmat HaBayit, Part V; Contraception, Siman 55; Bedikot of Onot Perishah When a Woman Experiences Spotting" },
+  { number: 56, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Minor Monthly Spotting", titleHebrew: "כתמים מזעריים פעם בחודש", ref: "Nishmat HaBayit, Part V; Contraception, Siman 56; Minor Monthly Spotting" },
+  { number: 57, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Waiting before the Seven Neki'im", titleHebrew: "המתנה לפני ספירת ז' נקיים בכתם המטמא", ref: "Nishmat HaBayit, Part V; Contraception, Siman 57; Waiting before the Seven Neki'im" },
+  { number: 58, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Douching before Internal Bedikot", titleHebrew: "שטיפה לפני בדיקת ז' נקיים", ref: "Nishmat HaBayit, Part V; Contraception, Siman 58; Douching before Internal Bedikot" },
+  { number: 59, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "A Spot on a Tampon", titleHebrew: "נקודה על טמפון", ref: "Nishmat HaBayit, Part V; Contraception, Siman 59; A Spot on a Tampon" },
+  { number: 60, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Finding Blood on a Diaphragm", titleHebrew: "מציאת דם בדיאפרגמה", ref: "Nishmat HaBayit, Part V; Contraception, Siman 60; Finding Blood on a Diaphragm" },
+  { number: 61, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Onot Perishah with Fertility Awareness Method (FAM)", titleHebrew: "עונת פרישה בשיטת המודעות לפוריות", ref: "Nishmat HaBayit, Part V; Contraception, Siman 61; Onot Perishah with Fertility Awareness Method (FAM)" },
+  { number: 62, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "Checking for Secretions with Fertility Awareness Method (FAM)", titleHebrew: "בדיקת הפרשות בשיטת המודעות לפוריות", ref: "Nishmat HaBayit, Part V; Contraception, Siman 62; Checking for Secretions with Fertility Awareness Method (FAM)" },
+  { number: 63, partEnglish: "Contraception", partHebrew: "אמצעי מניעה", titleEnglish: "The Mitzvah of Onah on Mikveh Night with Fertility Awareness Method (FAM)", titleHebrew: "מצוות עונה בליל טבילה בשיטת מודעות הפוריות", ref: "Nishmat HaBayit, Part V; Contraception, Siman 63; The Mitzvah of Onah on Mikveh Night with Fertility Awareness Method (FAM)" },
+];
+
 // Combined lookup so teshuvotWork/teshuvotSefariaRef/teshuvotMaxSiman work by global id
-// regardless of which UI tab (Rishonim vs. Acharonim) is currently showing.
-const ALL_TESHUVOT_WORKS: TeshuvotWorkDef[] = [...TESHUVOT_RISHONIM, ...TESHUVOT_ACHARONIM];
+// regardless of which UI tab (Rishonim, Acharonim, or Contemporary) is currently showing.
+const ALL_TESHUVOT_WORKS: TeshuvotWorkDef[] = [...TESHUVOT_RISHONIM, ...TESHUVOT_ACHARONIM, ...TESHUVOT_CONTEMPORARY];
 
 export function teshuvotWork(id: number): TeshuvotWorkDef {
   return ALL_TESHUVOT_WORKS.find((w) => w.id === id) ?? ALL_TESHUVOT_WORKS[0];
@@ -959,6 +1136,11 @@ function teshuvotVolumeAt(work: TeshuvotWorkDef, volume: number): TeshuvotVolume
 }
 
 export function teshuvotSefariaRef(workId: number, volume: number, siman: number): string {
+  // Nishmat HaBayit's ref isn't "{siman}"-formulaic (see NishmatHaBayitSiman's doc comment) —
+  // `siman` here is really the synthetic 1-63 NISHMAT_HABAYIT_SIMANIM number.
+  if (workId === NISHMAT_HABAYIT_WORK_ID) {
+    return NISHMAT_HABAYIT_SIMANIM.find((s) => s.number === siman)?.ref ?? NISHMAT_HABAYIT_SIMANIM[0].ref;
+  }
   const work = teshuvotWork(workId);
   return teshuvotVolumeAt(work, volume).refTemplate.replace("{siman}", String(siman));
 }

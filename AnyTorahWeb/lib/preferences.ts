@@ -22,6 +22,7 @@ const FIXED_PREFERENCE_KEYS = [
   "anytorah:narrowPanelWidth",
   "anytorah:commentaryWidth",
   "anytorah:notebookWidth",
+  "anytorah:teshuvotGroupBy",
 ];
 
 // Commentary-slot assignments are stored one key per context ("anytorah:slots:talmud",

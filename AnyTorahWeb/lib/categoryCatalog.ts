@@ -5,7 +5,7 @@ import { TextCatalog } from "./textCatalog";
 import type { ReaderCategory } from "./commentaryPools";
 import { rambamIntroductions } from "./rambamIntroductions";
 import { stripNikud } from "./hebrewUtils";
-import { TESHUVOT_RISHONIM, TESHUVOT_ACHARONIM, teshuvotMaxSiman } from "./textModels";
+import { TESHUVOT_RISHONIM, TESHUVOT_ACHARONIM, TESHUVOT_CONTEMPORARY, teshuvotMaxSiman } from "./textModels";
 
 export interface CategoryItem {
   id: number;
@@ -19,12 +19,22 @@ export interface CategoryGroup {
   items: CategoryItem[];
 }
 
+/** Teshuvot-only ordering choice for the work selector — century-grouped (default, matches
+ *  native's chronological work wheel) or a single flat alphabetical list. Irrelevant to every
+ *  other category, which is why it's a separate optional param on getCategoryGroups rather than
+ *  a piece of ReaderCategory itself. */
+export type TeshuvotGroupBy = "century" | "alphabetical";
+
 /** Picks the display name for a catalog entry — nikkud-stripped Hebrew when saHebrewMode is on. */
 function displayName(name: string, hebrewName: string, hebrewMode: boolean): string {
   return hebrewMode ? stripNikud(hebrewName) : name;
 }
 
-export function getCategoryGroups(category: ReaderCategory, hebrewMode = false): CategoryGroup[] {
+export function getCategoryGroups(
+  category: ReaderCategory,
+  hebrewMode = false,
+  teshuvotGroupBy: TeshuvotGroupBy = "century",
+): CategoryGroup[] {
   switch (category) {
     case "tanakh":
       return TextCatalog.tanakhSections.map((s) => ({
@@ -97,9 +107,27 @@ export function getCategoryGroups(category: ReaderCategory, hebrewMode = false):
     // itself via teshuvotMaxSiman since a multi-volume work's true ceiling depends on which
     // volume is selected, not just which work.
     case "teshuvot":
-      return teshuvotCenturyGroups(TESHUVOT_RISHONIM, hebrewMode);
+      return teshuvotGroupBy === "alphabetical"
+        ? teshuvotAlphabeticalGroup(TESHUVOT_RISHONIM, hebrewMode)
+        : teshuvotCenturyGroups(TESHUVOT_RISHONIM, hebrewMode);
     case "teshuvotAcharonim":
-      return teshuvotCenturyGroups(TESHUVOT_ACHARONIM, hebrewMode);
+      return teshuvotGroupBy === "alphabetical"
+        ? teshuvotAlphabeticalGroup(TESHUVOT_ACHARONIM, hebrewMode)
+        : teshuvotCenturyGroups(TESHUVOT_ACHARONIM, hebrewMode);
+    // Flat, declaration order — Contemporary was never century-grouped in native either (its
+    // book picker is Iggros Moshe first, then these in declaration order), so the century/A-Z
+    // toggle above doesn't apply here.
+    case "teshuvotContemporary":
+      return [
+        {
+          name: "",
+          items: TESHUVOT_CONTEMPORARY.map((work) => ({
+            id: work.id,
+            name: displayName(work.displayName, work.hebrewName, hebrewMode),
+            count: teshuvotMaxSiman(work.id, 1),
+          })),
+        },
+      ];
   }
 }
 
@@ -116,6 +144,23 @@ function teshuvotCenturyGroups(
     else groups.push({ name: work.century, items: [item] });
   }
   return groups;
+}
+
+/** Flat, single-group, straight-alphabetical ordering — no century dividers at all. Sorted by
+ *  whichever name is actually displayed (nikud-stripped Hebrew in Hebrew mode) so "alphabetical"
+ *  means what the user sees, not always English order underneath. */
+function teshuvotAlphabeticalGroup(
+  works: (typeof TESHUVOT_RISHONIM)[number][],
+  hebrewMode: boolean,
+): CategoryGroup[] {
+  const items = works
+    .map((work) => ({
+      id: work.id,
+      name: displayName(work.displayName, work.hebrewName, hebrewMode),
+      count: teshuvotMaxSiman(work.id, 1),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, hebrewMode ? "he" : "en"));
+  return [{ name: "", items }];
 }
 
 export function getChapterMin(category: ReaderCategory, index: number): number {
@@ -160,7 +205,8 @@ export function getChapterUnitLabel(category: ReaderCategory, hebrewMode = false
       case "shulchanArukh":
       case "tur":
       case "teshuvot":
-      case "teshuvotAcharonim": return "סימן";
+      case "teshuvotAcharonim":
+      case "teshuvotContemporary": return "סימן";
       default: return "פרק";
     }
   }
@@ -169,7 +215,8 @@ export function getChapterUnitLabel(category: ReaderCategory, hebrewMode = false
     case "shulchanArukh":
     case "tur":
     case "teshuvot":
-    case "teshuvotAcharonim": return "siman";
+    case "teshuvotAcharonim":
+    case "teshuvotContemporary": return "siman";
     default: return "ch.";
   }
 }
@@ -204,5 +251,6 @@ export function getCategoryDisplayName(category: ReaderCategory, hebrewMode = fa
     case "shulchanArukh": return hebrewMode ? "שולחן ערוך" : "Shulchan Arukh";
     case "teshuvot": return hebrewMode ? "שו״ת ראשונים" : "Teshuvot Rishonim";
     case "teshuvotAcharonim": return hebrewMode ? "שו״ת אחרונים" : "Teshuvot Acharonim";
+    case "teshuvotContemporary": return hebrewMode ? "שו״ת בני זמננו" : "Teshuvot Contemporary";
   }
 }
