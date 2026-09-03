@@ -754,12 +754,13 @@ function ReverseNavToggle({
   );
 }
 
-/** Icon-only segmented toggle choosing whether the Teshuvot work list (Rishonim and Acharonim
+/** Icon-labeled segmented toggle choosing whether the Teshuvot work list (Rishonim and Acharonim
  *  alike) groups by century or lists every work in one flat alphabetical run. Lives in the
  *  siman-selector toolbar right after the Browse-chapters button, not the header's category-pill
  *  row — it's a display setting for that selector, not another sefer/tab choice, so it shouldn't
- *  read like one. Icons (🔢 chronological, 🔤 alphabetical) + small footprint, matching the
- *  Talmud amud toggle's segmented-pill shape rather than a `<select>`, per explicit request. */
+ *  read like one. A leading "Sort"/"מיין" word plus icons (📅 chronological, 🔤 alphabetical,
+ *  sized up from the first icon-only pass per explicit feedback that they read too cryptic
+ *  small) — segmented-pill shape matching the Talmud amud toggle, rather than a `<select>`. */
 function TeshuvotGroupByToggle({
   value,
   onChange,
@@ -770,24 +771,27 @@ function TeshuvotGroupByToggle({
   hebrewMode: boolean;
 }) {
   const options: { key: TeshuvotGroupBy; icon: string; label: string }[] = [
-    { key: "century", icon: "🔢", label: hebrewMode ? "מיין לפי מאה" : "Sort by century" },
+    { key: "century", icon: "📅", label: hebrewMode ? "מיין לפי מאה" : "Sort by century" },
     { key: "alphabetical", icon: "🔤", label: hebrewMode ? "מיין לפי אלפבית" : "Sort alphabetically" },
   ];
   return (
-    <div className="flex shrink-0 overflow-hidden rounded-full border border-border text-xs">
-      {options.map((opt) => (
-        <button
-          key={opt.key}
-          onClick={() => onChange(opt.key)}
-          aria-pressed={value === opt.key}
-          aria-label={opt.label}
-          title={opt.label}
-          className="px-2 py-1 leading-none transition-colors"
-          style={value === opt.key ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
-        >
-          {opt.icon}
-        </button>
-      ))}
+    <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-border ps-3 text-xs">
+      <span className="opacity-60">{hebrewMode ? "מיין" : "Sort"}</span>
+      <div className="flex overflow-hidden rounded-full">
+        {options.map((opt) => (
+          <button
+            key={opt.key}
+            onClick={() => onChange(opt.key)}
+            aria-pressed={value === opt.key}
+            aria-label={opt.label}
+            title={opt.label}
+            className="px-2.5 py-1.5 text-base leading-none transition-colors"
+            style={value === opt.key ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+          >
+            {opt.icon}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
