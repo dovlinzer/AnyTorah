@@ -1903,16 +1903,21 @@ Bereshit's Onkelos/Rashi/Ramban). `tsc --noEmit` and `next build` clean; `npm ru
 from 24 to 23 problems (one fewer `set-state-in-effect` instance — the deleted volume-reset
 effect — not a new class of issue).
 
-## Teshuvot work-list ordering — century vs. alphabetical toggle (shipped)
+## Teshuvot work-list ordering — century vs. alphabetical toggle (shipped, moved 2026-09-03)
 
-A small `<select>` (`TeshuvotGroupByToggle`, `Reader.tsx`) sits immediately after the Teshuvot
-pill group (Rishonim/Acharonim/Contemporary) in the header — placed as the *next* flex sibling
-in source order within that dir-flipped row, so it lands to the pill group's right in English
-(LTR "after") and to its left in Hebrew (RTL "after"), per explicit request. Lets the user
-switch the Rishonim/Acharonim work `<select>` between century-grouped (default, `<optgroup>`
-per century) and a single flat alphabetical list — mirrors native's own "Teshuvot Alphabetical
-Order" Settings toggle (see `AnyTorah/CLAUDE.md`'s "Century dividers... Alphabetical Order"
-section), just surfaced inline here rather than in a separate settings screen.
+An icon-only segmented toggle (`TeshuvotGroupByToggle`, `Reader.tsx` — 🔢 century / 🔤
+alphabetical, two `<button>`s in a `VerticalDivider`-style pill, not a `<select>`) lives in the
+siman-selector toolbar, right after the "Browse chapters" ▾ button and right before the
+`isTeshuvot`-only `<VerticalDivider>` that separates that toolbar section from the "Show text
+panel"/commentary buttons. **Originally shipped in the header's Teshuvot pill row** (next to
+Rishonim/Acharonim/Contemporary) as a worded `<select>` — moved here per explicit follow-up
+feedback: sitting beside the category pills made it read as another sefer/tab choice rather than
+a display setting for the selector below it. Icons + a smaller segmented-pill footprint
+(matching the Talmud amud-a/b toggle's shape) reinforce that it's a setting, not a selector.
+Lets the user switch the Rishonim/Acharonim work `<select>` between century-grouped (default,
+`<optgroup>` per century) and a single flat alphabetical list — mirrors native's own "Teshuvot
+Alphabetical Order" Settings toggle (see `AnyTorah/CLAUDE.md`'s "Century dividers... Alphabetical
+Order" section), just surfaced inline here rather than in a separate settings screen.
 
 - `lib/categoryCatalog.ts`'s `getCategoryGroups` gained a third optional param,
   `teshuvotGroupBy: TeshuvotGroupBy = "century"` (`"century" | "alphabetical"`) — irrelevant to
@@ -1932,14 +1937,12 @@ section), just surfaced inline here rather than in a separate settings screen.
   century-grouped), so `getCategoryGroups`'s `"teshuvotContemporary"` case ignores the
   `teshuvotGroupBy` param entirely and always returns one flat group.
 
-Verified live: switching to "A–Z" while on Acharonim re-sorts all 31 works into one flat
-alphabetical `<select>` (Admat Kodesh → Torat Netanel) with no century `<optgroup>`s; switching
-tabs to Rishonim keeps the same alphabetical choice and correctly alphabetizes Rishonim's own
-13-work list instead; switching back to "By Century" restores the original chronological
-grouping exactly on both tabs. Hebrew mode places the toggle to the pill group's left, confirmed
-via screenshot. `tsc`/`lint`/`build` all clean (lint: 22 of 24 problems are the same
-pre-existing accepted `set-state-in-effect`/`refs` pattern; the new `loadTeshuvotGroupBy` effect
-adds one more instance of that same already-accepted class, not a new category).
+Verified live: switching to "Sort alphabetically" while on Rishonim re-sorts the work `<select>`
+into one flat alphabetical list (Maharach Or Zarua → Terumat HaDeshen) with no century
+`<optgroup>`s, and back to "Sort by century" restores the original chronological grouping.
+Confirmed both icon buttons render and sit in the right toolbar position (between the ▾ browse
+button and the text-panel toggle) in both English and Hebrew mode via `read_page`. `tsc`/`lint`/
+`build` all clean (lint: same accepted 24-problem baseline, no new instances).
 
 ## Teshuvot Contemporary — shipped (Sefaria-digitized works only; Iggros Moshe and the YCT halakha pieces deliberately excluded, per explicit user direction)
 

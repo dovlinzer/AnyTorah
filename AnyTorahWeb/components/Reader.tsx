@@ -754,10 +754,12 @@ function ReverseNavToggle({
   );
 }
 
-/** Dropdown choosing whether the Teshuvot work list (Rishonim and Acharonim alike) groups by
- *  century or lists every work in one flat alphabetical run — sits right after the Teshuvot pill
- *  group in the header, per explicit user request. Sized to match the rest of that row's
- *  Hebrew-mode-aware bump, same convention as HebrewModeToggle/ReverseNavToggle above. */
+/** Icon-only segmented toggle choosing whether the Teshuvot work list (Rishonim and Acharonim
+ *  alike) groups by century or lists every work in one flat alphabetical run. Lives in the
+ *  siman-selector toolbar right after the Browse-chapters button, not the header's category-pill
+ *  row — it's a display setting for that selector, not another sefer/tab choice, so it shouldn't
+ *  read like one. Icons (🔢 chronological, 🔤 alphabetical) + small footprint, matching the
+ *  Talmud amud toggle's segmented-pill shape rather than a `<select>`, per explicit request. */
 function TeshuvotGroupByToggle({
   value,
   onChange,
@@ -767,21 +769,26 @@ function TeshuvotGroupByToggle({
   onChange: (v: TeshuvotGroupBy) => void;
   hebrewMode: boolean;
 }) {
+  const options: { key: TeshuvotGroupBy; icon: string; label: string }[] = [
+    { key: "century", icon: "🔢", label: hebrewMode ? "מיין לפי מאה" : "Sort by century" },
+    { key: "alphabetical", icon: "🔤", label: hebrewMode ? "מיין לפי אלפבית" : "Sort alphabetically" },
+  ];
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value as TeshuvotGroupBy)}
-      aria-label={hebrewMode ? "סדר רשימת שו״ת" : "Teshuvot list order"}
-      title={hebrewMode ? "סדר רשימת שו״ת" : "Teshuvot list order"}
-      className={
-        hebrewMode
-          ? "shrink-0 rounded-full border border-border bg-background px-3 py-2 text-base transition-colors hover:border-[var(--accent)]"
-          : "shrink-0 rounded-full border border-border bg-background px-2 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
-      }
-    >
-      <option value="century">{hebrewMode ? "לפי מאה" : "By Century"}</option>
-      <option value="alphabetical">{hebrewMode ? "א-ת" : "A–Z"}</option>
-    </select>
+    <div className="flex shrink-0 overflow-hidden rounded-full border border-border text-xs">
+      {options.map((opt) => (
+        <button
+          key={opt.key}
+          onClick={() => onChange(opt.key)}
+          aria-pressed={value === opt.key}
+          aria-label={opt.label}
+          title={opt.label}
+          className="px-2 py-1 leading-none transition-colors"
+          style={value === opt.key ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+        >
+          {opt.icon}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -2161,7 +2168,6 @@ export default function Reader() {
                 </button>
               </div>
             </div>
-            <TeshuvotGroupByToggle value={teshuvotGroupBy} onChange={setTeshuvotGroupBy} hebrewMode={hebrewMode} />
           </div>
           {/* overflow-x-auto: on a narrow viewport this group (toggles + bookmark + notebook
               buttons) can still be wider than the space left after the tabs above take their
@@ -2299,6 +2305,10 @@ export default function Reader() {
           >
             ▾
           </button>
+
+          {isTeshuvot && (
+            <TeshuvotGroupByToggle value={teshuvotGroupBy} onChange={setTeshuvotGroupBy} hebrewMode={hebrewMode} />
+          )}
 
           {isYerushalmi && (
             <>
