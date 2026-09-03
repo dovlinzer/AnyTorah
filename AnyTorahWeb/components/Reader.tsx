@@ -758,9 +758,9 @@ function ReverseNavToggle({
  *  alike) groups by century or lists every work in one flat alphabetical run. Lives in the
  *  siman-selector toolbar right after the Browse-chapters button, not the header's category-pill
  *  row — it's a display setting for that selector, not another sefer/tab choice, so it shouldn't
- *  read like one. A leading "Sort"/"מיין" word plus icons (📅 chronological, 🔤 alphabetical,
- *  sized up from the first icon-only pass per explicit feedback that they read too cryptic
- *  small) — segmented-pill shape matching the Talmud amud toggle, rather than a `<select>`. */
+ *  read like one. A leading "Sort"/"מיין" word plus icons: 📅 for chronological, and a bare bold
+ *  "A"/"א" (language-matched, not the 🔤 emoji — too small/cryptic at a glance per feedback) for
+ *  alphabetical — segmented-pill shape matching the Talmud amud toggle, rather than a `<select>`. */
 function TeshuvotGroupByToggle({
   value,
   onChange,
@@ -770,9 +770,14 @@ function TeshuvotGroupByToggle({
   onChange: (v: TeshuvotGroupBy) => void;
   hebrewMode: boolean;
 }) {
-  const options: { key: TeshuvotGroupBy; icon: string; label: string }[] = [
+  const options: { key: TeshuvotGroupBy; icon: string; bold?: boolean; label: string }[] = [
     { key: "century", icon: "📅", label: hebrewMode ? "מיין לפי מאה" : "Sort by century" },
-    { key: "alphabetical", icon: "🔤", label: hebrewMode ? "מיין לפי אלפבית" : "Sort alphabetically" },
+    {
+      key: "alphabetical",
+      icon: hebrewMode ? "א" : "A",
+      bold: true,
+      label: hebrewMode ? "מיין לפי אלפבית" : "Sort alphabetically",
+    },
   ];
   return (
     <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-border ps-3 text-xs">
@@ -785,7 +790,7 @@ function TeshuvotGroupByToggle({
             aria-pressed={value === opt.key}
             aria-label={opt.label}
             title={opt.label}
-            className="px-2.5 py-1.5 text-base leading-none transition-colors"
+            className={`px-2.5 py-1.5 leading-none transition-colors ${opt.bold ? "text-lg font-bold" : "text-base"}`}
             style={value === opt.key ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
           >
             {opt.icon}
