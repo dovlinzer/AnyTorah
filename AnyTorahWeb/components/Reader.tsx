@@ -758,7 +758,7 @@ function ReverseNavToggle({
  *  alike) groups by century or lists every work in one flat alphabetical run. Lives in the
  *  siman-selector toolbar right after the Browse-chapters button, not the header's category-pill
  *  row — it's a display setting for that selector, not another sefer/tab choice, so it shouldn't
- *  read like one. A leading "Sort"/"מיין" word plus icons: 📅 for chronological, and a bare bold
+ *  read like one. A leading "Sort"/"מיין" word plus icons: 📅 for chronological, and a bare
  *  "A"/"א" (language-matched, not the 🔤 emoji — too small/cryptic at a glance per feedback) for
  *  alphabetical — segmented-pill shape matching the Talmud amud toggle, rather than a `<select>`. */
 function TeshuvotGroupByToggle({
@@ -770,12 +770,12 @@ function TeshuvotGroupByToggle({
   onChange: (v: TeshuvotGroupBy) => void;
   hebrewMode: boolean;
 }) {
-  const options: { key: TeshuvotGroupBy; icon: string; bold?: boolean; label: string }[] = [
+  const options: { key: TeshuvotGroupBy; icon: string; large?: boolean; label: string }[] = [
     { key: "century", icon: "📅", label: hebrewMode ? "מיין לפי מאה" : "Sort by century" },
     {
       key: "alphabetical",
       icon: hebrewMode ? "א" : "A",
-      bold: true,
+      large: true,
       label: hebrewMode ? "מיין לפי אלפבית" : "Sort alphabetically",
     },
   ];
@@ -790,7 +790,7 @@ function TeshuvotGroupByToggle({
             aria-pressed={value === opt.key}
             aria-label={opt.label}
             title={opt.label}
-            className={`px-2.5 py-1.5 leading-none transition-colors ${opt.bold ? "text-lg font-bold" : "text-base"}`}
+            className={`px-2.5 py-1.5 leading-none transition-colors ${opt.large ? "text-lg" : "text-base"}`}
             style={value === opt.key ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
           >
             {opt.icon}
