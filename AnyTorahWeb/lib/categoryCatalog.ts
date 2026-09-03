@@ -5,7 +5,7 @@ import { TextCatalog } from "./textCatalog";
 import type { ReaderCategory } from "./commentaryPools";
 import { rambamIntroductions } from "./rambamIntroductions";
 import { stripNikud } from "./hebrewUtils";
-import { TESHUVOT_RISHONIM, teshuvotMaxSiman } from "./textModels";
+import { TESHUVOT_RISHONIM, TESHUVOT_ACHARONIM, teshuvotMaxSiman } from "./textModels";
 
 export interface CategoryItem {
   id: number;
@@ -90,24 +90,32 @@ export function getCategoryGroups(category: ReaderCategory, hebrewMode = false):
           })),
         },
       ];
-    case "teshuvot": {
-      // Century-grouped, matching native's work picker — TESHUVOT_RISHONIM is already declared
-      // in chronological order, so consecutive same-century runs group naturally. `count` here
-      // is just Volume 1's ceiling (a reasonable single-volume fallback for generic callers like
-      // bookmarks' name lookup); Reader.tsx computes the real, volume-aware max itself via
-      // teshuvotMaxSiman since a multi-volume work's true ceiling depends on which volume is
-      // selected, not just which work.
-      const groups: CategoryGroup[] = [];
-      for (const work of TESHUVOT_RISHONIM) {
-        const name = displayName(work.displayName, work.hebrewName, hebrewMode);
-        const item = { id: work.id, name, count: teshuvotMaxSiman(work.id, 1) };
-        const last = groups[groups.length - 1];
-        if (last && last.name === work.century) last.items.push(item);
-        else groups.push({ name: work.century, items: [item] });
-      }
-      return groups;
-    }
+    // Century-grouped, matching native's work picker — TESHUVOT_RISHONIM/TESHUVOT_ACHARONIM are
+    // already declared in chronological order, so consecutive same-century runs group naturally.
+    // `count` here is just Volume 1's ceiling (a reasonable single-volume fallback for generic
+    // callers like bookmarks' name lookup); Reader.tsx computes the real, volume-aware max
+    // itself via teshuvotMaxSiman since a multi-volume work's true ceiling depends on which
+    // volume is selected, not just which work.
+    case "teshuvot":
+      return teshuvotCenturyGroups(TESHUVOT_RISHONIM, hebrewMode);
+    case "teshuvotAcharonim":
+      return teshuvotCenturyGroups(TESHUVOT_ACHARONIM, hebrewMode);
   }
+}
+
+function teshuvotCenturyGroups(
+  works: (typeof TESHUVOT_RISHONIM)[number][],
+  hebrewMode: boolean,
+): CategoryGroup[] {
+  const groups: CategoryGroup[] = [];
+  for (const work of works) {
+    const name = displayName(work.displayName, work.hebrewName, hebrewMode);
+    const item = { id: work.id, name, count: teshuvotMaxSiman(work.id, 1) };
+    const last = groups[groups.length - 1];
+    if (last && last.name === work.century) last.items.push(item);
+    else groups.push({ name: work.century, items: [item] });
+  }
+  return groups;
 }
 
 export function getChapterMin(category: ReaderCategory, index: number): number {
@@ -151,7 +159,8 @@ export function getChapterUnitLabel(category: ReaderCategory, hebrewMode = false
       case "talmud": return "דף";
       case "shulchanArukh":
       case "tur":
-      case "teshuvot": return "סימן";
+      case "teshuvot":
+      case "teshuvotAcharonim": return "סימן";
       default: return "פרק";
     }
   }
@@ -159,7 +168,8 @@ export function getChapterUnitLabel(category: ReaderCategory, hebrewMode = false
     case "talmud": return "daf";
     case "shulchanArukh":
     case "tur":
-    case "teshuvot": return "siman";
+    case "teshuvot":
+    case "teshuvotAcharonim": return "siman";
     default: return "ch.";
   }
 }
@@ -192,8 +202,7 @@ export function getCategoryDisplayName(category: ReaderCategory, hebrewMode = fa
     case "rambam": return hebrewMode ? "רמב״ם" : "Rambam";
     case "tur": return hebrewMode ? "טור" : "Tur";
     case "shulchanArukh": return hebrewMode ? "שולחן ערוך" : "Shulchan Arukh";
-    // "Rishonim" only for now — this tab covers just that subcategory (see textModels.ts's
-    // TESHUVOT_RISHONIM doc comment); revisit this label once Acharonim is ported alongside it.
     case "teshuvot": return hebrewMode ? "שו״ת ראשונים" : "Teshuvot Rishonim";
+    case "teshuvotAcharonim": return hebrewMode ? "שו״ת אחרונים" : "Teshuvot Acharonim";
   }
 }

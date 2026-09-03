@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import type { TextSegment, TextDisplayMode } from "@/lib/textModels";
-import { teshuvotWork, teshuvotMaxSiman } from "@/lib/textModels";
 import {
   getCategoryGroups,
   getChapterMin,
@@ -16,10 +15,11 @@ import DisplayModePill from "@/components/DisplayModePill";
 import FontSizeSlider from "@/components/FontSizeSlider";
 import SASimanPicker from "@/components/SASimanPicker";
 
-// Every category is offered here, including Teshuvot itself (one teshuvah can cite another) —
-// this is a second, independent mini-reader, not scoped to whatever the main panel is showing.
+// Teshuvot (Rishonim/Acharonim) is deliberately excluded — this panel sits alongside the
+// Teshuvah reader for looking up sources *other than* Teshuvot (a pasuk, an SA siman, etc.),
+// not for cross-referencing one teshuvah from another.
 const REFERENCE_CATEGORIES: ReaderCategory[] =
-  ["tanakh", "mishnah", "tosefta", "talmud", "yerushalmi", "rambam", "tur", "shulchanArukh", "teshuvot"];
+  ["tanakh", "mishnah", "tosefta", "talmud", "yerushalmi", "rambam", "tur", "shulchanArukh"];
 
 interface ReferenceResponse {
   ref: string;
@@ -32,7 +32,6 @@ export interface ReferenceSelection {
   category: ReaderCategory;
   index: number;
   chapter: number;
-  volume: number;
   halakha: number;
   /** Rambam only — needed for CommentaryPanel's depth-3 fix. */
   segmentCount: number;
@@ -45,8 +44,9 @@ function clamp(n: number, min: number, max: number): number {
 /**
  * A second, self-contained text reader — pulled up in a side panel (see Reader.tsx's
  * refPanelOpen) so a Teshuvah citing a pasuk or a Shulchan Arukh siman can be looked up without
- * losing your place in the main text. Its own category tabs and book/work + volume + chapter
- * pickers (a named siman picker for Shulchan Arukh/Tur, matching the main reader). Text-only —
+ * losing your place in the main text. Its own category tabs (everything except Teshuvot itself —
+ * see REFERENCE_CATEGORIES above) and book/work + chapter pickers (a named siman picker for
+ * Shulchan Arukh/Tur, matching the main reader). Text-only —
  * the Commentators panel for whatever this shows is a separate sibling panel Reader.tsx renders
  * itself (see onSelectionChange below), not nested in here, so it looks and resizes exactly like
  * the main reader's own Text/Commentary pair. No highlights/bookmarks/notebook integration and
@@ -65,7 +65,6 @@ export default function ReferencePanel({
   const [index, setIndex] = useState(0);
   const [chapter, setChapter] = useState(1);
   const [halakha, setHalakha] = useState(1);
-  const [volume, setVolume] = useState(1);
   // Text language defaults to Hebrew-only on every fresh open — matches the app-wide "assume
   // Hebrew" default for any newly-opened panel, independent of the interface language toggle.
   const [displayMode, setDisplayMode] = useState<TextDisplayMode>("source");
@@ -79,9 +78,8 @@ export default function ReferencePanel({
   const { fetchCategory, subcategory } = fetchCategoryFor(category);
   const isYerushalmi = category === "yerushalmi";
   const usesNamedSimanPicker = category === "shulchanArukh" || category === "tur";
-  const currentWork = category === "teshuvot" ? teshuvotWork(index) : null;
   const chapterMin = getChapterMin(category, index);
-  const chapterMax = category === "teshuvot" ? teshuvotMaxSiman(index, volume) : getChapterMax(category, index);
+  const chapterMax = getChapterMax(category, index);
   const chapterUnit = getChapterUnitLabel(category, hebrewMode);
   const useMarkersHtml = category === "shulchanArukh" || category === "tur";
   const useBoldHtml = fetchCategory === "talmud" || fetchCategory === "mishnah";
@@ -91,18 +89,12 @@ export default function ReferencePanel({
     setIndex(0);
   };
 
-  // A category or work change resets chapter/volume/halakha — mirrors the main reader's own
+  // A category or work change resets chapter/halakha — mirrors the main reader's own
   // handleIndexChange, just without the persisted-selection machinery that isn't needed here.
   useEffect(() => {
     setChapter(getChapterMin(category, index));
-    setVolume(1);
     setHalakha(1);
   }, [category, index]);
-
-  // A volume change (Teshuvot only) resets siman, since each volume has its own siman range.
-  useEffect(() => {
-    setChapter(1);
-  }, [volume]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -110,9 +102,8 @@ export default function ReferencePanel({
     setError(null);
     const subcategoryQuery = subcategory ? `&subcategory=${subcategory}` : "";
     const halakhaQuery = subcategory === "yerushalmi" ? `&halakha=${halakha}` : "";
-    const volumeQuery = category === "teshuvot" ? `&volume=${volume}` : "";
     fetch(
-      `/api/chapter?category=${fetchCategory}&index=${index}&chapter=${chapter}${subcategoryQuery}${halakhaQuery}${volumeQuery}`,
+      `/api/chapter?category=${fetchCategory}&index=${index}&chapter=${chapter}${subcategoryQuery}${halakhaQuery}`,
       { signal: controller.signal },
     )
       .then(async (res) => {
@@ -127,15 +118,15 @@ export default function ReferencePanel({
       })
       .finally(() => setLoading(false));
     return () => controller.abort();
-  }, [fetchCategory, index, chapter, subcategory, halakha, volume, category]);
+  }, [fetchCategory, index, chapter, subcategory, halakha, category]);
 
   // Reports the current selection up to Reader.tsx, which owns the sibling Commentators panel
   // (its pool/slots/width/etc.) — this component only knows the selection, not what Reader.tsx
   // does with it.
   useEffect(() => {
-    onSelectionChange({ category, index, chapter, volume, halakha, segmentCount: data?.segments.length ?? 0 });
+    onSelectionChange({ category, index, chapter, halakha, segmentCount: data?.segments.length ?? 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category, index, chapter, volume, halakha, data]);
+  }, [category, index, chapter, halakha, data]);
 
   const hebrewFontPx = fontSizePx(18, fontSizeLevel);
   const englishFontPx = fontSizePx(14, fontSizeLevel);
@@ -179,19 +170,6 @@ export default function ReferencePanel({
             ),
           )}
         </select>
-        {currentWork?.volumeLabel && (
-          <select
-            value={volume}
-            onChange={(e) => setVolume(Number(e.target.value))}
-            className="rounded border border-border bg-background px-2 py-1 text-xs"
-          >
-            {currentWork.volumes.map((v, i) => (
-              <option key={v.label} value={i + 1}>
-                {hebrewMode ? currentWork.volumeLabelHebrew : currentWork.volumeLabel} {hebrewMode ? v.hebrewLabel : v.label}
-              </option>
-            ))}
-          </select>
-        )}
         <span className="text-xs opacity-60">{chapterUnit}</span>
         <input
           type="number"
@@ -226,7 +204,6 @@ export default function ReferencePanel({
         {error && <p className="py-8 text-center text-sm text-red-500">{error}</p>}
         {!loading && !error && data && (
           <>
-            <p className="mb-3 text-xs opacity-50">{data.ref}</p>
             <div className="flex flex-col gap-4">
               {data.segments.map((seg) =>
                 seg.isAmudBMarker ? (

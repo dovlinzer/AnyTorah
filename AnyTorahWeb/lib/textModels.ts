@@ -625,8 +625,332 @@ export const TESHUVOT_RISHONIM: TeshuvotWorkDef[] = [
   },
 ];
 
+// MARK: - Teshuvot Acharonim
+//
+// Ported from AnyTorah/AnyTorah/Models/TextModels.swift's TeshuvotWork — Acharonim subcategory
+// (16th–19th century, 31 works). Global ids continue from Rishonim's 0-12 so teshuvotWork/
+// teshuvotSefariaRef/teshuvotMaxSiman work unchanged regardless of which UI tab (Rishonim vs.
+// Acharonim) is showing — see ALL_TESHUVOT_WORKS below. Ref data verified against live Sefaria
+// content 2026-08-28 (see AnyTorah/CLAUDE.md's "Teshuvot Acharonim" section) — several titles
+// differ from a naive guess (e.g. Maharam miPadua vs. the unrelated Rishon Meir of Rothenburg,
+// Noda BiYehudah's Orach Chaim section spelled without a 'y'). Four sparse works/volumes
+// (Mateh Levi, Bach's Kuntres Acharon, Meshiv Davar's Volumes III-IV, Maharit's Part II Even
+// HaEzer) were dropped entirely on the native side and are correspondingly absent here.
+
+export const TESHUVOT_ACHARONIM: TeshuvotWorkDef[] = [
+  {
+    id: 13, displayName: "Avkat Rokhel", hebrewName: "אבקת רוכל", century: "16th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Avkat Rokhel {siman}", 217),
+  },
+  {
+    id: 14, displayName: "Divrei Rivot", hebrewName: "דברי ריבות", century: "16th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Divrei Rivot {siman}", 430),
+  },
+  {
+    id: 15, displayName: "Radbaz", hebrewName: "רדב״ז", century: "16th Century",
+    volumeLabel: "Volume", volumeLabelHebrew: "חלק",
+    volumes: [588, 842, 1571, 1372, 1700, 2341].map((maxSiman, i) => ({
+      label: `${i + 1}`,
+      hebrewLabel: toHebrewNumeral(i + 1),
+      refTemplate: `Teshuvot HaRadbaz Volume ${i + 1} {siman}`,
+      maxSiman,
+    })),
+  },
+  {
+    id: 16, displayName: "Maharam miPadua", hebrewName: "מהר״ם מפדובה", century: "16th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    // NOT "Teshuvot Maharam" — that title is the unrelated Rishon Meir of Rothenburg.
+    volumes: flatVolume("Responsa Maharam of Padua {siman}", 90),
+  },
+  {
+    id: 17, displayName: "Maharshal", hebrewName: "מהרש״ל", century: "16th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Teshuvot Maharshal {siman}", 101),
+  },
+  {
+    id: 18, displayName: "Maharshdam", hebrewName: "מהרשד״ם", century: "16th Century",
+    volumeLabel: "Section", volumeLabelHebrew: "חלק",
+    volumes: [
+      { label: "OC", hebrewLabel: "או״ח", refTemplate: "Responsa Maharashdam, Orach Chayim {siman}", maxSiman: 37 },
+      { label: "YD", hebrewLabel: "יו״ד", refTemplate: "Responsa Maharashdam, Yoreh Deah {siman}", maxSiman: 255 },
+      { label: "EH", hebrewLabel: "אה״ע", refTemplate: "Responsa Maharashdam, Even HaEzer {siman}", maxSiman: 244 },
+      { label: "CM", hebrewLabel: "חו״מ", refTemplate: "Responsa Maharashdam, Choshen Mishpat {siman}", maxSiman: 385 },
+    ],
+  },
+  {
+    id: 19, displayName: "Rema", hebrewName: "רמ״א", century: "16th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Responsa of Rema {siman}", 133),
+  },
+  {
+    id: 20, displayName: "Bach", hebrewName: "ב״ח", century: "17th Century",
+    volumeLabel: "Part", volumeLabelHebrew: "חלק",
+    // Third Sefaria part, "Kuntres Acharon", dropped — sparse content, see doc comment above.
+    volumes: [
+      { label: "HaYeshanot", hebrewLabel: "הישנות", refTemplate: "Teshuvot Bayit Chadash, HaYeshanot {siman}", maxSiman: 158 },
+      { label: "HaChadashot", hebrewLabel: "החדשות", refTemplate: "Teshuvot Bayit Chadash, HaChadashot {siman}", maxSiman: 96 },
+    ],
+  },
+  {
+    id: 21, displayName: "Be'er Sheva", hebrewName: "באר שבע", century: "17th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Be'er Sheva {siman}", 75),
+  },
+  {
+    id: 22, displayName: "Chakham Tzvi", hebrewName: "חכם צבי", century: "17th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Chakham Tzvi {siman}", 169),
+  },
+  {
+    id: 23, displayName: "Halakhot Ketanot", hebrewName: "הלכות קטנות", century: "17th Century",
+    volumeLabel: "Part", volumeLabelHebrew: "חלק",
+    volumes: [
+      { label: "I", hebrewLabel: "א", refTemplate: "Halakhot Ketanot, Part I {siman}", maxSiman: 295 },
+      { label: "II", hebrewLabel: "ב", refTemplate: "Halakhot Ketanot, Part II {siman}", maxSiman: 318 },
+    ],
+  },
+  {
+    id: 24, displayName: "Havot Yair", hebrewName: "חוות יאיר", century: "17th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Havot Yair {siman}", 238),
+  },
+  {
+    id: 25, displayName: "Maharit", hebrewName: "מהרי״ט", century: "17th Century",
+    volumeLabel: "Part", volumeLabelHebrew: "חלק",
+    // Part II's Even HaEzer sub-section dropped — sparse content, see doc comment above.
+    volumes: [
+      { label: "I", hebrewLabel: "א", refTemplate: "Teshuvot Maharit, I {siman}", maxSiman: 152 },
+      { label: "II, OC", hebrewLabel: "ב, או״ח", refTemplate: "Teshuvot Maharit, II, Orach Chayim {siman}", maxSiman: 8 },
+      { label: "II, YD", hebrewLabel: "ב, יו״ד", refTemplate: "Teshuvot Maharit, II, Yoreh Deah {siman}", maxSiman: 55 },
+      { label: "II, CM", hebrewLabel: "ב, חו״מ", refTemplate: "Teshuvot Maharit, II, Choshen Mishpat {siman}", maxSiman: 125 },
+    ],
+  },
+  {
+    id: 26, displayName: "Admat Kodesh", hebrewName: "אדמת קודש", century: "18th Century",
+    volumeLabel: "Section", volumeLabelHebrew: "חלק",
+    volumes: [
+      { label: "OC", hebrewLabel: "או״ח", refTemplate: "Admat Kodesh, Orach Chayim {siman}", maxSiman: 15 },
+      { label: "YD", hebrewLabel: "יו״ד", refTemplate: "Admat Kodesh, Yoreh Deah {siman}", maxSiman: 23 },
+      { label: "EH", hebrewLabel: "אה״ע", refTemplate: "Admat Kodesh, Even HaEzer {siman}", maxSiman: 54 },
+      { label: "CM", hebrewLabel: "חו״מ", refTemplate: "Admat Kodesh, Choshen Mishpat {siman}", maxSiman: 76 },
+    ],
+  },
+  {
+    id: 27, displayName: "Noda BiYehudah", hebrewName: "נודע ביהודה", century: "18th Century",
+    volumeLabel: "Volume", volumeLabelHebrew: "חלק",
+    // User-requested display labels "Kamma"/"Tinyana" — Sefaria's own titles are the bare
+    // "Noda BiYehudah I"/"II"; that real title still drives the ref. "Orach Chaim" (no 'y') is
+    // Sefaria's own indexed section title specifically for this work — see doc comment above.
+    volumes: (
+      [["Kamma", "קמא", "Noda BiYehudah I"], ["Tinyana", "תניינא", "Noda BiYehudah II"]] as const
+    ).flatMap(([disp, dispHe, title], vi) =>
+      (
+        [
+          ["OC", "או״ח", "Orach Chaim", [42, 141]],
+          ["YD", "יו״ד", "Yoreh Deah", [100, 215]],
+          ["EH", "אה״ע", "Even HaEzer", [95, 161]],
+          ["CM", "חו״מ", "Choshen Mishpat", [39, 62]],
+        ] as const
+      ).map(([sDisp, sDispHe, sName, counts]) => ({
+        label: `${disp}, ${sDisp}`,
+        hebrewLabel: `${dispHe}, ${sDispHe}`,
+        refTemplate: `${title}, ${sName} {siman}`,
+        maxSiman: counts[vi],
+      })),
+    ),
+  },
+  {
+    id: 28, displayName: "Rabbi Akiva Eiger", hebrewName: "רבי עקיבא איגר", century: "18th Century",
+    volumeLabel: "Volume", volumeLabelHebrew: "חלק",
+    volumes: [
+      { label: "Kamma", hebrewLabel: "קמא", refTemplate: "Teshuvot Rabbi Akiva Eiger {siman}", maxSiman: 222 },
+      { label: "Tinyana", hebrewLabel: "תניינא", refTemplate: "Teshuvot Rabbi Akiva Eiger Tinyana {siman}", maxSiman: 153 },
+      { label: "Chadashot", hebrewLabel: "חדשות", refTemplate: "Teshuvot Rabbi Akiva Eiger HaChadashot {siman}", maxSiman: 95 },
+    ],
+  },
+  {
+    id: 29, displayName: "Sheilat Yaavetz", hebrewName: "שאילת יעב״ץ", century: "18th Century",
+    volumeLabel: "Volume", volumeLabelHebrew: "חלק",
+    volumes: [
+      { label: "I", hebrewLabel: "א", refTemplate: "Sheilat Yaavetz, Volume I {siman}", maxSiman: 172 },
+      { label: "II", hebrewLabel: "ב", refTemplate: "Sheilat Yaavetz, Volume II {siman}", maxSiman: 200 },
+    ],
+  },
+  {
+    id: 30, displayName: "Torat Netanel", hebrewName: "תורת נתנאל", century: "18th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Torat Netanel {siman}", 39),
+  },
+  {
+    id: 31, displayName: "Be'er Yitzchak", hebrewName: "באר יצחק", century: "19th Century",
+    volumeLabel: "Section", volumeLabelHebrew: "חלק",
+    volumes: [
+      { label: "OC", hebrewLabel: "או״ח", refTemplate: "Be'er Yitzchak, Orach Chayim {siman}", maxSiman: 30 },
+      { label: "YD", hebrewLabel: "יו״ד", refTemplate: "Be'er Yitzchak, Yoreh Deah {siman}", maxSiman: 32 },
+      { label: "EH", hebrewLabel: "אה״ע", refTemplate: "Be'er Yitzchak, Even HaEzer {siman}", maxSiman: 18 },
+      { label: "CM", hebrewLabel: "חו״מ", refTemplate: "Be'er Yitzchak, Choshen Mishpat {siman}", maxSiman: 6 },
+    ],
+  },
+  {
+    id: 32, displayName: "Binyan Olam", hebrewName: "בנין עולם", century: "19th Century",
+    volumeLabel: "Section", volumeLabelHebrew: "חלק",
+    volumes: [
+      { label: "OC", hebrewLabel: "או״ח", refTemplate: "Binyan Olam, Orach Chayim {siman}", maxSiman: 36 },
+      { label: "YD", hebrewLabel: "יו״ד", refTemplate: "Binyan Olam, Yoreh Deah {siman}", maxSiman: 66 },
+    ],
+  },
+  {
+    id: 33, displayName: "Binyan Tziyon", hebrewName: "בנין ציון", century: "19th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Binyan Tziyon {siman}", 182),
+  },
+  {
+    id: 34, displayName: "Chatam Sofer", hebrewName: "חתם סופר", century: "19th Century",
+    volumeLabel: "Section", volumeLabelHebrew: "חלק",
+    volumes: [
+      { label: "OC", hebrewLabel: "או״ח", refTemplate: "Responsa Chatam Sofer, Orach Chayim {siman}", maxSiman: 208 },
+      { label: "YD", hebrewLabel: "יו״ד", refTemplate: "Responsa Chatam Sofer, Yoreh Deah {siman}", maxSiman: 356 },
+      { label: "EH I", hebrewLabel: "אה״ע א", refTemplate: "Responsa Chatam Sofer, Even HaEzer 1:{siman}", maxSiman: 152 },
+      { label: "EH II", hebrewLabel: "אה״ע ב", refTemplate: "Responsa Chatam Sofer, Even HaEzer 2:{siman}", maxSiman: 175 },
+      { label: "CM", hebrewLabel: "חו״מ", refTemplate: "Responsa Chatam Sofer, Choshen Mishpat {siman}", maxSiman: 207 },
+      { label: "Collected", hebrewLabel: "קובץ תשובות", refTemplate: "Responsa Chatam Sofer, Collected Responsa {siman}", maxSiman: 104 },
+    ],
+  },
+  {
+    id: 35, displayName: "Chidushei HaRim", hebrewName: "חידושי הרי״ם", century: "19th Century",
+    volumeLabel: "Section", volumeLabelHebrew: "חלק",
+    volumes: [
+      { label: "OC", hebrewLabel: "או״ח", refTemplate: "Chiddushei HaRim Responsa, Orach Chayim {siman}", maxSiman: 7 },
+      { label: "YD", hebrewLabel: "יו״ד", refTemplate: "Chiddushei HaRim Responsa, Yoreh Deah {siman}", maxSiman: 20 },
+      { label: "EH", hebrewLabel: "אה״ע", refTemplate: "Chiddushei HaRim Responsa, Even HaEzer {siman}", maxSiman: 43 },
+      { label: "CM", hebrewLabel: "חו״מ", refTemplate: "Chiddushei HaRim Responsa, Choshen Mishpat {siman}", maxSiman: 7 },
+    ],
+  },
+  {
+    id: 36, displayName: "HaElef Lekha Shlomo", hebrewName: "האלף לך שלמה", century: "19th Century",
+    volumeLabel: "Section", volumeLabelHebrew: "חלק",
+    volumes: [
+      { label: "OC", hebrewLabel: "או״ח", refTemplate: "HaElef Lekha Shlomo, Orach Chayim {siman}", maxSiman: 400 },
+      { label: "YD", hebrewLabel: "יו״ד", refTemplate: "HaElef Lekha Shlomo, Yoreh Deah {siman}", maxSiman: 342 },
+      { label: "EH", hebrewLabel: "אה״ע", refTemplate: "HaElef Lekha Shlomo, Even HaEzer {siman}", maxSiman: 226 },
+      { label: "CM", hebrewLabel: "חו״מ", refTemplate: "HaElef Lekha Shlomo, Choshen Mishpat {siman}", maxSiman: 23 },
+    ],
+  },
+  {
+    id: 37, displayName: "Kerakh shel Romi", hebrewName: "כרך של רומי", century: "19th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    volumes: flatVolume("Kerakh shel Romi {siman}", 26),
+  },
+  {
+    id: 38, displayName: "Maharsham", hebrewName: "מהרש״ם", century: "19th Century",
+    volumeLabel: "Volume", volumeLabelHebrew: "חלק",
+    volumes: ["I", "II", "III"].map((numeral, i) => ({
+      label: numeral,
+      hebrewLabel: toHebrewNumeral(i + 1),
+      refTemplate: `Teshuvot Maharsham Volume ${numeral} {siman}`,
+      maxSiman: [230, 270, 378][i],
+    })),
+  },
+  {
+    id: 39, displayName: "Meshiv Davar", hebrewName: "משיב דבר", century: "19th Century",
+    volumeLabel: "Volume", volumeLabelHebrew: "חלק",
+    // Volumes III and IV dropped — empty on Sefaria, see doc comment above.
+    volumes: ["I", "II"].map((numeral, i) => ({
+      label: numeral,
+      hebrewLabel: toHebrewNumeral(i + 1),
+      refTemplate: `Teshuvot Meshiv Davar, Volume ${numeral} {siman}`,
+      maxSiman: [47, 108][i],
+    })),
+  },
+  {
+    id: 40, displayName: "Melammed Lehoil", hebrewName: "מלמד להועיל", century: "19th Century",
+    volumeLabel: "Part", volumeLabelHebrew: "חלק",
+    volumes: ["I", "II", "III"].map((numeral, i) => ({
+      label: numeral,
+      hebrewLabel: toHebrewNumeral(i + 1),
+      refTemplate: `Melammed Lehoil Part ${numeral} {siman}`,
+      maxSiman: [122, 148, 103][i],
+    })),
+  },
+  {
+    id: 41, displayName: "Rav Pealim", hebrewName: "רב פעלים", century: "19th Century",
+    volumeLabel: "Volume", volumeLabelHebrew: "חלק",
+    // 4 volumes × Tur order + a kabbalistic "Sod Yesharim" section, flattened — Volume I has no
+    // Choshen Mishpat on Sefaria, so that combo is simply omitted below.
+    volumes: (() => {
+      const volumeNames = ["I", "II", "III", "IV"];
+      const volumeNamesHe = ["א", "ב", "ג", "ד"];
+      const sections = [
+        { disp: "OC", dispHe: "או״ח", name: "Orach Chayim" },
+        { disp: "YD", dispHe: "יו״ד", name: "Yoreh Deah" },
+        { disp: "EH", dispHe: "אה״ע", name: "Even HaEzer" },
+        { disp: "CM", dispHe: "חו״מ", name: "Choshen Mishpat" },
+        { disp: "Sod Yesharim", dispHe: "סוד ישרים", name: "Sod Yesharim" },
+      ];
+      const counts: Record<string, number> = {
+        "I-OC": 35, "I-YD": 57, "I-EH": 13, "I-Sod Yesharim": 17,
+        "II-OC": 65, "II-YD": 41, "II-EH": 34, "II-CM": 15, "II-Sod Yesharim": 14,
+        "III-OC": 45, "III-YD": 32, "III-EH": 12, "III-CM": 8, "III-Sod Yesharim": 13,
+        "IV-OC": 43, "IV-YD": 39, "IV-EH": 13, "IV-CM": 8, "IV-Sod Yesharim": 20,
+      };
+      const vols: TeshuvotVolume[] = [];
+      volumeNames.forEach((vName, vi) => {
+        for (const s of sections) {
+          const maxSiman = counts[`${vName}-${s.disp}`];
+          if (maxSiman === undefined) continue;
+          vols.push({
+            label: `${vName}, ${s.disp}`,
+            hebrewLabel: `${volumeNamesHe[vi]}, ${s.dispHe}`,
+            refTemplate: `Responsa Rav Pealim, Volume ${vName}, ${s.name} {siman}`,
+            maxSiman,
+          });
+        }
+      });
+      return vols;
+    })(),
+  },
+  {
+    id: 42, displayName: "Shoel uMeshiv", hebrewName: "שואל ומשיב", century: "19th Century",
+    volumeLabel: "Mahadura", volumeLabelHebrew: "מהדורא",
+    // 6 Mahadura (printed-edition) volumes; I-IV are further subdivided into 3-4 sub-volumes
+    // each on Sefaria — flattened here into one combined-label list.
+    volumes: (() => {
+      const subCounts = [[313, 194, 223], [97, 86, 137, 190], [473, 203, 165], [61, 226, 153]];
+      const mahaduraNumerals = ["I", "II", "III", "IV"];
+      const mahaduraHe = ["א", "ב", "ג", "ד"];
+      const vols: TeshuvotVolume[] = [];
+      for (let m = 0; m < 4; m++) {
+        subCounts[m].forEach((maxSiman, si) => {
+          const sub = si + 1;
+          vols.push({
+            label: `${mahaduraNumerals[m]}.${sub}`,
+            hebrewLabel: `${mahaduraHe[m]}.${sub}`,
+            refTemplate: `Shoel uMeshiv Mahadura ${mahaduraNumerals[m]} ${sub}:{siman}`,
+            maxSiman,
+          });
+        });
+      }
+      vols.push({ label: "V", hebrewLabel: "ה", refTemplate: "Shoel uMeshiv Mahadura V {siman}", maxSiman: 92 });
+      vols.push({ label: "VI", hebrewLabel: "ו", refTemplate: "Shoel uMeshiv Mahadura VI {siman}", maxSiman: 63 });
+      return vols;
+    })(),
+  },
+  {
+    id: 43, displayName: "Teshuva MeAhava", hebrewName: "תשובה מאהבה", century: "19th Century",
+    volumeLabel: null, volumeLabelHebrew: null,
+    // Only Part I exists on Sefaria — Parts II/III were never digitized.
+    volumes: flatVolume("Teshuva MeAhava Part I {siman}", 211),
+  },
+];
+
+// Combined lookup so teshuvotWork/teshuvotSefariaRef/teshuvotMaxSiman work by global id
+// regardless of which UI tab (Rishonim vs. Acharonim) is currently showing.
+const ALL_TESHUVOT_WORKS: TeshuvotWorkDef[] = [...TESHUVOT_RISHONIM, ...TESHUVOT_ACHARONIM];
+
 export function teshuvotWork(id: number): TeshuvotWorkDef {
-  return TESHUVOT_RISHONIM.find((w) => w.id === id) ?? TESHUVOT_RISHONIM[0];
+  return ALL_TESHUVOT_WORKS.find((w) => w.id === id) ?? ALL_TESHUVOT_WORKS[0];
 }
 
 function teshuvotVolumeAt(work: TeshuvotWorkDef, volume: number): TeshuvotVolume {

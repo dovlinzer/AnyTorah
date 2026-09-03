@@ -910,6 +910,7 @@ const INITIAL_SELECTION: Selection = {
   tur: { index: 0, chapter: 1 },
   shulchanArukh: { index: 0, chapter: 1 },
   teshuvot: { index: 0, chapter: 1, volume: 1 },
+  teshuvotAcharonim: { index: 13, chapter: 1, volume: 1 },
 };
 
 // Reads a position (category/index/chapter/halakha/amud) encoded in the URL's query string by
@@ -1078,6 +1079,12 @@ export default function Reader() {
   const mainSegmentGap = 16 * fontSizeSpacingScale(mainFontSizeLevel);
   const mainLineGap = 6 * fontSizeSpacingScale(mainFontSizeLevel);
 
+  // Rishonim and Acharonim are two peer tabs over the same underlying TeshuvotWorkDef lookup
+  // (see textModels.ts's ALL_TESHUVOT_WORKS) — most of the reader's Teshuvot-specific branching
+  // applies identically to both, so this single flag replaces what would otherwise be a dozen
+  // scattered `category === "teshuvot"` checks that Acharonim would silently fall through.
+  const isTeshuvot = category === "teshuvot" || category === "teshuvotAcharonim";
+
   const { index, chapter, halakha, volume } = selection[category];
   const groups = useMemo(() => getCategoryGroups(category, hebrewMode), [category, hebrewMode]);
   const chapterMin = getChapterMin(category, index);
@@ -1085,9 +1092,9 @@ export default function Reader() {
   // getChapterMax (shared across every category) has no volume dimension, so this overrides it
   // for just this one category rather than widening that generic function's signature.
   const volumeValue = volume ?? 1;
-  const chapterMax = category === "teshuvot" ? teshuvotMaxSiman(index, volumeValue) : getChapterMax(category, index);
+  const chapterMax = isTeshuvot ? teshuvotMaxSiman(index, volumeValue) : getChapterMax(category, index);
   const chapterUnit = getChapterUnitLabel(category, hebrewMode);
-  const currentTeshuvotWork = category === "teshuvot" ? teshuvotWork(index) : null;
+  const currentTeshuvotWork = isTeshuvot ? teshuvotWork(index) : null;
 
   // Scanned daf image — shown as its own column alongside the digital text (Talmud only).
   const [talmudPages, setTalmudPages] = useState<TalmudPages | null>(null);
@@ -1178,7 +1185,7 @@ export default function Reader() {
   // Reader.tsx uses this to drive the sibling Commentators panel (its pool/slots/etc.), since
   // that panel is a true sibling in the layout, not nested inside ReferencePanel itself.
   const [refSelection, setRefSelection] = useState<ReferenceSelection>({
-    category: "tanakh", index: 0, chapter: 1, volume: 1, halakha: 1, segmentCount: 0,
+    category: "tanakh", index: 0, chapter: 1, halakha: 1, segmentCount: 0,
   });
   const refPoolInfo = useMemo(
     () => getPoolInfo(refSelection.category, refSelection.index),
@@ -1249,7 +1256,7 @@ export default function Reader() {
         index: id,
         chapter: getChapterMin(category, id),
         halakha: category === "yerushalmi" ? 1 : undefined,
-        volume: category === "teshuvot" ? 1 : undefined,
+        volume: isTeshuvot ? 1 : undefined,
       },
     }));
   };
@@ -1262,11 +1269,12 @@ export default function Reader() {
     },
     [category],
   );
-  // Teshuvot only — changing volume/part/klal resets siman to 1, since each volume has its own
-  // siman range (mirrors handleIndexChange's chapter reset on a work change).
+  // Teshuvot (Rishonim or Acharonim) only — changing volume/part/klal resets siman to 1, since
+  // each volume has its own siman range (mirrors handleIndexChange's chapter reset on a work
+  // change). Keyed off `category` rather than the literal "teshuvot" so it works from either tab.
   const handleTeshuvotVolumeChange = useCallback((v: number) => {
-    setSelection((s) => ({ ...s, teshuvot: { ...s.teshuvot, volume: v, chapter: 1 } }));
-  }, []);
+    setSelection((s) => ({ ...s, [category]: { ...s[category], volume: v, chapter: 1 } }));
+  }, [category]);
   const handleYerushalmiHalakhaChange = useCallback((h: number) => {
     setSelection((s) => ({ ...s, yerushalmi: { ...s.yerushalmi, halakha: h } }));
   }, []);
@@ -1305,7 +1313,7 @@ export default function Reader() {
   const subcategoryQuery = subcategory ? `&subcategory=${subcategory}` : "";
   const halakhaQuery = subcategory === "yerushalmi" ? `&halakha=${halakhaValue}` : "";
   const saTextModeQuery = category === "shulchanArukh" && saTextMode === "nikud" ? "&saTextMode=nikud" : "";
-  const volumeQuery = category === "teshuvot" ? `&volume=${volumeValue}` : "";
+  const volumeQuery = isTeshuvot ? `&volume=${volumeValue}` : "";
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2043,8 +2051,8 @@ export default function Reader() {
             </div>
             {/* Teshuvot gets its own labeled group, separate from the main category capsule — it's
                 conceptually a sibling tier (Rishonim/Acharonim/Contemporary), not just another book
-                category. Only Rishonim is wired up so far; the other two render disabled, matching
-                native's own "future era, not built yet" placeholder pattern for this exact feature. */}
+                category. Rishonim and Acharonim are both wired up now; Contemporary still renders
+                disabled, matching native's own "future era, not built yet" placeholder pattern. */}
             <VerticalDivider />
             <div className="flex shrink-0 items-center gap-2">
               <span className="text-sm font-semibold">{hebrewMode ? "שו״ת" : "Teshuvot"}</span>
@@ -2056,7 +2064,11 @@ export default function Reader() {
                 >
                   {hebrewMode ? "ראשונים" : "Rishonim"}
                 </button>
-                <button disabled title="Coming soon" className={`${tabButtonClass} cursor-not-allowed opacity-40`}>
+                <button
+                  onClick={() => setCategory("teshuvotAcharonim")}
+                  className={tabButtonClass}
+                  style={category === "teshuvotAcharonim" ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+                >
                   {hebrewMode ? "אחרונים" : "Acharonim"}
                 </button>
                 <button disabled title="Coming soon" className={`${tabButtonClass} cursor-not-allowed opacity-40`}>
@@ -2273,8 +2285,8 @@ export default function Reader() {
           </div>
         )}
 
-        {category === "teshuvot" && <VerticalDivider />}
-        {category === "teshuvot" && (
+        {isTeshuvot && <VerticalDivider />}
+        {isTeshuvot && (
           <div dir={hebrewMode ? "rtl" : "ltr"} className="flex shrink-0 items-center gap-3">
             <button
               onClick={toggleRefPanelOpen}
@@ -2553,7 +2565,7 @@ export default function Reader() {
             the right of the teshuvah, same side as the main reader's own commentary panel, and
             the Commentators panel (for whatever the Text panel is currently showing) sits to
             the right of that in turn. */}
-        {category === "teshuvot" && refPanelOpen && (
+        {isTeshuvot && refPanelOpen && (
           <>
             {/* Text sits to the left of this handle, so dragging right shrinks the panel. */}
             <ResizeHandle onDrag={(delta) => adjustRefPanelWidth(delta)} />
@@ -2566,7 +2578,7 @@ export default function Reader() {
           </>
         )}
 
-        {category === "teshuvot" && refPanelOpen && refCommentaryOpen && refCommentaryAvailable && (
+        {isTeshuvot && refPanelOpen && refCommentaryOpen && refCommentaryAvailable && (
           <>
             {/* The Text panel sits to the left of this handle, so dragging right shrinks the
                 Commentators panel. */}
@@ -2609,10 +2621,10 @@ export default function Reader() {
           </>
         )}
 
-        {/* Teshuvot has no commentary at all, matching native — the panel and its resize handle
-            are omitted entirely rather than shown empty; the text panel's own flex-1 (see
-            `showDaf ? "flex-none" : "flex-1"` above) fills the space automatically. */}
-        {category !== "teshuvot" && (
+        {/* Teshuvot (Rishonim or Acharonim) has no commentary at all, matching native — the panel
+            and its resize handle are omitted entirely rather than shown empty; the text panel's
+            own flex-1 (see `showDaf ? "flex-none" : "flex-1"` above) fills the space automatically. */}
+        {!isTeshuvot && (
           <>
             {/* Commentary sits to the right of this handle, so dragging right shrinks it. */}
             <ResizeHandle onDrag={(delta) => adjustCommentaryWidth(delta)} />

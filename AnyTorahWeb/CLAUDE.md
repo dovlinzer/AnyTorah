@@ -1510,7 +1510,7 @@ with no way to get a closer look at a specific section. Implementation notes:
   explicit "Full size" link below the zoom controls — keeping the click-to-navigate behavior on
   the image itself would have fought with click-and-drag-to-pan.
 
-## Teshuvot Rishonim — shipped (Acharonim/Contemporary not yet ported)
+## Teshuvot Rishonim — shipped (Acharonim shipped separately below; Contemporary not yet ported)
 
 Ported from native's Teshuvot feature (see `AnyTorah/CLAUDE.md`'s "Teshuvot" section for the
 full native history/design rationale) — Rishonim subcategory only, as the first of a staged
@@ -1577,11 +1577,12 @@ bare-ref truncation to work around. `textCategoryMeta` (a dead, pre-`getPoolInfo
 runtime) still got a `teshuvot` entry purely because it's a `Record<TextCategory, ...>` and
 TypeScript requires every key.
 
-**Not ported / known gaps, left for a later pass**: Acharonim (31 more works) and Contemporary
-(Nishmat HaBayit's bespoke titled picker, Iggros Moshe's page-image reader, podcast citations,
-YCT related-articles) — see `AnyTorah/CLAUDE.md`'s Teshuvot section for what those need.
-Bookmarks/Highlights/Notebook all fall through to the generic `getItemName`/`getChapterUnitLabel`
-path for this category, which doesn't know about the volume dimension — a bookmark on a
+**Not ported / known gaps, left for a later pass**: Contemporary (Nishmat HaBayit's bespoke
+titled picker, Iggros Moshe's page-image reader, podcast citations, YCT related-articles) — see
+`AnyTorah/CLAUDE.md`'s Teshuvot section for what those need. (Acharonim itself has since shipped
+— see "Teshuvot Acharonim — shipped" further below.) Bookmarks/Highlights/Notebook all fall
+through to the generic `getItemName`/`getChapterUnitLabel` path for this category (and for
+`teshuvotAcharonim`), which doesn't know about the volume dimension — a bookmark on a
 multi-volume work (Rashba, Rosh, Terumat HaDeshen, Sefer HaTashbetz) restores to volume 1
 regardless of which volume was actually open, and its display label omits the Part/Klal/Chelek
 number entirely. Century group headers and the century-divider/Alphabetical-Order native
@@ -1847,3 +1848,56 @@ Hebrew-interface-mode paragraph numbers confirmed right-aligned via direct DOM m
 the SA siman picker opens, lists real topic-grouped siman titles, and jumps correctly on
 selection. `tsc --noEmit`, `next build`, and `npm run lint` (24 problems, unchanged baseline) all
 clean.
+
+## Teshuvot Acharonim — shipped, plus two reference-panel cleanups
+
+Ported from native's Acharonim subcategory (see `AnyTorah/CLAUDE.md`'s "Teshuvot Acharonim"
+section) — 31 works, 16th–19th century, straight line-by-line port of native's `TeshuvotWork`
+Acharonim cases including all the same sparse-content drops (Mateh Levi, Bach's Kuntres Acharon,
+Meshiv Davar's Volumes III–IV, Maharit's Part II Even HaEzer) and title corrections (Maharam
+miPadua vs. the unrelated Rishon Meir of Rothenburg, Noda BiYehudah's "Orach Chaim" — no 'y' —
+section spelling).
+
+**`teshuvotAcharonim` is a new peer `ReaderCategory`, exactly mirroring the existing Tosefta/
+Yerushalmi pattern** — `lib/commentaryPools.ts`'s `fetchCategoryFor` maps it to
+`{fetchCategory: "teshuvot"}` with no subcategory flag (unlike Tosefta/Yerushalmi, the API route
+doesn't need to know which UI tab an id came from — see below), so `/api/chapter/route.ts`
+needed zero changes. `TESHUVOT_ACHARONIM: TeshuvotWorkDef[]` (`lib/textModels.ts`) uses global
+ids **13–43**, continuing right after Rishonim's 0–12, combined into one lookup array
+(`ALL_TESHUVOT_WORKS = [...TESHUVOT_RISHONIM, ...TESHUVOT_ACHARONIM]`) that `teshuvotWork`/
+`teshuvotSefariaRef`/`teshuvotMaxSiman` all search — these three functions work identically
+regardless of which UI tab the id came from, so nothing about the actual Sefaria-fetch mechanism
+needed to know "which tab" at all. `getPoolInfo`/`getCategoryGroups`/`getChapterUnitLabel`/
+`getCategoryDisplayName` each gained a `"teshuvotAcharonim"` case — the group/century logic was
+factored into a shared `teshuvotCenturyGroups(works, hebrewMode)` helper (`categoryCatalog.ts`)
+rather than duplicating the century-run-grouping loop a second time.
+
+**`Reader.tsx` gained an `isTeshuvot` flag** (`category === "teshuvot" || category ===
+"teshuvotAcharonim"`) replacing every scattered `category === "teshuvot"` check that would
+otherwise have silently excluded Acharonim — `chapterMax`/`currentTeshuvotWork` computation, the
+toolbar's Text-panel/Commentators-toggle cluster gate, the Text/Commentators panel render gates,
+and the `!isTeshuvot` gate that hides the main `CommentaryPanel` (Teshuvot has no commentary of
+its own, matching native, regardless of subcategory). `handleTeshuvotVolumeChange` was
+generalized from a hardcoded `s.teshuvot` write to `s[category]`, since it now fires from either
+tab. The previously-disabled "Acharonim" placeholder pill in the Teshuvot tab group is now a real
+button (`setCategory("teshuvotAcharonim")`); "Contemporary" is still the disabled placeholder.
+
+**Two small cleanups requested alongside the Acharonim port, both in `ReferencePanel.tsx`:**
+- The text panel's content area no longer shows a `data.ref` caption line above the segments
+  (e.g. "Teshuvot HaRadbaz Volume 3 100") — it duplicated the book/work name already visible in
+  the panel's own selector directly above, in English regardless of interface language.
+- `REFERENCE_CATEGORIES` no longer includes `"teshuvot"` — this panel sits *alongside* the
+  Teshuvah reader specifically for looking up sources **other than** Teshuvot (a pasuk, an SA
+  siman), not for a teshuvah citing another teshuvah (the original, now-reversed rationale for
+  including it). Removing it made the whole volume-picker code path in this component dead (only
+  Teshuvot works have a `volumeLabel`), so it was deleted along with `ReferenceSelection`'s
+  `volume` field, `currentWork`, and the volume-reset effect, rather than left unreachable.
+
+Verified live: Acharonim tab loads Avkat Rokhel siman 1 (flat, real Hebrew content, no
+commentary panel) by default; Noda BiYehudah's "Volume Kamma, OC" volume picker entry fetches
+real content, confirming the native "Orach Chaim" (no 'y') fix carried over correctly; the text
+panel opens with no ref caption and its own category `<select>` no longer lists Teshuvot; the
+Commentators panel still opens correctly for a non-Teshuvot text-panel selection (Tanakh/
+Bereshit's Onkelos/Rashi/Ramban). `tsc --noEmit` and `next build` clean; `npm run lint` dropped
+from 24 to 23 problems (one fewer `set-state-in-effect` instance — the deleted volume-reset
+effect — not a new class of issue).
