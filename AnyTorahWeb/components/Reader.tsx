@@ -6,7 +6,6 @@ import type { CommentaryType } from "@/lib/commentaryTypes";
 import { getPoolInfo, computeEffectiveSlots, fetchCategoryFor, type ReaderCategory } from "@/lib/commentaryPools";
 import {
   getCategoryGroups,
-  getCategoryItemName,
   getChapterMin,
   getChapterMax,
   getChapterUnitLabel,
@@ -38,7 +37,7 @@ import {
   type Bookmark,
 } from "@/lib/bookmarks";
 import type { YomiToday, YomiResult } from "@/lib/yomiService";
-import { toHebrewNumeral, teshuvotWork, teshuvotMaxSiman, NISHMAT_HABAYIT_WORK_ID } from "@/lib/textModels";
+import { teshuvotWork, teshuvotMaxSiman, NISHMAT_HABAYIT_WORK_ID } from "@/lib/textModels";
 import NishmatHaBayitSimanPicker from "@/components/NishmatHaBayitSimanPicker";
 import { saveHighlights, loadAndReconcileHighlights, findHighlight, type Highlight } from "@/lib/highlights";
 import { anchorKey, stripAnchorHTML, buildSegmentLabel, type TextAnchor } from "@/lib/textAnchor";
@@ -66,13 +65,6 @@ const READER_CATEGORIES: ReaderCategory[] =
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(Math.max(n, min), max);
-}
-
-/** Looks up a catalog item's display name (English, or nikkud-stripped Hebrew) by id — used for
- *  the Daf Yomi button, which needs a tractate name outside the currently-selected category's
- *  own `groups`/`index` state. Thin wrapper over the shared getCategoryItemName. */
-function findCategoryItemName(category: ReaderCategory, index: number, hebrewMode: boolean): string {
-  return getCategoryItemName(category, index, hebrewMode);
 }
 
 // Commentary slot assignments are remembered per context (e.g. "talmud", "sa:0") so switching
@@ -988,11 +980,11 @@ const INITIAL_SELECTION: Selection = {
 };
 
 // Reads a position (category/index/chapter/halakha/amud) encoded in the URL's query string by
-// openSideBySide (Reader body, near the Mercava buttons) — this app has no URL-based routing for
-// ordinary browsing (position lives in plain React state, never the address bar), so this query
-// string exists solely to hand a position from one window to a newly popped-out one, not as a
-// general permalink feature. Returns null for a normal load (no query string, or anything
-// malformed), which falls through to the usual Tanakh/Bereishit default.
+// openAnyTorahAlongside (Reader body, near the Mercava buttons) — this app has no URL-based
+// routing for ordinary browsing (position lives in plain React state, never the address bar), so
+// this query string exists solely to hand a position from one window to a newly popped-out one,
+// not as a general permalink feature. Returns null for a normal load (no query string, or
+// anything malformed), which falls through to the usual Tanakh/Bereishit default.
 function readInitialPositionFromURL(): {
   category: ReaderCategory;
   index: number;
@@ -1025,6 +1017,18 @@ export default function Reader() {
   // position-restore layout effect below for why the actual category/selection/talmudAmud state
   // deliberately does NOT read this at initializer time anymore.
   const initialPositionRef = useRef(readInitialPositionFromURL());
+  // A window opened via openAnyTorahAlongside's own hand-off URL is, by definition, the AnyTorah
+  // half of a Mercava side-by-side pair — offering it its own Mercava buttons would let it pop
+  // out a second, redundant Mercava window (or a third AnyTorah window) rather than the one
+  // already sitting next to it, so those buttons are hidden entirely in this instance.
+  // Derived via a mount effect rather than read directly from the ref during render (matching
+  // this file's own established reasoning above: the ref's value is fine to read once mounted,
+  // but reading `.current` inline in the render body is flagged as unsafe by the React Compiler
+  // lint rule, and unlike `initialPositionRef` itself, this value directly gates JSX output).
+  const [isSideBySidePopout, setIsSideBySidePopout] = useState(false);
+  useEffect(() => {
+    setIsSideBySidePopout(initialPositionRef.current != null);
+  }, []);
   const [category, setCategory] = useState<ReaderCategory>("tanakh");
   const [selection, setSelection] = useState<Selection>(INITIAL_SELECTION);
   // Tosefta and Yerushalmi are their own top-level tabs (peers of Mishnah/Talmud, not toggles
@@ -1445,25 +1449,41 @@ export default function Reader() {
   // fresh user gesture, even cross-origin, so this doesn't hit popup-blocker restrictions the way
   // a bare `window.open()` on every navigation would.
   const mercavaWindowRef = useRef<Window | null>(null);
-  // Opens the Mercava popup if it isn't already open (or retargets it to the current daf if it
-  // is), returning the window so a caller can focus it. Shared by openOrFocusMercava and
-  // openSideBySide below — factored out after a real bug: openSideBySide used to only ever
-  // *refocus* an existing mercavaWindowRef, so if the user hit "side by side" without having
-  // opened Mercava first, no Mercava window existed at all and only the AnyTorah window opened.
-  const openOrRetargetMercava = useCallback((): Window | null => {
-    if (!mercavaUrl) return null;
+  // Redesigned 2026-09-06 — see "Mercava side-by-side" in CLAUDE.md for the full history. The
+  // earlier design tried to open both Mercava and an AnyTorah pop-out from ONE "side by side"
+  // click, which ran straight into a hard browser limit (one new-popup-worthy user-activation
+  // token per click, consumed by the first `window.open()`/cross-window `.focus()`) no matter how
+  // the two calls were ordered or deferred — confirmed on real devices across three separate
+  // rounds, each fixing one symptom while reintroducing the other. Redesigned around the
+  // constraint instead of fighting it: two *sequential* buttons, each just one click that only
+  // ever needs to open (or focus) exactly one window, so neither can ever starve the other of
+  // activation. "Open Mercava" is available whenever a Mercava id exists for the current daf;
+  // once it's actually open (tracked in `mercavaOpen` state below — polled, since `window.open()`
+  // gives the opener no native "this popup was closed" event), a second "Open AnyTorah alongside"
+  // button appears, popping this reader itself into a window sized/positioned to exactly fill the
+  // screen's left complement of Mercava's own right-docked width.
+  const [mercavaOpen, setMercavaOpen] = useState(false);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (mercavaWindowRef.current?.closed) setMercavaOpen(false);
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
+  const openOrFocusMercava = useCallback(() => {
+    if (!mercavaUrl) return;
     if (mercavaWindowRef.current && !mercavaWindowRef.current.closed) {
       mercavaWindowRef.current.location.href = mercavaUrl;
-      return mercavaWindowRef.current;
+      mercavaWindowRef.current.focus();
+      return;
     }
     // Dock the popup to the right edge of the screen (full height) rather than centering it, so
     // it lands somewhere that doesn't sit directly on top of a full-width main window. There's no
     // web API for a real "always on top" window, and a page can't resize/move the browser window
     // it's running in (only a window it opened itself) — so true side-by-side still needs the main
-    // window to occupy roughly the left `mercavaPopupWidth()`-complement of the screen, which the
-    // "Side by side" button below sets up in one click. Because navigation after the first open
-    // only ever reassigns `.location.href` (never re-opens/re-positions), the popup keeps whatever
-    // spot it's given here across every subsequent daf change.
+    // window to occupy roughly the left `mercavaPopupWidth()`-complement of the screen, which
+    // "Open AnyTorah alongside" below sets up once this window exists. Because navigation after
+    // the first open only ever reassigns `.location.href` (never re-opens/re-positions), the
+    // popup keeps whatever spot it's given here across every subsequent daf change.
     const popupWidth = mercavaPopupWidth();
     const left = window.screen.availWidth - popupWidth;
     mercavaWindowRef.current = window.open(
@@ -1471,54 +1491,19 @@ export default function Reader() {
       "anytorah-mercava",
       popupFeatures({ width: popupWidth, height: window.screen.availHeight, left, top: 0 }),
     );
-    return mercavaWindowRef.current;
+    if (mercavaWindowRef.current) setMercavaOpen(true);
   }, [mercavaUrl]);
-  const openOrFocusMercava = useCallback(() => {
-    openOrRetargetMercava()?.focus();
-  }, [openOrRetargetMercava]);
   useEffect(() => {
     if (mercavaUrl && mercavaWindowRef.current && !mercavaWindowRef.current.closed) {
       mercavaWindowRef.current.location.href = mercavaUrl;
     }
   }, [mercavaUrl]);
-  // Re-opens *this* page in a new window sized/positioned to exactly fill the screen's left
-  // complement of the Mercava popup's own right-docked width — so a user who wants true
-  // side-by-side viewing doesn't have to eyeball a manual drag/resize first. This intentionally
-  // doesn't also auto-open Mercava from here: the new window runs its own separate React instance
-  // (a real `window.open` navigation, not a DOM move), so `mercavaWindowRef` above would belong to
-  // the wrong instance if popped from here — clicking "Mercava" from inside the new window instead
-  // keeps the popup's auto-sync tied to whichever window the user actually keeps navigating in.
-  //
-  // Four real bugs fixed here, all reported directly after trying this on real devices/browsers,
-  // not just in dev-time testing: (1) the target URL used to be plain `window.location.href` —
-  // since this app has no URL-based routing at all (position lives in React state, never the
-  // address bar), that always opened the bare root URL, landing the new window on the
-  // Tanakh/Bereishit default instead of wherever the user actually was. Now the current position
-  // (category/index/chapter/halakha/amud) is encoded into the new window's URL as a query string,
-  // read back out by readInitialPositionFromURL above — a one-off hand-off mechanism, not a
-  // general permalink feature. (2) This used to only ever *refocus* an already-open Mercava
-  // popup, never open one — so clicking "side by side" before ever clicking "Mercava" opened only
-  // the AnyTorah window, with no Mercava window at all. (3) Real Chrome and Safari both allow only
-  // ONE brand-new popup per click — a second `window.open()` call in the same handler is silently
-  // blocked, returning null. Fixing (2) by unconditionally calling openOrRetargetMercava() *before*
-  // opening the AnyTorah window ran straight into this: Mercava (called first) opened, and the
-  // AnyTorah window (called second) silently didn't — the exact opposite of what a user actually
-  // needs from this button, since the AnyTorah window is the one only this button can produce.
-  // Opening AnyTorah *first* fixes that: it's now the guaranteed-successful popup, and Mercava
-  // becomes best-effort second. This isn't a regression for the case that matters most in
-  // practice, either — if Mercava is *already* open, openOrRetargetMercava never calls
-  // `window.open()` at all (see its own comment above); it just reassigns `.location.href` on a
-  // window reference this code already holds, which is a plain navigation, not a new popup, so
-  // it's completely unaffected by the one-popup-per-click limit and always succeeds. Only the
-  // genuinely-cold-start case (neither window open yet) can still lose Mercava to this limit, and
-  // even then the user can just click "Mercava" once more (in either window) to get it. (4)
-  // Opening (and thus focusing) the AnyTorah window pushes any already-open Mercava popup behind
-  // it, defeating the whole point of "side by side" — a plain synchronous `.focus()` call right
-  // after `window.open()` reliably lost that race (the browser processes the just-opened window's
-  // own focus after this function returns, so the synchronous focus() ran first and was then
-  // overridden). Deferring the refocus with a `setTimeout` lets it run after that, so Mercava
-  // reliably ends up on top.
-  const openSideBySide = useCallback(() => {
+  // This window's own React instance stays put — only a *new* window (this app has no in-place
+  // "become narrower" API for the tab a user is already in) gets sized to Mercava's left
+  // complement. Position/category/chapter is handed off via a query string
+  // (readInitialPositionFromURL/initialPositionRef above), since this app has no URL-based
+  // routing for ordinary browsing otherwise.
+  const openAnyTorahAlongside = useCallback(() => {
     const params = new URLSearchParams({ category, index: String(index), chapter: String(chapter) });
     if (halakha != null) params.set("halakha", String(halakha));
     if (category === "talmud") params.set("amud", talmudAmud);
@@ -1529,14 +1514,7 @@ export default function Reader() {
       "anytorah-main",
       popupFeatures({ width: leftWidth, height: window.screen.availHeight, left: 0, top: 0 }),
     );
-
-    const mercavaWin = openOrRetargetMercava();
-    if (mercavaWin && !mercavaWin.closed) {
-      setTimeout(() => {
-        if (!mercavaWin.closed) mercavaWin.focus();
-      }, 150);
-    }
-  }, [openOrRetargetMercava, category, index, chapter, halakha, talmudAmud]);
+  }, [category, index, chapter, halakha, talmudAmud]);
   const textContainerRef = useRef<HTMLDivElement>(null);
   const amudBRef = useRef<HTMLDivElement>(null);
   // One-shot escape hatch for stepReading's daf-boundary-crossing case just below: it needs the
@@ -1995,21 +1973,17 @@ export default function Reader() {
 
   // One Yomi button per relevant tab — Daf Yomi (talmud), Mishnah Yomi (mishnah), Rambam Yomi
   // (rambam), and two for tanakh (weekly Parsha + 929), matching exactly which jump buttons
-  // native shows (no Yomi concept exists for tosefta/yerushalmi/shulchanArukh). Only Daf Yomi and
-  // Parsha show what they actually jump to (tractate+daf / parsha name) — Mishnah Yomi, Rambam
-  // Yomi, and 929 are just the plain title, per explicit user feedback that showing the chapter/
-  // section reference on those three was unwanted. Names (tractate, parsha) switch to Hebrew
-  // under hebrewMode, matching how every other selector in this toolbar does.
+  // native shows (no Yomi concept exists for tosefta/yerushalmi/shulchanArukh). All five are now
+  // plain titles with no "what it points to" detail (tractate+daf / parsha name) — reversed
+  // 2026-09-06 from the earlier 2026-07-24 decision (Daf Yomi/Parsha used to show that detail)
+  // per explicit user direction that toolbar width matters more, especially in the Mercava
+  // side-by-side pop-out's narrower window; the actual daf/parsha is already visible in the book/
+  // chapter selector once you jump there anyway.
   const yomiButtons: { label: string; onClick: () => void }[] = [];
   if (yomi) {
     if (category === "talmud" && yomi.daf) {
       const r = yomi.daf;
-      const tractateName = findCategoryItemName("talmud", r.index, hebrewMode);
-      const dafLabel = hebrewMode ? toHebrewNumeral(r.chapter) : String(r.chapter);
-      yomiButtons.push({
-        label: (hebrewMode ? "דף היומי: " : "Daf Yomi: ") + `${tractateName} ${dafLabel}`,
-        onClick: () => jumpToYomi(r),
-      });
+      yomiButtons.push({ label: hebrewMode ? "דף היומי" : "Daf Yomi", onClick: () => jumpToYomi(r) });
     } else if (category === "mishnah" && yomi.mishnah) {
       const r = yomi.mishnah;
       yomiButtons.push({ label: hebrewMode ? "משנה יומית" : "Mishnah Yomi", onClick: () => jumpToYomi(r) });
@@ -2023,10 +1997,7 @@ export default function Reader() {
       // boxes) in Hebrew — per explicit user request.
       if (yomi.parsha) {
         const r = yomi.parsha;
-        yomiButtons.push({
-          label: (hebrewMode ? "פרשה: " : "Parsha: ") + (hebrewMode ? r.hebrewName : r.name),
-          onClick: () => jumpToYomi(r),
-        });
+        yomiButtons.push({ label: hebrewMode ? "פרשה" : "Parsha", onClick: () => jumpToYomi(r) });
       }
       if (yomi.tanakh929) {
         const r = yomi.tanakh929;
@@ -2090,24 +2061,32 @@ export default function Reader() {
           wide enough for the reading column alone. mx-auto on the reading column (below) still
           centers it within whatever space remains next to this column — flexbox respects auto
           margins on a flex-grow item for exactly this "capped-width content, centered in the
-          leftover space" pattern. */}
-      <div className="flex shrink-0 flex-col items-start gap-4 px-6 py-6">
-        <div className="flex items-center gap-4">
-          {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, no need for next/image */}
-          <img src="/yct-logo-color.png" alt="YCT" className="yct-logo yct-logo-light" />
-          {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, no need for next/image */}
-          <img src="/yct-logo-white.png" alt="YCT" className="yct-logo yct-logo-dark" />
+          leftover space" pattern.
+
+          Hidden entirely in the Mercava side-by-side pop-out (2026-09-06) — that window's whole
+          point is to be narrow (it's sized to exactly the screen's left complement of Mercava's
+          own width, see openAnyTorahAlongside above), and the main window it was popped out from
+          already carries the branding, so this column would only cost the toolbar row width for
+          no benefit. */}
+      {!isSideBySidePopout && (
+        <div className="flex shrink-0 flex-col items-start gap-4 px-6 py-6">
+          <div className="flex items-center gap-4">
+            {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, no need for next/image */}
+            <img src="/yct-logo-color.png" alt="YCT" className="yct-logo yct-logo-light" />
+            {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, no need for next/image */}
+            <img src="/yct-logo-white.png" alt="YCT" className="yct-logo yct-logo-dark" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight" style={{ color: "var(--accent)" }}>
+              AnyTorah
+            </h1>
+            {/* Matches the YCT logo's own tagline color. */}
+            <p className="-mt-1 text-sm italic" style={{ color: "#007cea" }}>
+              Powered by YCT and Sefaria
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight" style={{ color: "var(--accent)" }}>
-            AnyTorah
-          </h1>
-          {/* Matches the YCT logo's own tagline color. */}
-          <p className="-mt-1 text-sm italic" style={{ color: "#007cea" }}>
-            Powered by YCT and Sefaria
-          </p>
-        </div>
-      </div>
+      )}
 
       <div
         className={`mx-auto flex min-w-0 flex-1 flex-col overflow-hidden px-4 py-6 ${showDaf ? "max-w-[100rem]" : "max-w-7xl"}`}
@@ -2249,10 +2228,25 @@ export default function Reader() {
           order is Tractate/chapter/amud cluster, Yomi buttons, daf-image controls, spacer, Text
           controls, Commentary controls — under dir=rtl that reads right-to-left in exactly that
           order. Each cluster below also carries its own (now redundant but harmless) matching
-          dir, which still correctly mirrors that cluster's *internal* item order. */}
+          dir, which still correctly mirrors that cluster's *internal* item order.
+
+          2026-09-06, two rounds: first tried switching this row to `flex-wrap` so nothing could
+          ever be hidden by the plain `overflow-x-auto` scroll (a narrow window, e.g. the Mercava
+          side-by-side pop-out, could push later clusters out of view behind an easy-to-miss
+          overlay scrollbar). Reverted per explicit follow-up feedback — wrapping to a second line
+          costs vertical space and was judged the worse tradeoff. Instead: (1) every cluster's own
+          labels were shortened (Yomi buttons dropped their "what it points to" detail, the
+          daf-image toggle/position buttons dropped their words down to single letters/icons, the
+          Mercava buttons dropped their text label entirely — see each cluster's own comment) so
+          this row needs meaningfully less width before it would ever overflow at all; (2) the
+          `overflow-x-auto` scroll comes back as the fallback for whatever's still too narrow, but
+          with `toolbar-scroll` (globals.css) forcing a slim, always-visible scrollbar thumb
+          instead of relying on the browser's own hover-to-reveal overlay one — directly fixing
+          the "no way to reach it" discoverability failure the original bug report was really
+          about, without paying flex-wrap's vertical-space cost. */}
       <div
         dir={hebrewMode ? "rtl" : "ltr"}
-        className="mb-4 flex shrink-0 flex-nowrap items-center gap-3 overflow-x-auto rounded-lg border border-border bg-card p-3"
+        className="toolbar-scroll mb-4 flex shrink-0 flex-nowrap items-center gap-3 overflow-x-auto rounded-lg border border-border bg-card p-3"
       >
         <div dir={hebrewMode ? "rtl" : "ltr"} className="flex shrink-0 items-center gap-3">
           <select
@@ -2371,17 +2365,24 @@ export default function Reader() {
 
         {category === "talmud" && dafImageAvailable && (
           <div dir={hebrewMode ? "rtl" : "ltr"} className="flex shrink-0 items-center gap-3">
+            {/* Shortened from "Show daf"/"Hide daf" to the bare word 2026-09-06 (width pressure,
+                especially in the Mercava side-by-side pop-out's narrower window) — on/off state
+                is now conveyed only by the active-state background highlight (same convention
+                already used for the L/M position buttons just below), with a title tooltip
+                keeping the full meaning discoverable on hover. */}
             <button
               onClick={() => setShowDafImage(!showDafImage)}
               className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
               style={showDafImage ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+              title={hebrewMode ? (showDafImage ? "הסתר את תמונת הדף" : "הצג את תמונת הדף") : showDafImage ? "Hide the daf image" : "Show the daf image"}
             >
-              {hebrewMode ? (showDafImage ? "הסתר דף" : "הצג דף") : showDafImage ? "Hide daf" : "Show daf"}
+              {hebrewMode ? "דף" : "Daf"}
             </button>
 
+            {/* L/M, no "Daf" prefix label (redundant once the toggle above already says "Daf") —
+                same width-pressure shortening, titles carry the full meaning. */}
             {showDaf && (
               <div className="flex shrink-0 items-center gap-1 rounded-full border border-border px-1 py-1 text-sm">
-                <span className="pl-2 text-xs opacity-60">{hebrewMode ? "דף" : "Daf"}</span>
                 {(["left", "middle"] as const).map((pos) => (
                   <button
                     key={pos}
@@ -2390,8 +2391,13 @@ export default function Reader() {
                     style={
                       dafPosition === pos ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined
                     }
+                    title={
+                      hebrewMode
+                        ? pos === "left" ? "תמונת הדף בצד שמאל" : "תמונת הדף באמצע"
+                        : pos === "left" ? "Daf image on the left" : "Daf image in the middle"
+                    }
                   >
-                    {hebrewMode ? (pos === "left" ? "שמאל" : "אמצע") : pos === "left" ? "Left" : "Middle"}
+                    {hebrewMode ? (pos === "left" ? "ש" : "א") : pos === "left" ? "L" : "M"}
                   </button>
                 ))}
               </div>
@@ -2436,30 +2442,27 @@ export default function Reader() {
             guessing a formula. A popup window (mercavaWindowRef above) is docked to the right edge
             of the screen, and — the actual reason it's a tracked popup rather than target="_blank"
             — the effect above silently retargets it to whatever daf you navigate to here, so it
-            stays in sync without needing to click this again. The second button (openSideBySide)
-            pops this reader itself into a new window sized/positioned to exactly fill the screen's
-            left complement of the Mercava popup's own width, so the two tile together without the
-            user having to eyeball a manual drag first. Considered an in-app iframe panel instead;
-            rejected per explicit user direction, since Mercava's own header/sign-in/menu chrome
-            would render inside this app's UI and it would compete for space with the existing
-            text/commentary/daf-image/notebook columns.
+            stays in sync without needing to click this again. Considered an in-app iframe panel
+            instead; rejected per explicit user direction, since Mercava's own header/sign-in/menu
+            chrome would render inside this app's UI and it would compete for space with the
+            existing text/commentary/daf-image/notebook columns.
 
-            Both actions share one labeled pill (icon-only buttons, "Mercava" as a plain prefix
-            rather than a third button) rather than two separate text buttons — per explicit
-            follow-up feedback that "Side by side" alone read as unclear about what it was relative
-            to. `dir` on the pill keeps the popup-icon button adjacent to the label in both
-            directions (immediately after it in the DOM, which visually lands to the label's *right*
-            in LTR and *left* in RTL — i.e. "after Mercava" in both reading directions, not just
-            English's), with the side-by-side icon one step further out in both. */}
+            Two SEPARATE, sequential icon buttons (not one combined pill) — see the redesign note
+            on `openOrFocusMercava`/`openAnyTorahAlongside` above for why: each button now only
+            ever needs one new-popup click, so neither can starve the other of the click's user-
+            activation token. "Open AnyTorah alongside" only renders once `mercavaOpen` is true —
+            offering it before Mercava exists would pop out a left-docked AnyTorah window with
+            nothing on the right to tile against. No "Mercava" text label (icon-only, `title`
+            carries the meaning on hover) — width-pressure shortening, matching the same
+            2026-09-06 pass on the Yomi/daf-image controls below. */}
         {category === "talmud" &&
           (yomiButtons.length > 0 || dafImageAvailable) &&
-          mercavaUrl && <VerticalDivider />}
-        {category === "talmud" && mercavaUrl && (
+          mercavaUrl && !isSideBySidePopout && <VerticalDivider />}
+        {category === "talmud" && mercavaUrl && !isSideBySidePopout && (
           <div
             dir={hebrewMode ? "rtl" : "ltr"}
             className="flex shrink-0 items-center gap-1 rounded-full border border-border px-1 py-1 text-sm"
           >
-            <span className="pl-2 pr-1 text-xs opacity-60">{hebrewMode ? "מרכבה" : "Mercava"}</span>
             <button
               onClick={openOrFocusMercava}
               aria-label={hebrewMode ? "פתח את מרכבה בחלון נפרד" : "Open Mercava in a separate window"}
@@ -2472,18 +2475,20 @@ export default function Reader() {
             >
               <PopoutWindowIcon />
             </button>
-            <button
-              onClick={openSideBySide}
-              aria-label={hebrewMode ? "סדר את החלונות זה לצד זה" : "Position windows side by side"}
-              className="rounded-full p-1.5 transition-colors hover:bg-[var(--accent)]/15"
-              title={
-                hebrewMode
-                  ? "פותח את הדף הזה בחלון חדש בגודל ומיקום מתאימים לצפייה זה לצד זה עם מרכבה"
-                  : "Reopens this reader in a new window sized and positioned so Mercava can sit alongside it"
-              }
-            >
-              <SideBySideIcon />
-            </button>
+            {mercavaOpen && (
+              <button
+                onClick={openAnyTorahAlongside}
+                aria-label={hebrewMode ? "פתח את AnyTorah לצד מרכבה" : "Open AnyTorah alongside Mercava"}
+                className="rounded-full p-1.5 transition-colors hover:bg-[var(--accent)]/15"
+                title={
+                  hebrewMode
+                    ? "פותח את הדף הזה בחלון חדש בגודל ומיקום מתאימים לצפייה זה לצד זה עם מרכבה"
+                    : "Reopens this reader in a new window sized and positioned so Mercava can sit alongside it"
+                }
+              >
+                <SideBySideIcon />
+              </button>
+            )}
           </div>
         )}
 

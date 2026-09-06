@@ -48,6 +48,28 @@
   }
 }
 
+/* Always-visible thin scrollbar (both engines) for the main reader toolbar row — 2026-09-06, see
+ * Reader.tsx's toolbar comment. That row shortens its labels aggressively and never wraps to a
+ * second line (per explicit user direction it should stay one row), so on a genuinely narrow
+ * window it scrolls horizontally instead — but the earlier version of this row relied on the
+ * browser's own overlay scrollbar (invisible until hovered/dragged on macOS), which is exactly
+ * what made an earlier version of this feature read as "no way to reach it" rather than
+ * "scroll right." This class forces a slim, always-visible thumb instead. */
+.toolbar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.toolbar-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+.toolbar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.toolbar-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 3px;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

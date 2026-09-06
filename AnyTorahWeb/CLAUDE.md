@@ -1217,21 +1217,17 @@ directly — no scroll-to-verse (native scrolls Parsha to its opening verse; thi
 verse-scroll infrastructure yet, so Parsha just lands on the chapter, same as how 929 already
 works here).
 
-**Button label content, revised 2026-07-24 per explicit user feedback:** only Daf Yomi and Parsha
-show what they actually point to; Mishnah Yomi, Rambam Yomi, and 929 are plain titles with no
-chapter/section reference (`"Mishnah Yomi"` / `"Rambam Yomi"` / `"Today's 929"`, not `"Mishnah
-Yomi: Keilim ch. 19"` etc.). Daf Yomi shows `"Daf Yomi: {tractate} {daf}"`; Parsha shows `"Parsha:
-{name}"`. Names switch to Hebrew under `hebrewMode`: the Daf Yomi tractate name comes from
-`findCategoryItemName("talmud", index, hebrewMode)` — a small helper (top of `Reader.tsx`) that
-looks up a catalog item's display name via `getCategoryGroups`, since the Daf Yomi tractate is
-usually *not* the currently-selected one and so isn't available from the component's own
-`groups`/`index` state — and the daf number itself switches to `toHebrewNumeral` in Hebrew mode
-(re-imported into `Reader.tsx` specifically for this; the inline chapter/daf input box stays
-Arabic-numeral-only for typability, per the "Numerals" note above, but this is a display-only
-label, not an input, so a Hebrew numeral is fine here). Parsha's Hebrew name comes straight from
-Sefaria's calendar response (`ParshaResult.hebrewName`, populated from `displayValue.he` in
-`lib/yomiService.ts`) rather than any catalog lookup — there's no catalog concept of parasha
-names elsewhere in this app to reuse.
+**Button label content — plain titles only, reversed 2026-09-06 (see "Toolbar width pass,
+2026-09-06" below).** Originally (2026-07-24 per explicit user feedback) Daf Yomi and Parsha
+showed what they actually pointed to (`"Daf Yomi: {tractate} {daf}"`, `"Parsha: {name}"`) while
+Mishnah Yomi/Rambam Yomi/929 stayed plain titles. Per later explicit user direction (toolbar
+width pressure, especially in the Mercava side-by-side pop-out's narrower window), all five are
+now plain titles with no detail at all: `"Daf Yomi"`, `"Mishnah Yomi"`, `"Rambam Yomi"`,
+`"Today's 929"`, `"Parsha"`. The helper that used to build the Daf Yomi tractate name
+(`findCategoryItemName`) and the `getCategoryItemName`/`toHebrewNumeral` imports that became
+unused as a result were deleted rather than left as dead code. The daf/parsha itself is still
+visible once you actually jump there (in the book/chapter selector), so no information is lost,
+just not previewed in the button label anymore.
 
 **Name-map verification, not a blind port:** native's own `talmudNameMap`/`mishnahNameMap`/
 `rambamNameMap` don't transfer as-is, because this catalog's `sefariaName` spellings sometimes
@@ -1295,8 +1291,8 @@ against synthetic edge cases (marker with no preceding `<br>` at all; marker alr
 start of its segment) to confirm no double line breaks and no spurious leading blank line.
 
 ## Mercava integration (`components/Reader.tsx`, `lib/mercava.ts`, `scripts/mercava/`, built
-2026-08-15/16, side-by-side/focus work 2026-08-17 — **see "KNOWN BROKEN, paused 2026-08-17" below
-before touching the popup/focus code**)
+2026-08-15/16, side-by-side flow redesigned 2026-09-06 — see that section below before touching
+the popup/focus code)
 
 A "Mercava" button on the Talmud reader toolbar (`category === "talmud"` only) opens the current
 daf/amud on themercava.com/app — a third-party site that color-highlights a Gemara's logical
@@ -1361,48 +1357,40 @@ scraper and now served live from Supabase.
   as repo secrets before it can run**, mirroring `.env.local`. Exists because Mercava's ids are
   believed stable (plain DB primary keys) but not guaranteed to be, and the alternative — trusting
   a one-time scrape forever — was judged not durable enough per explicit user request.
-- **Popup window, not a plain link** (`mercavaWindowRef`, `openOrRetargetMercava`/
-  `openOrFocusMercava` in Reader.tsx) — raised directly by the user after an initial
-  new-tab-link version shipped: side-by-side viewing matters, and a plain link's daf goes stale
-  the moment you navigate in the reader without a fresh click. The popup is tracked in a ref and
-  its `.location.href` is silently retargeted (both on the next click and via a `useEffect` keyed
-  on `mercavaUrl`) whenever the daf changes — a window you already opened can be renavigated
-  without a fresh user gesture, even cross-origin, so this doesn't trip popup-blocker restrictions
-  the way an unprompted `window.open()` per navigation would. An in-app iframe panel was
-  considered and rejected per explicit user direction: Mercava's own header/sign-in/menu chrome
-  would render inside this app's UI and compete for space with the existing
-  text/commentary/daf-image/notebook columns.
+- **Popup window, not a plain link** (`mercavaWindowRef`, `openOrFocusMercava` in Reader.tsx) —
+  raised directly by the user after an initial new-tab-link version shipped: side-by-side viewing
+  matters, and a plain link's daf goes stale the moment you navigate in the reader without a
+  fresh click. The popup is tracked in a ref and its `.location.href` is silently retargeted
+  (both on the next click and via a `useEffect` keyed on `mercavaUrl`) whenever the daf changes —
+  a window you already opened can be renavigated without a fresh user gesture, even cross-origin,
+  so this doesn't trip popup-blocker restrictions the way an unprompted `window.open()` per
+  navigation would. An in-app iframe panel was considered and rejected per explicit user
+  direction: Mercava's own header/sign-in/menu chrome would render inside this app's UI and
+  compete for space with the existing text/commentary/daf-image/notebook columns.
   - **Popup placement**: docked to the right edge of the screen at full height (`mercavaPopupWidth()`,
     capped at 560px / 42% of screen width) rather than centered — there's no web API for a real
     "always on top" window, and a page can't resize/move the browser window it's running in (only
     one it opened itself), so genuine side-by-side still needs the main window to occupy roughly
     the screen's left complement. `popupFeatures()` builds the full window-features string for
-    both this popup and the side-by-side one below (`toolbar=no,location=no,menubar=no,status=no,
+    both this popup and the AnyTorah one below (`toolbar=no,location=no,menubar=no,status=no,
     resizable=yes,scrollbars=yes`, plus Chrome's explicit `popup=1`) rather than just
     width/height/left/top — added 2026-08-17 after Safari was reported opening Mercava as a
     full-window tab instead of a positioned popup. **Not confirmed fixed** — Safari's own Settings
     → Tabs → "Open pages in tabs instead of in new windows" preference can override this
     regardless of what the page requests, and it's unknown whether that's actually what the user
-    hit. See "KNOWN BROKEN" below.
-  - **Combined "Mercava" pill** (built 2026-08-17, replacing two separate text buttons): a plain
-    "Mercava"/"מרכבה" label followed by two icon-only buttons — `PopoutWindowIcon`
-    (`openOrFocusMercava`, opens/focuses just the Mercava popup) and `SideBySideIcon`
-    (`openSideBySide`) — wrapped in a `dir`-aware container so the icon order mirrors correctly in
-    Hebrew (RTL). Per explicit feedback that "Side by side" as a separate text button read as
-    unclear about what it was relative to.
-  - **`openSideBySide` position hand-off** (built 2026-08-17): this app has no URL-based routing
-    for ordinary browsing (position lives in plain React state, never the address bar) — but
-    `openSideBySide` needs to open a *second* window at the exact position the first is showing,
-    not the Tanakh/Bereishit default it used to fall back to (`window.location.href` used to be
-    the target, which is meaningless for a position that lives only in React state). It now
-    encodes category/index/chapter/halakha/amud as a query string on the new window's URL,
-    decoded back out client-side by `readInitialPositionFromURL()` — a one-off hand-off mechanism,
-    not a general permalink feature.
+    hit; Safari wasn't in scope for the 2026-09-06 redesign below either.
+  - **`openAnyTorahAlongside` position hand-off** (built 2026-08-17, still used by the redesigned
+    flow below): this app has no URL-based routing for ordinary browsing (position lives in plain
+    React state, never the address bar) — but popping out a second AnyTorah window needs it to
+    open at the exact position the first is showing, not the Tanakh/Bereishit default. It encodes
+    category/index/chapter/halakha/amud as a query string on the new window's URL, decoded back
+    out client-side by `readInitialPositionFromURL()` — a one-off hand-off mechanism, not a
+    general permalink feature.
     - **Real hydration bug found and fixed**: reading that URL directly in the
       category/selection/talmudAmud `useState` initializers made the server's render (no `window`
       to read a query string from, always the plain default) diverge from the client's first
       render for any hand-off URL — React threw a hard hydration-mismatch error and did a full
-      client-side remount on every "side by side" pop-out. Fixed by restoring the position in a
+      client-side remount on every pop-out. Fixed by restoring the position in a
       `useLayoutEffect` (deps `[]`, runs once after mount) instead of the initializers, so server
       and client always agree on the very first render and the restore is just an ordinary
       post-hydration state update. `useLayoutEffect` specifically (not `useEffect`) so the
@@ -1414,74 +1402,109 @@ scraper and now served live from Supabase.
       logging: the first invocation correctly consumed the flag, the StrictMode-simulated second
       invocation saw it already cleared and reset anyway).
 
-## KNOWN BROKEN, paused 2026-08-17 — side-by-side / Mercava-focus still not working on real devices
+## Mercava side-by-side — redesigned 2026-09-06 into two sequential buttons (was "KNOWN BROKEN,
+paused 2026-08-17", briefly "fixed" via a call-ordering patch the same day before this redesign
+replaced that patch entirely)
 
-Despite several rounds of fixes this session (each individually reasoned through and verified as
-far as this environment's own tools allow — see the caveat below), the user's own testing on real
-Chrome and Safari still shows: **"side-by-side only opens the AnyTorah window, and even if I have
-separately opened a Mercava window, it remains in the background and does not come forward."**
-Paused here per explicit user direction rather than continuing to iterate blind. Before trying
-anything new, re-confirm which symptoms still reproduce — dev-tool testing in this environment has
-already proven unreliable for this specific feature (see the caveat below), so don't assume any
-prior "verified" claim below still holds without a fresh real-device check.
+**The original design's actual flaw, finally understood.** Every round from 2026-08-17 through
+the first half of 2026-09-06 tried to make ONE "side by side" click open (or refocus) Mercava
+*and* pop out a second AnyTorah window together. That ran straight into a hard browser limit: a
+click grants exactly one "user activation" token, consumed by the first activation-gated call in
+the handler (`window.open()` on success, or a cross-window `.focus()` on a not-yet-frontmost
+window) — whichever of the two actions ran *second* found the token already spent and was
+silently ignored, no error, no console warning. A same-day call-ordering patch (do Mercava's
+action synchronously first, AnyTorah's `window.open()` best-effort second) made the cold-start
+case work but only papered over the underlying one-token limit; real user testing the same day
+found it still took an extra click to recover after switching OS focus away and back (a `focus`
+event carries no activation of its own, so a script-driven refocus attempt right after regaining
+window focus was *itself* still blocked).
 
-What was tried, in order, this session (all still in the code as of commit `e897ca5`):
-1. `openSideBySide` originally never opened Mercava at all (only ever refocused an *already*-open
-   popup) — fixed by having both buttons share one `openOrRetargetMercava` helper.
-2. A synchronous `.focus()` call right after `window.open()` was found (via reasoning, not a
-   confirmed real-browser repro) to likely lose the race against the browser's own
-   default-focus-the-new-window behavior — deferred the refocus with `setTimeout(..., 150)`.
-3. Reasoned that real Chrome/Safari allow only **one** brand-new popup per click, and that opening
-   Mercava first (step 1's fix) meant the *second* `window.open()` call — the AnyTorah window —
-   was the one silently getting blocked. Reordered `openSideBySide` to open the AnyTorah window
-   first, Mercava second (best-effort). **This reasoning was never confirmed against a real
-   browser** — the one piece of evidence for it (repeated `GET /` lines in the local dev server
-   log after clicking) is also fully explained by this session's own repeated manual test
-   navigations to the same URL, so it's weaker evidence than it looked like at the time.
-4. Widened the popup `features` string (see the `popupFeatures()` bullet above) since the user
-   separately reported Mercava opening as a full-window Safari tab rather than a positioned popup.
+**Redesigned around the constraint instead of continuing to patch it.** Per explicit user
+direction: two *separate*, sequential buttons instead of one combined action.
+- Only **"Open Mercava"** (`PopoutWindowIcon`, `openOrFocusMercava`) is shown initially — opens
+  the popup docked right, or retargets+focuses it if already open. Exactly one activation-gated
+  call per click, always.
+- Once Mercava is confirmed open — `mercavaOpen` state, set `true` right after a successful
+  `window.open()`, and polled false again via a 500ms `setInterval` checking
+  `mercavaWindowRef.current?.closed` (a popup gives its opener no native "I was closed" event) —
+  a second button, **"Open AnyTorah alongside"** (`SideBySideIcon`, `openAnyTorahAlongside`),
+  appears. It does exactly one thing: pop this reader out into a new window sized/positioned to
+  the screen's left complement of Mercava's own width, via the same `openAnyTorahAlongside`
+  position hand-off described above (only renamed from `openSideBySide`; the hand-off mechanism
+  itself is unchanged).
 
-**The user's real-device retest after (3) and (4) still shows the AnyTorah window not opening
-from side-by-side, and — separately — an already-open Mercava window not coming forward even when
-side-by-side only needs to *retarget* it (no new `window.open()` call at all in that case, so
-step 3's one-popup-per-click theory shouldn't even apply there).** That second point is the
-strongest signal that step 3's diagnosis, however individually well-reasoned, isn't the whole
-story — something is still wrong specifically with the *refocus* mechanism (step 2's `setTimeout`
-fix), independent of the open-a-second-popup question.
+Since each button's click only ever needs one new-popup-worthy activation, neither can starve the
+other of it — the whole class of bug above (silently-blocked second call, needing an extra click
+to recover after regaining focus) can't recur by construction, not because of careful ordering.
+The old combined pill (one "Mercava" label + two icon buttons, `Combined "Mercava" pill` above) is
+gone — no text label at all now (icon-only, `title` tooltips), per the same 2026-09-06 width-
+pressure pass that also shortened the Yomi/daf-image toolbar labels and hid the logo sidebar in
+this pop-out (see "Toolbar width pass, 2026-09-06" below).
 
-**Environment caveat — why "verified" above should be read skeptically**: this session's own
-browser-automation tool (`mcp__Claude_Browser__*`) showed two distinct, unexplained flakiness
-patterns specifically around multi-window/`window.open` testing: (a) `read_page`'s accessibility
-tree intermittently came back empty immediately after installing a `window.open` monkey-patch, for
-no visible reason (page screenshots taken at the same moment showed the page fully rendered); (b)
-a monkey-patched `window.open` was repeatedly found already gone (reads back as `undefined`)
-between one `javascript_tool` call that installed it and the very next one, with nothing in
-between that should have caused a full page reload. Neither was ever root-caused. Every claim of
-"verified" for this feature this session used a *mocked* `window.open` (to sidestep this tool's
-inability to reliably drive or observe real popup windows) — which validates this app's own call
-order/URLs/logic, but says nothing about real popup-blocker or focus-stealing behavior, which is
-exactly where the user's reports say the actual remaining bugs live.
+**Verification limits, unchanged from every prior round — read before trusting a "verified" claim
+here.** This session (and the 2026-08-17 one before it) confirmed `window.open()` returns `null`
+unconditionally in the `mcp__Claude_Browser__*` preview pane — this sandboxed browser cannot open
+real popup windows at all, so it cannot verify popup positioning, focus-stealing, or activation-
+token behavior directly. What *was* verified here: `tsc --noEmit`, `npm run lint` (24 problems,
+same pre-existing baseline, no new items), and clicking "Open Mercava" in the preview pane throws
+no console error even though the underlying `window.open()` call returns `null` there (so
+`mercavaOpen` correctly stays `false` and "Open AnyTorah alongside" correctly stays hidden — this
+much *is* meaningfully verified, since it's exercising the real gating logic, not a mock). **Still
+needs real-Chrome/Safari confirmation** for the actual popup behavior: cold start (first click
+opens Mercava docked right; second click, once it exists, pops out AnyTorah docked left, tiled
+with no overlap) and the previously-broken regain-focus case (switching away and back, then
+clicking "Open AnyTorah alongside" again, should work on the very first click — no extra click
+needed to "wake up" the handler, since neither click here depends on window focus at all anymore).
 
-**Hypotheses not yet tested, for whoever picks this up next:**
-- The deferred `setTimeout(..., 150)` refocus may itself be the core problem: modern browsers
-  increasingly require `.focus()` to run *synchronously* within the original user-gesture call
-  stack to be honored at all (the same "user activation" mechanism that gates `window.open()`
-  itself) — a call deferred even 150ms via `setTimeout` may have already lost that activation and
-  be silently ignored. If so, no delay value fixes it — the mechanism needs rethinking (e.g.
-  focusing synchronously and accepting it may sometimes lose the race against the new window's own
-  initial focus, or something structurally different like the newly-opened AnyTorah window's own
-  script posting a message back asking the opener to refocus Mercava, run from *that* window's own
-  load — unexplored).
-- Get real evidence before changing anything further: add temporary `console.log`/network-visible
-  logging around both `window.open()` calls' return values and the deferred `.focus()` call, then
-  have the *user* reproduce on their own real Chrome/Safari and report back what actually happened
-  — this is the same technique that actually resolved the Supabase pagination bug and the
-  StrictMode amud-reset bug earlier in this session; reasoning about browser policy without a real
-  repro is what produced the still-broken state this note describes.
-- Double-check whether Safari's Settings → Tabs → "Open pages in tabs instead of in new windows"
-  is set to "Always" on the user's machine — if so, no `features` string can produce a real
-  positioned popup there, and that part of the report may not be fixable from application code at
-  all, only worth telling the user about directly.
+## Toolbar width pass, 2026-09-06 (label shortening, one-line scroll, sidebar hidden in the
+Mercava pop-out)
+
+Raised by live testing of the Mercava redesign above: at the pop-out AnyTorah window's narrower
+width, the main toolbar (`components/Reader.tsx`, the `flex ... overflow-x-auto` row right below
+the category-tabs header) could push later clusters (daf-image controls, Mercava) out of view. A
+first attempt switched the row to `flex-wrap` so nothing could ever be truly hidden — reverted
+same day per explicit feedback that wrapping to a second line cost too much vertical space and
+was "the least ideal" fix. Replaced with three changes together, aimed at needing the fallback as
+rarely as possible rather than eliminating it:
+
+- **Yomi buttons dropped their "what it points to" detail** — reverses the 2026-07-24 decision
+  documented under "Yomi buttons — shipped" below (Daf Yomi/Parsha used to show tractate+daf/
+  parsha name; now every Yomi button, including those two, is a plain title only: "Daf Yomi",
+  "Parsha", "Mishnah Yomi", "Rambam Yomi", "Today's 929"). `findCategoryItemName` (the helper that
+  looked up the Daf Yomi tractate name) and its now-unused `getCategoryItemName`/`toHebrewNumeral`
+  imports were deleted as dead code rather than left unused.
+- **Daf-image controls shortened**: the show/hide toggle went from "Show daf"/"Hide daf" to the
+  bare word "Daf" (on/off now conveyed only by the active-state background highlight, full
+  meaning still on hover via `title`); the Left/Middle position pair dropped its "Daf" prefix
+  label and shortened to bare "L"/"M" (ש/א in Hebrew), same `title`-carries-the-meaning pattern.
+- **Mercava buttons dropped their text label entirely** — see "Mercava side-by-side — redesigned"
+  above; icon-only now, `title` tooltips only.
+- **The row itself reverted from `flex-wrap` back to `flex-nowrap overflow-x-auto`**, but with a
+  new `toolbar-scroll` class (`app/globals.css`) forcing a slim, always-visible scrollbar thumb
+  (`scrollbar-width: thin` + `scrollbar-color` for Firefox, `::-webkit-scrollbar` rules for
+  Chrome/Safari) instead of relying on the browser's own hover-to-reveal overlay scrollbar. This
+  directly targets what the *original* bug report (before any of this session's changes) was
+  actually about — content becoming reachable only via an easy-to-miss scrollbar — without
+  paying `flex-wrap`'s vertical-space cost. Combined with the label shortening above, the row now
+  needs meaningfully less width before this fallback ever triggers at all; verified live at a
+  700px viewport that it stays one row and becomes genuinely scrollable
+  (`scrollWidth`/`clientWidth` checked directly via `javascript_tool`, not just eyeballed).
+
+**Logo/title sidebar (see "YCT Branding" below) is hidden entirely in the Mercava side-by-side
+pop-out** — `!isSideBySidePopout` gate on the sidebar `<div>` in `Reader.tsx`. That pop-out's
+whole point is to be narrow (sized to the screen's left complement of Mercava's own width), and
+the main window it was popped out from already carries the branding, so the sidebar there only
+ever cost the toolbar row width for no benefit. The sidebar is otherwise unchanged (still always
+reserved on every other window).
+
+`tsc --noEmit` and `npm run lint` stayed at the same 24-item baseline throughout this pass — no
+new lint category introduced despite `isSideBySidePopout` itself needing to be derived via a
+mount effect + `useState` rather than read directly from `initialPositionRef.current` during
+render (a direct `.current` read there is flagged by this repo's React Compiler lint rule; see
+`isSideBySidePopout`'s own doc comment in `Reader.tsx` for why the mount-effect version is safe
+here specifically, even though it looks like the same hydration-mismatch trap `initialPositionRef`
+itself was built to avoid — `mercavaUrl`'s own async population already gates the affected JSX,
+so both the server render and the client's very first render agree regardless of this flag).
 
 ## Daf-image zoom/pan (`components/DafImagePanel.tsx`, built 2026-08-16)
 
