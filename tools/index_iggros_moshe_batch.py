@@ -72,22 +72,34 @@ TOOL_SCHEMA = {
                 "type": "array",
                 "items": {"type": "integer"},
                 "description": (
-                    "The Arabic-numeral value of every 'סימן X' (siman) heading whose heading "
-                    "text begins on THIS page, in top-to-bottom reading order. A heading 'begins' "
-                    "on this page even if the responsum's text continues onto later pages. Most "
-                    "pages have zero (mid-teshuva continuation) or one; some pages (especially "
-                    "near a volume's start) have two or more short teshuvot. Read the Hebrew "
-                    "letter-numeral carefully (gematria: א=1, ב=2, ..., י=10, יא=11, ..., כ=20, "
-                    "ר vs ד and ה vs ח are common misread pairs -- look closely)."
+                    "The Arabic-numeral value of every 'סימן X' (siman) heading -- the word "
+                    "סימן/סי' itself immediately before the numeral -- whose heading text begins "
+                    "on THIS page, in top-to-bottom reading order. A heading 'begins' on this "
+                    "page even if the responsum's text continues onto later pages. Most pages "
+                    "have zero (mid-teshuva continuation) or one; some pages (especially near a "
+                    "volume's start) have two or more short teshuvot. Do NOT include a page's "
+                    "internal branch/sub-question markers here even if they look heading-like -- "
+                    "'ענף א/ב/ג', 'סעיף X' (a seif -- whether it's this teshuva's own internal "
+                    "subsection or a citation of a Shulchan Aruch seif), a bare letter (א/ב/ג), "
+                    "or a bare running number (1/2/3) marking off sub-parts of one long or "
+                    "compendium-style siman are not siman headings; only report a number when "
+                    "the word סימן/סי' precedes it AND it introduces this teshuva's own actual "
+                    "start (not a passing citation of some other siman, e.g. a Shulchan Aruch "
+                    "reference like 'עי' סימן X'). Read the Hebrew letter-numeral carefully "
+                    "(gematria: א=1, ב=2, ..., י=10, יא=11, ..., כ=20, ר vs ד and ה vs ח are "
+                    "common misread pairs -- look closely)."
                 ),
             },
             "is_back_matter": {
                 "type": "boolean",
                 "description": (
-                    "True if this page is clearly NOT a numbered responsum -- a blank page, a "
-                    "title page, an approbation/haskamah letter, or an index/table of contents "
-                    "(often near the very end of a volume). False for any page that is part of "
-                    "the actual responsa text, even if no new siman heading starts on it."
+                    "True if this page is clearly NOT the text of a numbered responsum -- a "
+                    "blank page, a title page, an approbation/haskamah letter, an index/table of "
+                    "contents (often near a volume's very end), OR a preface/introduction/"
+                    "publisher's note near a volume's START (even one that mentions or lists "
+                    "several siman numbers in passing -- that's still front matter, not the "
+                    "responsa themselves). False for any page that is part of the actual responsa "
+                    "text, even if no new siman heading starts on it."
                 ),
             },
             "notes": {
@@ -105,9 +117,15 @@ TOOL_SCHEMA = {
 
 SYSTEM_PROMPT = """You are analyzing a single scanned page from one volume of Iggros Moshe (אגרות משה), Rabbi Moshe Feinstein's published Hebrew responsa. Your only job is to report, via the record_page tool, which siman (responsum) headings begin on this exact page image, and whether the page is back matter.
 
-A siman heading looks like "סימן א" / "סימן יד" etc. -- a Hebrew letter-numeral -- usually set off by a horizontal rule above it and/or a title/subject line beneath it, often in a larger or bolder font than the body text. A teshuva (responsum) typically ends with a horizontal rule and/or the signature "משה פיינשטיין" near the bottom of a page.
+A siman heading looks like "סימן א" / "סימן יד" etc. -- the word "סימן" (or the abbreviation "סי'") followed by a Hebrew letter-numeral -- usually set off by a horizontal rule above it and/or a title/subject line beneath it, often in a larger or bolder font than the body text. A teshuva (responsum) typically ends with a horizontal rule and/or the signature "משה פיינשטיין" near the bottom of a page.
 
-Some pages have two columns (read the physically-right column first, then the physically-left column, since Hebrew reads right-to-left). Some pages contain more than one short teshuva. Internal sub-markers like "ענף א/ב/ג" (branch/section markers within one long teshuva) are NOT new simanim -- do not report them.
+Some pages have two columns (read the physically-right column first, then the physically-left column, since Hebrew reads right-to-left). Some pages contain more than one short teshuva.
+
+CRITICAL -- do not over-count. A single siman can be a very long teshuva broken into many "ענפים" (anafim / branches, e.g. ענף א, ענף ב, ...) that together span a dozen or more pages, OR a "mini-compendium" siman that bundles several short, loosely related questions and answers, each internally marked off by its own letter (א, ב, ג...) or by a plain running number (1, 2, 3... or א., ב., without the word "ענף"). In every one of these cases it is still ONE siman. The ONLY thing that starts a new siman_headings entry is a heading where the word "סימן" (or "סי'") itself appears directly before the numeral. Never report a bare letter, bare number, "ענף X", "אות X", or any other internal sub-marker as a new siman heading, no matter how prominent or title-like it looks on the page -- when in doubt, if the word סימן/סי' is not right there next to the numeral, it is not a new siman.
+
+CRITICAL -- watch for two more sources of false positives:
+1. A volume's opening pages are often a preface/introduction/publisher's note/table of contents, not the responsa themselves -- these can mention many siman numbers in running prose (e.g. summarizing "in simanim א-נ we discuss...") or list them in a table. None of those mentions are a real siman heading -- a real siman heading introduces the actual start of that responsum's own text (typically an addressee/date line, ending later with the "משה פיינשטיין" signature), not a passing reference to it. If unsure whether a page is still front-matter/introduction rather than the start of the real responsa, say so in notes rather than guessing.
+2. Many teshuvot discuss and cite the Shulchan Aruch's own internal structure at length -- phrases like "סימן X סעיף Y" or "בסעיף X" referring to a Shulchan Aruch citation, or a heading-like "סעיף X" marking an internal subsection of the CURRENT long teshuva (commenting seif-by-seif on a Shulchan Aruch siman). Neither is a new Iggros Moshe siman heading. Only "סימן X" belongs in siman_headings -- "סעיף X" (seif) is never a siman heading, no matter how many times it appears or how prominently it's set off on the page.
 
 Always call record_page exactly once per page."""
 

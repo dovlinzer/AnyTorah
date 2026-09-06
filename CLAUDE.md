@@ -990,6 +990,121 @@ the Batch API as of this writing; wire them in with the same two steps once `col
 them (no script was written for this — it was small enough, done by hand once real data was
 available, rather than building a `wire` subcommand speculatively beforehand).
 
+**Bug fix (2026-08-31): landed on the title page with the siman pill reading "1".** Switching
+Contemporary work/volume hardcoded `contemporaryPage = 1`, but raw page 1 is a title/front-matter
+page for most volumes, not where siman 1 actually starts (e.g. Iggros Moshe OC I: siman 1 is
+page 5; confirmed several volumes have a 1-3 page offset before real content begins). Fixed both
+platforms to look up siman 1's real starting page via the existing `TeshuvotPageManager.page
+(volume:siman:)` (iOS) / `.page(context, volume, siman)` (Android) instead — a new
+`firstSimanPage` helper on each `TextReaderViewModel`, falling back to 1 if siman 1 isn't indexed
+yet. Applied everywhere `contemporaryPage` was defaulted to 1: both `contemporaryWork`/
+`contemporaryVolume` didSets (iOS) / `setContemporaryWork`/`setContemporaryVolume` (Android), and
+the cold-start restore-with-no-saved-page fallback on both platforms. Android's fix uses
+`getApplication()` directly inside the ViewModel (already done elsewhere in this same class, e.g.
+the `EinAyahLoader` call in `loadCommentary`) rather than threading `Context` through from the
+Composable layer — simpler here since `TextReaderViewModel` is an `AndroidViewModel`, and no
+call sites needed to change as a result.
+
+#### Re-verification methodology — binary search, not exhaustive re-read (2026-09-02)
+
+**SUPERSEDED (2026-09-06):** all 15 volumes' siman→page data now comes from the user's own
+manual review of every siman against the physical sefarim (recorded in a Google Sheet, then
+merged into `teshuvot_siman_index.json`/`index_out/*.json` and `ContemporaryTeshuvotVolume`'s
+`simanCount` in both `TextModels.swift`/`.kt`). Both a "printed page" and a "jpg page" (the
+number that indexes into `teshuvot_pages.json`'s Drive filenames) were recorded per volume where
+they differ; the app uses jpg page. This makes the batch pipeline and every re-verification
+technique below (binary search, exhaustive re-read, the misread-pattern heuristics) historical —
+kept for reference in case a *future* volume needs indexing from scratch, not because current
+data still depends on them. Two rows flagged as likely reviewer typos during the 2026-09-06
+merge, confirmed and corrected by the user same day: YD III siman 56 (was jpg page 69, corrected
+to 84) and EH II siman 5 (was jpg page 20, corrected to 10).
+
+The batch pipeline above is fast but structurally can't be trusted: its "trust the running
+sequence" fallback means it can NEVER surface an undercounted page (a page with 2+ teshuvah
+headings that got read as only 1) as a detectable gap — a clean `gaps=0` on a batch-only volume
+proves nothing. The first re-verification pass fixed this by having a live agent read every
+single page start-to-finish, zoom-cropping ambiguous gematria letters — reliable (0% error on
+EH2/EH3/OC2/OC3/HM1) but extremely expensive: full-volume, page-by-page re-reads across
+hundreds of scanned pages, run several volumes at a time, repeatedly interrupted by rate limits
+that force restarting the *entire remaining span* from scratch each time.
+
+**Replaced with a binary-search calibration pass (2026-09-02, user-suggested)**, exploiting the
+actual observed failure shape: a batch-pipeline error is a single point-defect (one page's
+heading count undercounted by some delta) that shifts every subsequent siman's recorded number
+by that same constant delta until the next point-defect. That means you don't need to read every
+page to find where drift happened — you need to read O(log n) checkpoint pages to *localize*
+each defect, then hand-verify just the defect page itself.
+
+**Important scope caveat, confirmed empirically on EH4's 2026-09-02 re-verification session**:
+binary search only saves work on a span that already has *some* existing key→page data to check
+checkpoints against (either old batch output, or a previously-completed live pass) — it localizes
+drift in data that exists but might be wrong. It does NOT apply to a span with literally no
+entries yet (e.g. a live-built volume's unprocessed tail past wherever the last session stopped) —
+there's nothing there to bisect against, so recovering that data requires actually reading each
+page's headings, full stop. In that situation, still take ONE checkpoint read near the middle of
+the unprocessed span first (as a cheap sanity check for whether the pace looks normal or there's a
+drastic jump worth investigating), but then build the rest by reading page-by-page as normal — do
+not try to force-fit binary search onto genuinely-undiscovered territory.
+
+Algorithm for the case binary search *does* apply (an existing, possibly-wrong index over the
+span in question):
+1. Pick a checkpoint recorded siman key `K` roughly at the midpoint of the still-unverified
+   range; look up its recorded page `P = index[K]`, read that page's image, zoom-crop and
+   determine the TRUE printed siman number of the first heading that actually starts on `P`.
+2. If the true heading number equals `K`: everything up to and including `P` is clean — move the
+   checkpoint later (bisect toward the high end of the unverified range).
+3. If it doesn't match: a defect occurred at or before `P` — bisect toward the low end, between
+   the last confirmed-clean checkpoint and `P`, and repeat, narrowing until the defect is
+   isolated to one specific page.
+4. Hand-verify that one page directly (and the 1-2 pages around it, for safety) to determine the
+   true heading count and the correction delta, then apply `key_true = key_recorded + delta` to
+   every entry from the defect page forward, up to the next already-confirmed-clean checkpoint —
+   page values don't change, only the siman-number labels shift.
+5. Continue checkpointing further into the volume beyond the fix — a volume can have more than
+   one independent point-defect (OC I had two: pages 104 and 232), so finding one doesn't mean
+   the rest of the volume is clean.
+6. The volume's true back-matter boundary (where numbered content ends, e.g. OC I's
+   "Iggrot Moshe, Kodashim U'Taharot" title page bound into the same scan sequence starting at
+   page 339) still needs its own direct check near the tail — binary search finds numbering
+   defects, not content-boundary questions, so don't skip that step.
+
+This cuts the read cost by roughly the same ratio a binary search beats a linear scan (~90%
+fewer page reads for a similarly-sized volume), while catching the exact same class of error the
+exhaustive read was designed to catch — it does NOT lower the accuracy bar, it just stops paying
+to re-confirm long stretches that were never actually wrong. A genuine non-defect anomaly (a
+legitimately non-sequential jump printed in the book itself, or a deliberately-unnumbered page
+like EH4's confirmed-absent siman 18) still needs the same careful in-place investigation once
+localized — the savings are in not reading the untouched-and-correct majority of the volume.
+
+**Common misread pattern: samekh/peh (ס/פ) gematria confusion (found 2026-09-03, OC I).** A
+vision read that produces a big, out-of-sequence jump — a heading number that's way too high or
+too low relative to its neighbors, especially by exactly 20 — is often not a real structural
+anomaly at all: ס (samekh, =60) and פ (peh, =80) are visually similar enough in this font that a
+misread of one for the other silently shifts an entire block of headings by 20 (e.g. every siman
+in the 160s misread as the corresponding siman in the 180s). This is exactly what happened on OC
+I: an earlier pass read pages 282-291 as containing simanim 180-188, when they were actually
+160-168, and built an increasingly elaborate (wrong) theory about a "duplicate block" on top of
+that misread instead of catching the letter confusion. **When a checkpoint or hand-verification
+turns up a heading number ending in the 60s or 80s that breaks the surrounding sequence (a big
+jump forward or backward relative to what comes right before/after it), check whether swapping
+ס↔פ in that numeral resolves the inconsistency before accepting it as a genuine anomaly** — it
+frequently does, and it's a much simpler explanation than a real duplicate/reordered block.
+
+**Trust the file, not the agent's closing summary (2026-09-02 near-miss on OC I).** A live
+re-verification agent's final chat report claimed a fully-resolved, fairly dramatic conclusion
+(a genuinely duplicated siman heading appearing at two different physical page ranges, plus two
+newly-absent simanim) — but the actual `_notes` array on disk, read directly right after, showed
+its *last actual saved note* was still mid-investigation ("still need to check... pages 309-325,
+whether 160-168 truly absent... Next: reading pages..."), with no note anywhere describing the
+claimed duplicate/absence finding. The orchestrating session must independently re-read the
+target `index_out/*.json` file after any agent reports "done" — never take a natural-language
+completion claim at face value, even from a "completed" (not rate-limit-killed) run; only what's
+actually persisted counts. If the file and the summary disagree, the file wins, and the task gets
+relaunched with instructions to re-derive and this time actually save the claimed finding.
+Also: instruct agents to *append* new `_notes` entries (not prepend) — this run's notes ended up
+newest-first, made worse by the mismatch above, since it's not obvious at a glance which note is
+actually the most recent without checking each one's own internal narrative.
+
 ### Contemporary — 5 Sefaria-digitized works added alongside Iggros Moshe (2026-08-30)
 
 Contemporary is no longer 100% page-image. Per explicit user request, 5 works that ARE

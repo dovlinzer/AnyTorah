@@ -441,12 +441,12 @@ data class ContemporaryTeshuvotWork(
     val hebrewDisplayName: String get() = hebrewAbbreviation ?: hebrewName
 
     companion object {
-        /** Iggros Moshe -- 12 of 15 volumes indexed and wired in as of 2026-08-31 (batch-indexed
-         *  via tools/index_iggros_moshe_batch.py; see CLAUDE.md's "Batch indexing the remaining
-         *  Iggros Moshe volumes" section, and the Swift copy's doc comment). Missing: OC V, YD I,
-         *  YD III (still processing on the Batch API as of this writing) -- add them here the
-         *  same way once their index_out/*.json lands and gets merged into
-         *  teshuvot_siman_index.json. */
+        /** Iggros Moshe -- all 15 volumes wired in. As of 2026-09-06, every volume's siman->page
+         *  mapping comes from the user's own manual review against the physical sefarim (a
+         *  Google Sheet, siman by siman), superseding all earlier automated/partial
+         *  batch-pipeline data -- see AnyTorah/CLAUDE.md's "Re-verification methodology"
+         *  section for that now-superseded history. simanCount below is each volume's highest
+         *  user-confirmed siman. */
         val works: List<ContemporaryTeshuvotWork> = listOf(
             ContemporaryTeshuvotWork(
                 id = "iggrosMoshe",
@@ -458,18 +458,21 @@ data class ContemporaryTeshuvotWork(
                 // teshuvot_pages.json/teshuvot_siman_index.json's own volume ids use (an
                 // unrelated internal asset-naming choice made before this data existed).
                 volumes = listOf(
-                    ContemporaryTeshuvotVolume(id = "IggrotMosheOH1", label = "OC I",   hebrewLabel = "או״ח א", simanCount = 220),
+                    ContemporaryTeshuvotVolume(id = "IggrotMosheOH1", label = "OC I",   hebrewLabel = "או״ח א", simanCount = 192),
                     ContemporaryTeshuvotVolume(id = "IggrotMosheOH2", label = "OC II",  hebrewLabel = "או״ח ב", simanCount = 113),
                     ContemporaryTeshuvotVolume(id = "IggrotMosheOH3", label = "OC III", hebrewLabel = "או״ח ג", simanCount = 101),
-                    ContemporaryTeshuvotVolume(id = "IggrotMosheOH4", label = "OC IV",  hebrewLabel = "או״ח ד", simanCount = 197),
-                    ContemporaryTeshuvotVolume(id = "IggrotMosheYD2", label = "YD II",  hebrewLabel = "יו״ד ב", simanCount = 170),
-                    ContemporaryTeshuvotVolume(id = "IggrotMosheYD4", label = "YD IV",  hebrewLabel = "יו״ד ד", simanCount = 163),
-                    ContemporaryTeshuvotVolume(id = "IggrotMosheEH1", label = "EH I",   hebrewLabel = "אה״ע א", simanCount = 176),
+                    ContemporaryTeshuvotVolume(id = "IggrotMosheOH4", label = "OC IV",  hebrewLabel = "או״ח ד", simanCount = 127),
+                    ContemporaryTeshuvotVolume(id = "IggrotMosheOH5", label = "OC V",   hebrewLabel = "או״ח ה", simanCount = 43),
+                    ContemporaryTeshuvotVolume(id = "IggrotMosheYD1", label = "YD I",   hebrewLabel = "יו״ד א", simanCount = 260),
+                    ContemporaryTeshuvotVolume(id = "IggrotMosheYD2", label = "YD II",  hebrewLabel = "יו״ד ב", simanCount = 174),
+                    ContemporaryTeshuvotVolume(id = "IggrotMosheYD3", label = "YD III", hebrewLabel = "יו״ד ג", simanCount = 161),
+                    ContemporaryTeshuvotVolume(id = "IggrotMosheYD4", label = "YD IV",  hebrewLabel = "יו״ד ד", simanCount = 65),
+                    ContemporaryTeshuvotVolume(id = "IggrotMosheEH1", label = "EH I",   hebrewLabel = "אה״ע א", simanCount = 179),
                     ContemporaryTeshuvotVolume(id = "IggrotMosheEH2", label = "EH II",  hebrewLabel = "אה״ע ב", simanCount = 26),
                     ContemporaryTeshuvotVolume(id = "IggrotMosheEH3", label = "EH III", hebrewLabel = "אה״ע ג", simanCount = 50),
-                    ContemporaryTeshuvotVolume(id = "IggrotMosheEH4", label = "EH IV",  hebrewLabel = "אה״ע ד", simanCount = 163),
-                    ContemporaryTeshuvotVolume(id = "IggrotMosheHM1", label = "CM I",   hebrewLabel = "חו״מ א", simanCount = 107),
-                    ContemporaryTeshuvotVolume(id = "IggrotMosheHM2", label = "CM II",  hebrewLabel = "חו״מ ב", simanCount = 98)
+                    ContemporaryTeshuvotVolume(id = "IggrotMosheEH4", label = "EH IV",  hebrewLabel = "אה״ע ד", simanCount = 121),
+                    ContemporaryTeshuvotVolume(id = "IggrotMosheHM1", label = "CM I",   hebrewLabel = "חו״מ א", simanCount = 108),
+                    ContemporaryTeshuvotVolume(id = "IggrotMosheHM2", label = "CM II",  hebrewLabel = "חו״מ ב", simanCount = 79)
                 )
             )
         )
