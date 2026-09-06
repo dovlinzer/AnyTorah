@@ -1217,17 +1217,18 @@ directly — no scroll-to-verse (native scrolls Parsha to its opening verse; thi
 verse-scroll infrastructure yet, so Parsha just lands on the chapter, same as how 929 already
 works here).
 
-**Button label content — plain titles only, reversed 2026-09-06 (see "Toolbar width pass,
-2026-09-06" below).** Originally (2026-07-24 per explicit user feedback) Daf Yomi and Parsha
-showed what they actually pointed to (`"Daf Yomi: {tractate} {daf}"`, `"Parsha: {name}"`) while
-Mishnah Yomi/Rambam Yomi/929 stayed plain titles. Per later explicit user direction (toolbar
-width pressure, especially in the Mercava side-by-side pop-out's narrower window), all five are
-now plain titles with no detail at all: `"Daf Yomi"`, `"Mishnah Yomi"`, `"Rambam Yomi"`,
-`"Today's 929"`, `"Parsha"`. The helper that used to build the Daf Yomi tractate name
-(`findCategoryItemName`) and the `getCategoryItemName`/`toHebrewNumeral` imports that became
-unused as a result were deleted rather than left as dead code. The daf/parsha itself is still
-visible once you actually jump there (in the book/chapter selector), so no information is lost,
-just not previewed in the button label anymore.
+**Button label content — full detail at full toolbar width, plain title only once the toolbar is
+actually compressed (see "Toolbar width pass, 2026-09-06" below for the `toolbarCompact`
+mechanism).** Mishnah Yomi/Rambam Yomi/929 are always plain titles (`"Mishnah Yomi"`/`"Rambam
+Yomi"`/`"Today's 929"`), unchanged since 2026-07-24. Daf Yomi and Parsha are the two that vary:
+full width shows `"Daf Yomi: {tractate} {daf}"`/`"Parsha: {name}"` (the original 2026-07-24
+wording); compact drops to the plain title (`"Daf Yomi"`/`"Parsha"`, matching the other three) —
+a same-day, same-session reversal of an even-shorter-lived unconditional-compact version that
+briefly shipped and was reverted per explicit follow-up feedback (full width never needed
+shortening in the first place). `findCategoryItemName`/`getCategoryItemName`/`toHebrewNumeral`
+(the tractate-name/numeral lookups the full-width label needs) are back in use, not dead code.
+The daf/parsha itself is always still visible once you actually jump there (in the book/chapter
+selector) regardless of which label form is showing, so no information is ever truly lost.
 
 **Name-map verification, not a blind port:** native's own `talmudNameMap`/`mishnahNameMap`/
 `rambamNameMap` don't transfer as-is, because this catalog's `sefariaName` spellings sometimes
@@ -1456,6 +1457,26 @@ with no overlap) and the previously-broken regain-focus case (switching away and
 clicking "Open AnyTorah alongside" again, should work on the very first click — no extra click
 needed to "wake up" the handler, since neither click here depends on window focus at all anymore).
 
+**Regression found by real-device testing, fixed same day: `openAnyTorahAlongside` needs to
+refocus Mercava too, not just open the new popup.** The very first version of this redesign made
+`openAnyTorahAlongside` do exactly one thing — open the new AnyTorah popup — on the theory that
+each button should be minimally single-purpose. But clicking that button requires first regaining
+OS focus on *this* (the main) window, which by itself sends the already-open Mercava popup behind
+it — and a handler that never touches Mercava's focus at all never brings it back forward. The
+user's own report: "it was working before [the single-button design] ... both windows were in
+view — now ... the mercava window has disappeared." The pre-redesign combined handler always did
+`mercavaWindowRef.current?.focus()` synchronously first, before its own `window.open()` call, for
+exactly this reason — restored that same call at the top of `openAnyTorahAlongside`. In principle
+this reintroduces some of the one-activation-token risk this whole redesign exists to avoid (a
+`.focus()` followed by a `window.open()` in the same click could, per the token model, starve the
+second call) — but the user's own real-Chrome testing of the pre-redesign handler confirms this
+exact ordering reliably keeps both windows visible in practice, so that empirical result is
+trusted over the theoretical risk. Net z-order after a click: the new AnyTorah popup ends up
+frontmost (a freshly opened/navigated popup takes focus by default), Mercava sits just behind it
+but still fully visible (non-overlapping screen regions), and the original, now-superseded main
+window ends up hidden behind both — which is the desired outcome, not a bug, since the whole
+point of the new popup is to replace using that window at that size.
+
 ## Toolbar width pass, 2026-09-06 (label shortening, one-line scroll, sidebar hidden in the
 Mercava pop-out)
 
@@ -1467,18 +1488,50 @@ same day per explicit feedback that wrapping to a second line cost too much vert
 was "the least ideal" fix. Replaced with three changes together, aimed at needing the fallback as
 rarely as possible rather than eliminating it:
 
-- **Yomi buttons dropped their "what it points to" detail** — reverses the 2026-07-24 decision
-  documented under "Yomi buttons — shipped" below (Daf Yomi/Parsha used to show tractate+daf/
-  parsha name; now every Yomi button, including those two, is a plain title only: "Daf Yomi",
-  "Parsha", "Mishnah Yomi", "Rambam Yomi", "Today's 929"). `findCategoryItemName` (the helper that
-  looked up the Daf Yomi tractate name) and its now-unused `getCategoryItemName`/`toHebrewNumeral`
-  imports were deleted as dead code rather than left unused.
-- **Daf-image controls shortened**: the show/hide toggle went from "Show daf"/"Hide daf" to the
-  bare word "Daf" (on/off now conveyed only by the active-state background highlight, full
-  meaning still on hover via `title`); the Left/Middle position pair dropped its "Daf" prefix
-  label and shortened to bare "L"/"M" (ש/א in Hebrew), same `title`-carries-the-meaning pattern.
-- **Mercava buttons dropped their text label entirely** — see "Mercava side-by-side — redesigned"
-  above; icon-only now, `title` tooltips only.
+- **Yomi/daf-image/Mercava labels drop to a compact form only once the toolbar actually doesn't
+  fit at full width — not unconditionally.** The first version of this pass shortened these
+  labels *unconditionally* (always compact, even at a normal full-width desktop window); reverted
+  same day per explicit follow-up feedback — full width never had a problem to solve, so it
+  should keep its original wording. Replaced with a measured `toolbarCompact` boolean
+  (`Reader.tsx`, declared right before `yomiButtons`) driving each affected label:
+  - Daf Yomi/Parsha: full width shows what they point to (`"Daf Yomi: {tractate} {daf}"`,
+    `"Parsha: {name}"`, same as the pre-2026-07-24-reversal wording); compact drops to the plain
+    title (`"Daf Yomi"`, `"Parsha"`), matching Mishnah Yomi/Rambam Yomi/929's own always-plain
+    titles.
+  - Daf-image toggle: full width keeps "Show daf"/"Hide daf"; compact drops to the bare word
+    "Daf" (on/off conveyed only by the active-state highlight either way, full meaning always
+    available via `title`). The Left/Middle position pair: full width keeps its "Daf" prefix
+    label plus "Left"/"Middle"; compact drops the prefix and shortens to bare "L"/"M" (ש/א in
+    Hebrew).
+  - Mercava buttons: full width keeps the "Mercava"/"מרכבה" text label before the icons; compact
+    drops it (icon-only, `title` tooltips only).
+  - **How `toolbarCompact` is actually measured** — no CSS/container-query pixel threshold can
+    answer "would the full-detail labels fit," since that depends on live content (the Daf Yomi
+    tractate name's length, Hebrew vs. English glyph widths, etc.), not a fixed breakpoint. A
+    `ResizeObserver` on the toolbar `<div>` (`toolbarRef`) and a `useLayoutEffect` keyed on
+    content that can change the row's natural width (category, selection, yomi, etc.) both funnel
+    into one `recheckToolbarFit` function, which uses a functional `setState` updater: if already
+    compact, optimistically try full again (a real state flip, so React actually re-renders with
+    full labels); if not compact, measure the *already-rendered* DOM directly
+    (`scrollWidth > clientWidth`) and flip to compact only on a genuine overflow. A second,
+    dependency-array-free `useLayoutEffect` runs after every render specifically to catch the
+    "just tried full again, did it actually fit?" case and correct back to compact if not — both
+    effects run as `useLayoutEffect` so the correction lands before paint, no visible flicker.
+    **A real bug caught by live testing, not by `tsc`/lint**: an earlier version of
+    `recheckToolbarFit` just unconditionally called `setToolbarCompact(false)` on every resize —
+    but `setState(false)` when the value is *already* `false` is a no-op in React (skips
+    re-rendering entirely), so a shrinking window's resize never triggered the corrective
+    remeasurement at all; full labels kept silently overflowing. Fixed by having the "not
+    compact" branch measure and decide directly, rather than resetting and hoping a later render
+    would catch it.
+  - **Verification caveat, same shape as the `window.open()` one already documented for Mercava
+    below**: this session confirmed the `mcp__Claude_Browser__resize_window` viewport-emulation
+    tool changes real layout (`clientWidth` genuinely updates) but does **not** fire `resize`
+    events or `ResizeObserver` callbacks — a sandboxed-browser-tool limitation, not something app
+    code controls. Verified instead via a fresh page load at each of a full-width and a narrow
+    viewport (the content-dependency effect's initial mount run doesn't need `ResizeObserver` to
+    fire) — both directions confirmed correct that way — but the actual *live-resize* transition
+    (e.g. the Mercava pop-out narrowing while already mounted) still needs a real-browser check.
 - **The row itself reverted from `flex-wrap` back to `flex-nowrap overflow-x-auto`**, but with a
   new `toolbar-scroll` class (`app/globals.css`) forcing a slim, always-visible scrollbar thumb
   (`scrollbar-width: thin` + `scrollbar-color` for Firefox, `::-webkit-scrollbar` rules for

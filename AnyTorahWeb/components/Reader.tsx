@@ -6,6 +6,7 @@ import type { CommentaryType } from "@/lib/commentaryTypes";
 import { getPoolInfo, computeEffectiveSlots, fetchCategoryFor, type ReaderCategory } from "@/lib/commentaryPools";
 import {
   getCategoryGroups,
+  getCategoryItemName,
   getChapterMin,
   getChapterMax,
   getChapterUnitLabel,
@@ -37,7 +38,7 @@ import {
   type Bookmark,
 } from "@/lib/bookmarks";
 import type { YomiToday, YomiResult } from "@/lib/yomiService";
-import { teshuvotWork, teshuvotMaxSiman, NISHMAT_HABAYIT_WORK_ID } from "@/lib/textModels";
+import { toHebrewNumeral, teshuvotWork, teshuvotMaxSiman, NISHMAT_HABAYIT_WORK_ID } from "@/lib/textModels";
 import NishmatHaBayitSimanPicker from "@/components/NishmatHaBayitSimanPicker";
 import { saveHighlights, loadAndReconcileHighlights, findHighlight, type Highlight } from "@/lib/highlights";
 import { anchorKey, stripAnchorHTML, buildSegmentLabel, type TextAnchor } from "@/lib/textAnchor";
@@ -65,6 +66,14 @@ const READER_CATEGORIES: ReaderCategory[] =
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(Math.max(n, min), max);
+}
+
+/** Looks up a catalog item's display name (English, or nikkud-stripped Hebrew) by id — used for
+ *  the Daf Yomi button's full-width label, which needs a tractate name outside the currently-
+ *  selected category's own `groups`/`index` state. Thin wrapper over the shared
+ *  getCategoryItemName. */
+function findCategoryItemName(category: ReaderCategory, index: number, hebrewMode: boolean): string {
+  return getCategoryItemName(category, index, hebrewMode);
 }
 
 // Commentary slot assignments are remembered per context (e.g. "talmud", "sa:0") so switching
@@ -1503,7 +1512,20 @@ export default function Reader() {
   // complement. Position/category/chapter is handed off via a query string
   // (readInitialPositionFromURL/initialPositionRef above), since this app has no URL-based
   // routing for ordinary browsing otherwise.
+  //
+  // `mercavaWindowRef.current?.focus()` runs FIRST, synchronously, before the AnyTorah
+  // `window.open()` — restored 2026-09-06 after real-device testing showed dropping it (the
+  // initial version of this split-button redesign only opened the AnyTorah popup, nothing else)
+  // regressed a real symptom: clicking this button requires first regaining OS focus on *this*
+  // window, which by itself sends the already-open Mercava popup behind it, and nothing in a
+  // focus-free handler ever brings Mercava back forward. The pre-redesign combined handler always
+  // explicitly refocused Mercava first in the same click for exactly this reason, and the user's
+  // own testing confirms that ordering reliably keeps both windows visible — even though opening
+  // a *new* popup is normally activation-gated too, so in principle the second call here could
+  // lose the click's activation token the same way the old bug did. Trusting the confirmed
+  // real-browser behavior over that theoretical risk.
   const openAnyTorahAlongside = useCallback(() => {
+    mercavaWindowRef.current?.focus();
     const params = new URLSearchParams({ category, index: String(index), chapter: String(chapter) });
     if (halakha != null) params.set("halakha", String(halakha));
     if (category === "talmud") params.set("amud", talmudAmud);
@@ -1971,19 +1993,78 @@ export default function Reader() {
     }
   }, [category, talmudAmud, data]);
 
+  // Whether the toolbar row is currently too narrow for its full-detail labels — 2026-09-06,
+  // reversed from an earlier same-day version that shortened these labels unconditionally. Per
+  // explicit user feedback: the shortened labels (below) should only appear once the toolbar is
+  // actually compressed (e.g. the Mercava side-by-side pop-out's narrower window), not at a
+  // normal full-width desktop window where there was never a problem to solve.
+  //
+  // No CSS/container-query threshold can answer "would the full-detail labels actually fit" —
+  // that depends on the live Daf Yomi tractate name, the current work/selection text, Hebrew vs.
+  // English glyph widths, etc., not just a fixed pixel breakpoint. So this measures the real DOM.
+  //
+  // `recheckToolbarFit` is the one place that decides the next value, via a functional `setState`
+  // updater so it always reads the true current value (never a stale closure, which mattered here
+  // since the ResizeObserver callback below is set up once and would otherwise capture whatever
+  // `toolbarCompact` was at mount forever): if already compact, optimistically try full (a real
+  // false→true→false transition, which *does* trigger React to re-render and — since this only
+  // flips the state, it doesn't yet know whether full actually fits) hands off to the second
+  // effect below to verify and correct back to compact if it still doesn't fit. If not compact,
+  // it measures the *already-rendered* full-label DOM directly and flips to compact only on a
+  // genuine overflow — this direction needs no follow-up render, since the full-label content is
+  // already sitting in the DOM being measured. (A naive version of this that just always reset to
+  // `false` was a real bug, caught by live testing: `setState(false)` when the value is *already*
+  // `false` is a no-op that skips re-rendering entirely in React, so a shrinking window's resize
+  // never triggered the corrective remeasurement — full labels kept overflowing untouched.)
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [toolbarCompact, setToolbarCompact] = useState(false);
+  const recheckToolbarFit = useCallback(() => {
+    setToolbarCompact((prev) => {
+      if (prev) return false;
+      const el = toolbarRef.current;
+      return !!el && el.scrollWidth > el.clientWidth;
+    });
+  }, []);
+  useLayoutEffect(() => {
+    const el = toolbarRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(recheckToolbarFit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [recheckToolbarFit]);
+  useLayoutEffect(() => {
+    recheckToolbarFit();
+  }, [recheckToolbarFit, category, selection, hebrewMode, yomi, dafImageAvailable, mercavaUrl, mercavaOpen, isSideBySidePopout]);
+  // Deliberately no dependency array — this only ever runs the "just tried full again" follow-up
+  // check described above, and must do so after *every* render where that could be the case, not
+  // just when `toolbarCompact` itself changes. Terminates rather than looping: it's a no-op
+  // whenever `toolbarCompact` is already true, and setting it true only flips a false into a true
+  // once.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const el = toolbarRef.current;
+    if (!el || toolbarCompact) return;
+    if (el.scrollWidth > el.clientWidth) setToolbarCompact(true);
+  });
+
   // One Yomi button per relevant tab — Daf Yomi (talmud), Mishnah Yomi (mishnah), Rambam Yomi
   // (rambam), and two for tanakh (weekly Parsha + 929), matching exactly which jump buttons
-  // native shows (no Yomi concept exists for tosefta/yerushalmi/shulchanArukh). All five are now
-  // plain titles with no "what it points to" detail (tractate+daf / parsha name) — reversed
-  // 2026-09-06 from the earlier 2026-07-24 decision (Daf Yomi/Parsha used to show that detail)
-  // per explicit user direction that toolbar width matters more, especially in the Mercava
-  // side-by-side pop-out's narrower window; the actual daf/parsha is already visible in the book/
-  // chapter selector once you jump there anyway.
+  // native shows (no Yomi concept exists for tosefta/yerushalmi/shulchanArukh). Daf Yomi and
+  // Parsha show what they point to (tractate+daf / parsha name) at full toolbar width, and drop
+  // to a plain title — same as Mishnah Yomi/Rambam Yomi/929 always are — once `toolbarCompact`
+  // (above) is true.
   const yomiButtons: { label: string; onClick: () => void }[] = [];
   if (yomi) {
     if (category === "talmud" && yomi.daf) {
       const r = yomi.daf;
-      yomiButtons.push({ label: hebrewMode ? "דף היומי" : "Daf Yomi", onClick: () => jumpToYomi(r) });
+      const tractateName = findCategoryItemName("talmud", r.index, hebrewMode);
+      const dafLabel = hebrewMode ? toHebrewNumeral(r.chapter) : String(r.chapter);
+      yomiButtons.push({
+        label: toolbarCompact
+          ? hebrewMode ? "דף היומי" : "Daf Yomi"
+          : (hebrewMode ? "דף היומי: " : "Daf Yomi: ") + `${tractateName} ${dafLabel}`,
+        onClick: () => jumpToYomi(r),
+      });
     } else if (category === "mishnah" && yomi.mishnah) {
       const r = yomi.mishnah;
       yomiButtons.push({ label: hebrewMode ? "משנה יומית" : "Mishnah Yomi", onClick: () => jumpToYomi(r) });
@@ -1997,7 +2078,12 @@ export default function Reader() {
       // boxes) in Hebrew — per explicit user request.
       if (yomi.parsha) {
         const r = yomi.parsha;
-        yomiButtons.push({ label: hebrewMode ? "פרשה" : "Parsha", onClick: () => jumpToYomi(r) });
+        yomiButtons.push({
+          label: toolbarCompact
+            ? hebrewMode ? "פרשה" : "Parsha"
+            : (hebrewMode ? "פרשה: " : "Parsha: ") + (hebrewMode ? r.hebrewName : r.name),
+          onClick: () => jumpToYomi(r),
+        });
       }
       if (yomi.tanakh929) {
         const r = yomi.tanakh929;
@@ -2245,6 +2331,7 @@ export default function Reader() {
           the "no way to reach it" discoverability failure the original bug report was really
           about, without paying flex-wrap's vertical-space cost. */}
       <div
+        ref={toolbarRef}
         dir={hebrewMode ? "rtl" : "ltr"}
         className="toolbar-scroll mb-4 flex shrink-0 flex-nowrap items-center gap-3 overflow-x-auto rounded-lg border border-border bg-card p-3"
       >
@@ -2365,24 +2452,30 @@ export default function Reader() {
 
         {category === "talmud" && dafImageAvailable && (
           <div dir={hebrewMode ? "rtl" : "ltr"} className="flex shrink-0 items-center gap-3">
-            {/* Shortened from "Show daf"/"Hide daf" to the bare word 2026-09-06 (width pressure,
-                especially in the Mercava side-by-side pop-out's narrower window) — on/off state
-                is now conveyed only by the active-state background highlight (same convention
-                already used for the L/M position buttons just below), with a title tooltip
-                keeping the full meaning discoverable on hover. */}
+            {/* Drops to the bare word "Daf" when `toolbarCompact` (width pressure, especially in
+                the Mercava side-by-side pop-out's narrower window) — full width keeps the
+                original "Show daf"/"Hide daf" wording. On/off state is always also conveyed by
+                the active-state background highlight, and a title tooltip keeps the full meaning
+                discoverable on hover even when compact. */}
             <button
               onClick={() => setShowDafImage(!showDafImage)}
               className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:border-[var(--accent)]"
               style={showDafImage ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
               title={hebrewMode ? (showDafImage ? "הסתר את תמונת הדף" : "הצג את תמונת הדף") : showDafImage ? "Hide the daf image" : "Show the daf image"}
             >
-              {hebrewMode ? "דף" : "Daf"}
+              {toolbarCompact
+                ? hebrewMode ? "דף" : "Daf"
+                : hebrewMode ? (showDafImage ? "הסתר דף" : "הצג דף") : showDafImage ? "Hide daf" : "Show daf"}
             </button>
 
-            {/* L/M, no "Daf" prefix label (redundant once the toggle above already says "Daf") —
-                same width-pressure shortening, titles carry the full meaning. */}
+            {/* "Daf" prefix label only at full width — redundant with the toggle above once
+                compact, same width-pressure shortening; L/M drop to bare letters when compact
+                too (full width: "Left"/"Middle"), titles carry the full meaning either way. */}
             {showDaf && (
               <div className="flex shrink-0 items-center gap-1 rounded-full border border-border px-1 py-1 text-sm">
+                {!toolbarCompact && (
+                  <span className="pl-2 text-xs opacity-60">{hebrewMode ? "דף" : "Daf"}</span>
+                )}
                 {(["left", "middle"] as const).map((pos) => (
                   <button
                     key={pos}
@@ -2397,7 +2490,9 @@ export default function Reader() {
                         : pos === "left" ? "Daf image on the left" : "Daf image in the middle"
                     }
                   >
-                    {hebrewMode ? (pos === "left" ? "ש" : "א") : pos === "left" ? "L" : "M"}
+                    {toolbarCompact
+                      ? hebrewMode ? (pos === "left" ? "ש" : "א") : pos === "left" ? "L" : "M"
+                      : hebrewMode ? (pos === "left" ? "שמאל" : "אמצע") : pos === "left" ? "Left" : "Middle"}
                   </button>
                 ))}
               </div>
@@ -2452,9 +2547,9 @@ export default function Reader() {
             ever needs one new-popup click, so neither can starve the other of the click's user-
             activation token. "Open AnyTorah alongside" only renders once `mercavaOpen` is true —
             offering it before Mercava exists would pop out a left-docked AnyTorah window with
-            nothing on the right to tile against. No "Mercava" text label (icon-only, `title`
-            carries the meaning on hover) — width-pressure shortening, matching the same
-            2026-09-06 pass on the Yomi/daf-image controls below. */}
+            nothing on the right to tile against. The "Mercava" text label drops out when
+            `toolbarCompact` (icon-only, `title` carries the meaning on hover) — same width-
+            pressure shortening as the Yomi/daf-image controls above, restored at full width. */}
         {category === "talmud" &&
           (yomiButtons.length > 0 || dafImageAvailable) &&
           mercavaUrl && !isSideBySidePopout && <VerticalDivider />}
@@ -2463,6 +2558,9 @@ export default function Reader() {
             dir={hebrewMode ? "rtl" : "ltr"}
             className="flex shrink-0 items-center gap-1 rounded-full border border-border px-1 py-1 text-sm"
           >
+            {!toolbarCompact && (
+              <span className="pl-2 pr-1 text-xs opacity-60">{hebrewMode ? "מרכבה" : "Mercava"}</span>
+            )}
             <button
               onClick={openOrFocusMercava}
               aria-label={hebrewMode ? "פתח את מרכבה בחלון נפרד" : "Open Mercava in a separate window"}
