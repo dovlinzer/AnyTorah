@@ -48,6 +48,7 @@ import {
 } from "@/lib/textModels";
 import NishmatHaBayitSimanPicker from "@/components/NishmatHaBayitSimanPicker";
 import IggrosMoshePageView from "@/components/IggrosMoshePageView";
+import IggrosMoshePodcastTab from "@/components/IggrosMoshePodcastTab";
 import {
   loadTeshuvotPages,
   loadTeshuvotSimanIndex,
@@ -56,6 +57,7 @@ import {
   type TeshuvotPages as IggrosMoshePages,
   type TeshuvotSimanIndex as IggrosMosheSimanIndex,
 } from "@/lib/teshuvotPageManager";
+import { loadIggrosMoshePodcastCitations, citedEpisodesFor } from "@/lib/iggrosMoshePodcasts";
 import { saveHighlights, loadAndReconcileHighlights, findHighlight, type Highlight } from "@/lib/highlights";
 import { anchorKey, stripAnchorHTML, buildSegmentLabel, type TextAnchor } from "@/lib/textAnchor";
 import HighlightMark from "@/components/HighlightMark";
@@ -1241,6 +1243,20 @@ export default function Reader() {
   const iggrosMoshePage = isIggrosMoshe
     ? pageForSiman(iggrosMosheSimanIndex, currentIggrosMosheVolume!.id, chapter)
     : null;
+
+  // "Iggros Moshe A to Z" podcast citations — a "here's where to find it" indicator (see
+  // IggrosMoshePodcastTab), loaded lazily like the pages/siman-index JSON above. `chapter` here
+  // already IS the current siman (unlike native, whose own nav state is page-based and needs its
+  // own page->siman floor lookup first), so citedEpisodesFor below is a direct exact-match query.
+  const [iggrosMoshePodcastData, setIggrosMoshePodcastData] = useState<Awaited<
+    ReturnType<typeof loadIggrosMoshePodcastCitations>
+  > | null>(null);
+  useEffect(() => {
+    if (isIggrosMoshe && !iggrosMoshePodcastData) loadIggrosMoshePodcastCitations().then(setIggrosMoshePodcastData);
+  }, [isIggrosMoshe, iggrosMoshePodcastData]);
+  const iggrosMoshePodcastEpisodes = isIggrosMoshe
+    ? citedEpisodesFor(iggrosMoshePodcastData, currentIggrosMosheVolume!.id, chapter)
+    : [];
 
   // Scanned daf image — shown as its own column alongside the digital text (Talmud only).
   const [talmudPages, setTalmudPages] = useState<TalmudPages | null>(null);
@@ -2704,6 +2720,9 @@ export default function Reader() {
         >
         <div className="relative min-h-0 flex-1">
           {!chevronsOnDaf && <NavChevrons hideLeft={hideLeftChevron} hideRight={hideRightChevron} onStep={stepReading} />}
+          {isIggrosMoshe && (
+            <IggrosMoshePodcastTab episodes={iggrosMoshePodcastEpisodes} hebrewMode={hebrewMode} />
+          )}
           <div ref={textContainerRef} className="h-full overflow-y-auto px-6">
           {isIggrosMoshe && currentIggrosMosheVolume && (
             <div className="py-4">
