@@ -56,7 +56,7 @@ export default function IggrosMoshePodcastTab({
         onClick={() => setOpen(true)}
         aria-label={hebrewMode ? "פרקי פודקאסט על סימן זה" : "Podcast episodes on this siman"}
         title={hebrewMode ? "פרקי פודקאסט על סימן זה" : "Podcast episodes on this siman"}
-        className="pointer-events-auto absolute right-4 top-4 flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border-2 border-white/70 bg-black/70 bg-cover bg-center shadow-lg transition-transform hover:scale-105"
+        className="pointer-events-auto absolute right-4 top-4 flex h-14 w-14 items-center justify-center overflow-hidden rounded-lg border-2 border-white/70 bg-black/70 bg-cover bg-center shadow-lg transition-transform hover:scale-105"
         style={{ backgroundImage: thumbnail ? `url(${thumbnail})` : undefined }}
       >
         {!thumbnail && <span className="text-2xl">🎧</span>}
