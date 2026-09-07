@@ -82,8 +82,11 @@ export default function IggrosMoshePodcastTab({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
+              {/* Literal English title in both language modes, matching native's own
+                  `.navigationTitle("Iggros Moshe A to Z")` — this is the podcast's proper name,
+                  not a translatable label. */}
               <h2 className="text-sm font-semibold" style={{ color: "var(--accent)" }}>
-                {hebrewMode ? "פרקי פודקאסט" : "Podcast episodes"}
+                Iggros Moshe A to Z
               </h2>
               <button
                 onClick={() => setOpen(false)}
