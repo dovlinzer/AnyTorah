@@ -5,7 +5,7 @@ import { TextCatalog } from "./textCatalog";
 import type { ReaderCategory } from "./commentaryPools";
 import { rambamIntroductions } from "./rambamIntroductions";
 import { stripNikud } from "./hebrewUtils";
-import { TESHUVOT_RISHONIM, TESHUVOT_ACHARONIM, TESHUVOT_CONTEMPORARY, teshuvotMaxSiman } from "./textModels";
+import { TESHUVOT_RISHONIM, TESHUVOT_ACHARONIM, TESHUVOT_CONTEMPORARY, teshuvotMaxSiman, IGGROS_MOSHE_WORK_ID } from "./textModels";
 
 export interface CategoryItem {
   id: number;
@@ -121,11 +121,18 @@ export function getCategoryGroups(
       return [
         {
           name: "",
-          items: TESHUVOT_CONTEMPORARY.map((work) => ({
-            id: work.id,
-            name: displayName(work.displayName, work.hebrewName, hebrewMode),
-            count: teshuvotMaxSiman(work.id, 1),
-          })),
+          items: [
+            // Page-image based (not a Sefaria ref) — see textModels.ts's IGGROS_MOSHE_VOLUMES doc
+            // comment. `count` here is just a generous placeholder; Reader.tsx computes the real
+            // ceiling itself from the loaded siman index, same as every other Teshuvot id's count
+            // in this function is only a rough single-volume fallback for generic callers.
+            { id: IGGROS_MOSHE_WORK_ID, name: hebrewMode ? "אגרות משה" : "Iggros Moshe", count: 300 },
+            ...TESHUVOT_CONTEMPORARY.map((work) => ({
+              id: work.id,
+              name: displayName(work.displayName, work.hebrewName, hebrewMode),
+              count: teshuvotMaxSiman(work.id, 1),
+            })),
+          ],
         },
       ];
   }

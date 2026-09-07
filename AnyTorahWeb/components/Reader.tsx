@@ -38,8 +38,24 @@ import {
   type Bookmark,
 } from "@/lib/bookmarks";
 import type { YomiToday, YomiResult } from "@/lib/yomiService";
-import { toHebrewNumeral, teshuvotWork, teshuvotMaxSiman, NISHMAT_HABAYIT_WORK_ID } from "@/lib/textModels";
+import {
+  toHebrewNumeral,
+  teshuvotWork,
+  teshuvotMaxSiman,
+  NISHMAT_HABAYIT_WORK_ID,
+  IGGROS_MOSHE_VOLUMES,
+  IGGROS_MOSHE_WORK_ID,
+} from "@/lib/textModels";
 import NishmatHaBayitSimanPicker from "@/components/NishmatHaBayitSimanPicker";
+import IggrosMoshePageView from "@/components/IggrosMoshePageView";
+import {
+  loadTeshuvotPages,
+  loadTeshuvotSimanIndex,
+  teshuvotSimanCount,
+  pageForSiman,
+  type TeshuvotPages as IggrosMoshePages,
+  type TeshuvotSimanIndex as IggrosMosheSimanIndex,
+} from "@/lib/teshuvotPageManager";
 import { saveHighlights, loadAndReconcileHighlights, findHighlight, type Highlight } from "@/lib/highlights";
 import { anchorKey, stripAnchorHTML, buildSegmentLabel, type TextAnchor } from "@/lib/textAnchor";
 import HighlightMark from "@/components/HighlightMark";
@@ -1190,12 +1206,41 @@ export default function Reader() {
   // getChapterMax (shared across every category) has no volume dimension, so this overrides it
   // for just this one category rather than widening that generic function's signature.
   const volumeValue = volume ?? 1;
-  const chapterMax = isTeshuvot ? teshuvotMaxSiman(index, volumeValue) : getChapterMax(category, index);
+  // Iggros Moshe (page-image based, not a Sefaria ref) — see textModels.ts's IGGROS_MOSHE_VOLUMES
+  // doc comment. `index === IGGROS_MOSHE_WORK_ID` is a hard branch, mirroring native's own
+  // contemporaryUsesSefaria discriminator: everything below that reads teshuvotMaxSiman/
+  // teshuvotWork assumes a real Sefaria ref, which this work doesn't have.
+  const isIggrosMoshe = isTeshuvot && category === "teshuvotContemporary" && index === IGGROS_MOSHE_WORK_ID;
+  const currentIggrosMosheVolume = isIggrosMoshe
+    ? (IGGROS_MOSHE_VOLUMES[volumeValue - 1] ?? IGGROS_MOSHE_VOLUMES[0])
+    : null;
+  const [iggrosMoshePages, setIggrosMoshePages] = useState<IggrosMoshePages | null>(null);
+  const [iggrosMosheSimanIndex, setIggrosMosheSimanIndex] = useState<IggrosMosheSimanIndex | null>(null);
+  useEffect(() => {
+    if (isIggrosMoshe && !iggrosMoshePages) loadTeshuvotPages().then(setIggrosMoshePages);
+  }, [isIggrosMoshe, iggrosMoshePages]);
+  useEffect(() => {
+    if (isIggrosMoshe && !iggrosMosheSimanIndex) loadTeshuvotSimanIndex().then(setIggrosMosheSimanIndex);
+  }, [isIggrosMoshe, iggrosMosheSimanIndex]);
+  const chapterMax = isIggrosMoshe
+    ? teshuvotSimanCount(iggrosMosheSimanIndex, currentIggrosMosheVolume!.id)
+    : isTeshuvot
+      ? teshuvotMaxSiman(index, volumeValue)
+      : getChapterMax(category, index);
   const chapterUnit = getChapterUnitLabel(category, hebrewMode);
-  const currentTeshuvotWork = isTeshuvot ? teshuvotWork(index) : null;
+  // teshuvotWork() falls back to a real (Rashi) work for any unrecognized id rather than
+  // returning null — excluding the Iggros Moshe sentinel explicitly here (not just relying on
+  // that fallback's volumeLabel happening to be null) keeps every downstream read of
+  // currentTeshuvotWork honestly null for a work that isn't Sefaria-ref-based at all.
+  const currentTeshuvotWork = isTeshuvot && !isIggrosMoshe ? teshuvotWork(index) : null;
   // Nishmat HaBayit has no numeric Siman address on Sefaria — its own titled-list picker
   // (NishmatHaBayitSimanPicker) replaces the ordinary numeric chapter stepper's "browse" button.
   const isNishmatHaBayit = currentTeshuvotWork?.id === NISHMAT_HABAYIT_WORK_ID;
+  // Page this siman resolves to, for the scanned-image viewer below — null while the index hasn't
+  // loaded yet or (rare) nothing at or before this siman is indexed.
+  const iggrosMoshePage = isIggrosMoshe
+    ? pageForSiman(iggrosMosheSimanIndex, currentIggrosMosheVolume!.id, chapter)
+    : null;
 
   // Scanned daf image — shown as its own column alongside the digital text (Talmud only).
   const [talmudPages, setTalmudPages] = useState<TalmudPages | null>(null);
@@ -1417,6 +1462,14 @@ export default function Reader() {
   const volumeQuery = isTeshuvot ? `&volume=${volumeValue}` : "";
 
   useEffect(() => {
+    // Iggros Moshe has no Sefaria ref at all — nothing to fetch, the scanned-page viewer reads
+    // straight from the siman index/pages JSON instead (see iggrosMoshePage above).
+    if (isIggrosMoshe) {
+      setLoading(false);
+      setError(null);
+      setData(null);
+      return;
+    }
     const controller = new AbortController();
     setLoading(true);
     setError(null);
@@ -1443,7 +1496,7 @@ export default function Reader() {
       .finally(() => setLoading(false));
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchCategory, index, chapter, commentariesKey, subcategoryQuery, halakhaQuery, saTextModeQuery, volumeQuery]);
+  }, [fetchCategory, index, chapter, commentariesKey, subcategoryQuery, halakhaQuery, saTextModeQuery, volumeQuery, isIggrosMoshe]);
 
   // Talmud amud a/b jump — scroll-only (both amudim are always loaded together). Resets to
   // "a" on every new daf/tractate/category, matching the expectation that a daf opens at 2a —
@@ -2210,11 +2263,13 @@ export default function Reader() {
             </div>
             {/* Teshuvot gets its own labeled group, separate from the main category capsule — it's
                 conceptually a sibling tier (Rishonim/Acharonim/Contemporary), not just another book
-                category. All three are wired up now — Contemporary here covers only the
-                Sefaria-digitized works (Mishpetei Uziel, Benei Banim, B'mareh HaBazak, Nishmat
-                HaBayit); Iggros Moshe (page-image-based, not a Sefaria ref) and the Lindenbaum
-                Center (a Sefaria source-sheet Collection, not a text index — folded into a future
-                "YCT halakha pieces" pass) are deliberately not ported. */}
+                category. All three are wired up now — Contemporary covers the four Sefaria-
+                digitized works (Mishpetei Uziel, Benei Banim, B'mareh HaBazak, Nishmat HaBayit) via
+                the ordinary text-fetch pipeline, plus Iggros Moshe (2026-09-06) via a separate
+                scanned-page-image path (see isIggrosMoshe below and lib/teshuvotPageManager.ts) —
+                it has no Sefaria digitization at all, so it can't use that pipeline. The Lindenbaum
+                Center (a Sefaria source-sheet Collection, not a text index) remains deliberately
+                unported, folded into a future "YCT halakha pieces" pass. */}
             <VerticalDivider />
             <div className="flex shrink-0 items-center gap-2">
               <span className="text-sm font-semibold">{hebrewMode ? "שו״ת" : "Teshuvot"}</span>
@@ -2366,6 +2421,20 @@ export default function Reader() {
                 <option key={v.label} value={i + 1}>
                   {hebrewMode ? currentTeshuvotWork.volumeLabelHebrew : currentTeshuvotWork.volumeLabel}{" "}
                   {hebrewMode ? (v.pickerHebrewLabel ?? v.hebrewLabel) : v.label}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {isIggrosMoshe && (
+            <select
+              value={volumeValue}
+              onChange={(e) => handleTeshuvotVolumeChange(Number(e.target.value))}
+              className="shrink-0 rounded border border-border bg-background px-2 py-1 text-sm"
+            >
+              {IGGROS_MOSHE_VOLUMES.map((v, i) => (
+                <option key={v.id} value={i + 1}>
+                  {hebrewMode ? v.hebrewLabel : v.label}
                 </option>
               ))}
             </select>
@@ -2636,9 +2705,23 @@ export default function Reader() {
         <div className="relative min-h-0 flex-1">
           {!chevronsOnDaf && <NavChevrons hideLeft={hideLeftChevron} hideRight={hideRightChevron} onStep={stepReading} />}
           <div ref={textContainerRef} className="h-full overflow-y-auto px-6">
-          {loading && <p className="py-8 text-center text-sm opacity-60">Loading…</p>}
-          {error && <p className="py-8 text-center text-sm text-red-500">{error}</p>}
-          {!loading && !error && data && (
+          {isIggrosMoshe && currentIggrosMosheVolume && (
+            <div className="py-4">
+              <p className="mb-2 text-xs opacity-50">
+                {hebrewMode ? currentIggrosMosheVolume.hebrewLabel : currentIggrosMosheVolume.label}
+                {" · "}
+                {chapterUnit} {chapter}
+              </p>
+              <IggrosMoshePageView
+                volumeId={currentIggrosMosheVolume.id}
+                page={iggrosMoshePage}
+                label={`${hebrewMode ? currentIggrosMosheVolume.hebrewLabel : currentIggrosMosheVolume.label} ${chapterUnit} ${chapter}`}
+              />
+            </div>
+          )}
+          {!isIggrosMoshe && loading && <p className="py-8 text-center text-sm opacity-60">Loading…</p>}
+          {!isIggrosMoshe && error && <p className="py-8 text-center text-sm text-red-500">{error}</p>}
+          {!isIggrosMoshe && !loading && !error && data && (
             <>
               <p className="mb-4 text-xs opacity-50">{data.ref}</p>
               <div className="pb-8" style={{ display: "flex", flexDirection: "column", gap: mainSegmentGap }}>
@@ -2769,13 +2852,18 @@ export default function Reader() {
           )}
           </div>
         </div>
-          <div
-            dir={hebrewMode ? "rtl" : "ltr"}
-            className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-1"
-          >
-            <FontSizeSlider label="Text" level={mainFontSizeLevel} onChange={setMainFontSizeLevel} hebrewMode={hebrewMode} />
-            <DisplayModePill mode={textDisplayMode} onChange={setTextDisplayMode} />
-          </div>
+          {/* Iggros Moshe is a scanned image, not real text — no font size or Hebrew/English/Both
+              toggle applies to it, matching native's own decision to hide the language pill for
+              this work (see AnyTorah/CLAUDE.md's "Iggros Moshe's language pill removed"). */}
+          {!isIggrosMoshe && (
+            <div
+              dir={hebrewMode ? "rtl" : "ltr"}
+              className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-1"
+            >
+              <FontSizeSlider label="Text" level={mainFontSizeLevel} onChange={setMainFontSizeLevel} hebrewMode={hebrewMode} />
+              <DisplayModePill mode={textDisplayMode} onChange={setTextDisplayMode} />
+            </div>
+          )}
         </div>
 
         {/* Order left to right: Teshuvah (above), Text, Commentators — the Text panel sits to

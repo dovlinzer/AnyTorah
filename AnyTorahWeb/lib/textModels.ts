@@ -1034,6 +1034,48 @@ export const TESHUVOT_CONTEMPORARY: TeshuvotWorkDef[] = [
   },
 ];
 
+// MARK: - Iggros Moshe (page-image based, not a Sefaria ref)
+//
+// Ported from AnyTorah/AnyTorah/Models/TextModels.swift's ContemporaryTeshuvotWork/Volume —
+// Iggros Moshe has no Sefaria digitization at all, so navigation resolves a siman to a scanned
+// page image (see lib/teshuvotPageManager.ts) instead of a Sefaria ref, the same way Talmud's
+// daf-image mode resolves a daf to a scanned page. Shown first in the Contemporary work picker
+// (see categoryCatalog.ts's "teshuvotContemporary" case), ahead of the four Sefaria-digitized
+// works above, matching native's own picker order. `id` matches teshuvotPages.json's/
+// teshuvotSimanIndex.json's own volume keys — note these use "OH"/"HM" prefixes, an old internal
+// asset-naming choice that predates the OC/CM abbreviations used for `label`/`hebrewLabel` (the
+// same Tur-order abbreviation convention already used throughout Acharonim above, e.g. Chatam
+// Sofer's "EH II"/"אה״ע ב").
+export interface IggrosMosheVolume {
+  id: string;
+  label: string;
+  hebrewLabel: string;
+}
+
+export const IGGROS_MOSHE_VOLUMES: IggrosMosheVolume[] = [
+  { id: "IggrotMosheOH1", label: "OC I", hebrewLabel: "או״ח א" },
+  { id: "IggrotMosheOH2", label: "OC II", hebrewLabel: "או״ח ב" },
+  { id: "IggrotMosheOH3", label: "OC III", hebrewLabel: "או״ח ג" },
+  { id: "IggrotMosheOH4", label: "OC IV", hebrewLabel: "או״ח ד" },
+  { id: "IggrotMosheOH5", label: "OC V", hebrewLabel: "או״ח ה" },
+  { id: "IggrotMosheYD1", label: "YD I", hebrewLabel: "יו״ד א" },
+  { id: "IggrotMosheYD2", label: "YD II", hebrewLabel: "יו״ד ב" },
+  { id: "IggrotMosheYD3", label: "YD III", hebrewLabel: "יו״ד ג" },
+  { id: "IggrotMosheYD4", label: "YD IV", hebrewLabel: "יו״ד ד" },
+  { id: "IggrotMosheEH1", label: "EH I", hebrewLabel: "אה״ע א" },
+  { id: "IggrotMosheEH2", label: "EH II", hebrewLabel: "אה״ע ב" },
+  { id: "IggrotMosheEH3", label: "EH III", hebrewLabel: "אה״ע ג" },
+  { id: "IggrotMosheEH4", label: "EH IV", hebrewLabel: "אה״ע ד" },
+  { id: "IggrotMosheHM1", label: "CM I", hebrewLabel: "חו״מ א" },
+  { id: "IggrotMosheHM2", label: "CM II", hebrewLabel: "חו״מ ב" },
+];
+
+/** Sentinel work id for Iggros Moshe within the "teshuvotContemporary" id space (44-47 are the
+ *  four real TeshuvotWorkDef ids above) — Reader.tsx branches its entire content-rendering path
+ *  on `index === IGGROS_MOSHE_WORK_ID` to a scanned-page viewer instead of a Sefaria-ref fetch.
+ *  Picked well clear of any real id range so it can never collide with a future addition. */
+export const IGGROS_MOSHE_WORK_ID = 9999;
+
 /** Global id of the one Teshuvot work with a bespoke titled-list siman picker instead of the
  *  ordinary numeric wheel — see NISHMAT_HABAYIT_SIMANIM and teshuvotSefariaRef's special case. */
 export const NISHMAT_HABAYIT_WORK_ID = 47;
