@@ -48,13 +48,16 @@ export default function IggrosMoshePodcastTab({
   if (episodes.length === 0) return null;
 
   return (
-    <div dir={hebrewMode ? "rtl" : "ltr"} className="pointer-events-none absolute inset-0">
+    <div className="pointer-events-none absolute inset-0">
+      {/* Fixed to the physical top-right corner (not a logical/RTL-flipped edge) — this sits over
+          the image viewer's own top-right corner in both language modes, well clear of the
+          zoom-percentage readout and slider docked along the panel's bottom edge. */}
       <button
         onClick={() => setOpen(true)}
         aria-label={hebrewMode ? "פרקי פודקאסט על סימן זה" : "Podcast episodes on this siman"}
         title={hebrewMode ? "פרקי פודקאסט על סימן זה" : "Podcast episodes on this siman"}
-        className="pointer-events-auto absolute bottom-4 flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border-2 border-white/70 bg-black/70 bg-cover bg-center shadow-lg transition-transform hover:scale-105"
-        style={{ insetInlineEnd: 16, backgroundImage: thumbnail ? `url(${thumbnail})` : undefined }}
+        className="pointer-events-auto absolute right-4 top-4 flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border-2 border-white/70 bg-black/70 bg-cover bg-center shadow-lg transition-transform hover:scale-105"
+        style={{ backgroundImage: thumbnail ? `url(${thumbnail})` : undefined }}
       >
         {!thumbnail && <span className="text-2xl">🎧</span>}
         {thumbnail && (
