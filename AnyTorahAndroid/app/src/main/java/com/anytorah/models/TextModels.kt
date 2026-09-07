@@ -682,7 +682,15 @@ enum class TeshuvotWork(
             val volTitle = listOf("Noda BiYehudah I", "Noda BiYehudah II")
             val secDisp = listOf("OC", "YD", "EH", "CM")
             val secDispHe = listOf("או״ח", "יו״ד", "אה״ע", "חו״מ")
-            val secName = listOf("Orach Chayim", "Yoreh Deah", "Even HaEzer", "Choshen Mishpat")
+            // "Orach Chaim" (no 'y') here, unlike every other work's "Orach Chayim" -- this is
+            // Sefaria's own indexed section title specifically for Noda BiYehudah (confirmed
+            // live via its /api/v2/index schema, 2026-09-01), not a typo to "correct" to match
+            // the rest of this file. Using "Orach Chayim" here fails: Sefaria doesn't recognize
+            // it as a second-level title under "Noda BiYehudah I"/"II" and falls back to
+            // treating the ref as the bare, ambiguous "complex" book-level ref, erroring "please
+            // pass a more specific ref" -- exactly the bug reported (OC volumes failed, YD/EH/CM
+            // didn't).
+            val secName = listOf("Orach Chaim", "Yoreh Deah", "Even HaEzer", "Choshen Mishpat")
             val secCounts = listOf(listOf(42, 141), listOf(100, 215), listOf(95, 161), listOf(39, 62))
             volDisp.indices.flatMap { vi ->
                 secDisp.indices.map { si ->

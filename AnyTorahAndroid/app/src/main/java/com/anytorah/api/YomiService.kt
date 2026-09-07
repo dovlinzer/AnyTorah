@@ -15,13 +15,16 @@ object YomiService {
     data class DafYomiResult(val sederIndex: Int, val tractateIndexInSeder: Int, val daf: Int, val displayLabel: String)
     data class MishnahYomiResult(val sederIndex: Int, val tractateIndexInSeder: Int, val chapter: Int, val displayLabel: String)
     data class RambamYomiResult(val seferIndex: Int, val workIndexInSefer: Int, val chapter: Int, val displayLabel: String)
+    // tractateName matches MishnahTractate.name — resolve via vm.allYerushalmiTractates
+    data class YerushalmiYomiResult(val tractateName: String, val chapter: Int, val halakha: Int, val displayLabel: String)
 
     data class YomiResults(
         val daf: DafYomiResult? = null,
         val mishnah: MishnahYomiResult? = null,
         val rambam: RambamYomiResult? = null,
         val tanakh: TanakhYomiResult? = null,
-        val parsha: ParshaResult? = null
+        val parsha: ParshaResult? = null,
+        val yerushalmi: YerushalmiYomiResult? = null
     )
 
     private val talmudNameMap = mapOf(
@@ -69,6 +72,7 @@ object YomiService {
             var rambam: RambamYomiResult? = null
             var tanakh: TanakhYomiResult? = null
             var parsha: ParshaResult? = null
+            var yerushalmi: YerushalmiYomiResult? = null
 
             for (i in 0 until items.length()) {
                 val item = items.getJSONObject(i)
@@ -86,10 +90,11 @@ object YomiService {
                         val name = displayObj?.optString("en") ?: ""
                         parsha = parseParshaYomi(ref, name)
                     }
+                    "Yerushalmi Yomi" -> yerushalmi = parseYerushalmiYomi(ref)
                 }
             }
 
-            YomiResults(daf = daf, mishnah = mishnah, rambam = rambam, tanakh = tanakh, parsha = parsha)
+            YomiResults(daf = daf, mishnah = mishnah, rambam = rambam, tanakh = tanakh, parsha = parsha, yerushalmi = yerushalmi)
         } catch (e: Exception) {
             YomiResults()
         }
@@ -163,6 +168,25 @@ object YomiService {
         return ParshaResult(bookIndex = parsed.bookIndex, chapter = parsed.chapter,
             verse = parsed.verse, name = name,
             displayLabel = "$name (${book.name} ${parsed.chapter})")
+    }
+
+    // Parses "Jerusalem Talmud Shevuot 2:3:2-3:1:2" -> YerushalmiYomiResult.
+    // The locator is chapter:halakha:segment, optionally a "-" range -- only the start
+    // (chapter:halakha) matters for navigation. Matches the ref shape TextReaderViewModel/
+    // SefariaTextClient build for Yerushalmi ("Jerusalem Talmud {tractate.name} {ch}:{halakha}").
+    private fun parseYerushalmiYomi(ref: String): YerushalmiYomiResult? {
+        val prefix = "Jerusalem Talmud "
+        val r = if (ref.startsWith(prefix)) ref.drop(prefix.length) else ref
+        val parts = r.split(" ")
+        if (parts.size < 2) return null
+        val startLocator = parts.last().split("-").first()
+        val locatorParts = startLocator.split(":")
+        if (locatorParts.size < 2) return null
+        val chapter = locatorParts[0].toIntOrNull() ?: return null
+        val halakha = locatorParts[1].toIntOrNull() ?: return null
+        val tractateName = parts.dropLast(1).joinToString(" ")
+        return YerushalmiYomiResult(tractateName = tractateName, chapter = chapter, halakha = halakha,
+            displayLabel = "$tractateName $chapter:$halakha")
     }
 
     private fun parseRambamYomi(ref: String): RambamYomiResult? {

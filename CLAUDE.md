@@ -83,16 +83,16 @@ ContentView  (owns all top-level @State)
   └── TextReaderView      (main reading + commentary + audio)
         ├── TextContentView       (scrollable VStack of segments)
         ├── CommentaryPanelView   (bottom slide-up panel)
-        ├── TextSelectorView      (sheet — full wheel-picker selector + Yomi buttons,
-        │                          opened via the header's list.bullet icon)
         ├── BookmarkListView      (sheet — searchable list)
         └── BookmarkEditSheet     (sheet — add/edit one bookmark)
 ```
 
-Book/chapter/daf navigation always happens from pickers in `TextReaderView`'s own header
-(tap the book/chapter nav pills, or the list.bullet icon for the full selector) — never from
-the home screen. `CategoryMenuView.swift` is old, unreferenced dead code predating
-`HomeCombinedView`; nothing instantiates it.
+Book/chapter/daf navigation always happens from pickers in `TextReaderView`'s own header (tap
+the book/volume/chapter nav pills) — never from the home screen. `CategoryMenuView.swift` is
+old, unreferenced dead code predating `HomeCombinedView`; nothing instantiates it.
+`TextSelectorView.swift` (full wheel-picker selector + Yomi buttons, formerly a sheet opened
+from the header) is likewise now unreferenced dead code — see "Yomi jump icon replaces the
+redundant selector" under Yomi for why and when.
 
 ### Home screen — ten flat categories, gradient tiles (2026-08-24)
 
@@ -715,6 +715,18 @@ suffix on Sefaria at all, exactly as the user anticipated — `Teshuvot Rabbi Ak
 
 **Home screen and settings**: see the "Home screen" and "Century dividers... Alphabetical Order"
 paragraphs above — both were updated in place rather than duplicated here.
+
+**Bug fix (2026-09-01): Noda BiYehudah's OC volumes failed to fetch, YD/EH/CM didn't.**
+Sefaria indexes Noda BiYehudah's Orach Chaim section as **`"Orach Chaim"` (no 'y')**, not the
+`"Orach Chayim"` spelling used for every other work's Tur-order sections in this file — confirmed
+live against `Noda_BiYehudah_I`'s `/api/v2/index` schema. The mismatched spelling meant Sefaria
+couldn't resolve `"Orach Chayim"` as a second-level title under `"Noda BiYehudah I"`/`"II"` and
+fell back to treating the ref as the bare book-level ref, which is "complex" (ambiguous) and
+errors with "please pass a more specific ref" — the exact error a user hit in production. The
+original 2026-08-28 verification pass apparently missed this one spelling despite checking
+`/api/v2/index` broadly; a reminder that "verified against live Sefaria" doesn't rule out a
+single-work spelling outlier slipping through. Fixed in both `TextModels.swift`'s `.nodaBiyehudah`
+case and `TextModels.kt`'s `NODA_BIYEHUDAH` branch.
 
 ### Teshuvot Contemporary — PDF/scanned-page based, not Sefaria (pilot shipped 2026-08-29)
 
@@ -1359,7 +1371,7 @@ covers all 15 volumes' citations, so this feature needs no further code changes 
 | `AudioPlayer.swift` | `AVPlayer` + Now Playing + speed control |
 | `Views/BrandGradients.swift` | `BrandColorFamily` — the 10 home-tile gradients (5 purple, 5 blue), borrowed from AnyYCTorah's own file of the same name |
 | `Views/HomeCombinedView.swift` | Home screen — 10 flat category tiles (not 7); selecting one jumps straight to `TextReaderView` |
-| `Views/TextSelectorView.swift` | Wheel pickers + Yomi buttons; presented as a sheet from `TextReaderView`'s header, not shown on the home screen |
+| `Views/TextSelectorView.swift` | **Unreferenced dead code (2026-09-06)** — formerly wheel pickers + Yomi buttons, presented as a sheet from `TextReaderView`'s header; see "Yomi jump icon replaces the redundant selector" under Yomi |
 | `Views/TextReaderView.swift` | Header rows, sheet management, picker sheets, audio row |
 | `Views/TextContentView.swift` | Segment rendering + scroll-to-verse |
 | `Views/CommentaryPanelView.swift` | Draggable bottom panel with commentary tabs + swap picker |
@@ -1375,7 +1387,7 @@ covers all 15 volumes' citations, so this feature needs no further code changes 
 | `ui/theme/BrandGradients.kt` | `BrandColorFamily` — the 10 home-tile gradients (5 purple, 5 blue), Compose translation of the iOS file of the same purpose |
 | `ui/screens/HomeScreen.kt` | Home screen — 10 flat category tiles (not 7); selecting one jumps straight to the reader |
 | `ui/screens/TextReaderScreen.kt` | Main reading screen composable + all picker sheets |
-| `ui/screens/TextSelectorScreen.kt` | Wheel pickers + Yomi buttons; presented as a bottom sheet from `TextReaderScreen` (`ActiveSheet.SELECTOR`), not shown on the home screen |
+| `ui/screens/TextSelectorScreen.kt` | **Unreferenced dead code (2026-09-06)** — formerly wheel pickers + Yomi buttons, presented as a bottom sheet from `TextReaderScreen`; see "Yomi jump icon replaces the redundant selector" under Yomi |
 | `api/DedicationService.kt` | Fetches + decodes the daily/weekly/monthly learning dedication banner |
 
 ---
@@ -1793,13 +1805,13 @@ Stored as `Double` in UserDefaults on iOS (`@AppStorage("anyTorahFontSize")`), `
 
 ## Header Layout (`TextReaderView`)
 
-- **Row 1**: [bookmark, bookmarks-list] (tight-grouped pair) [selector] (left) | nav pills, fill
-  remaining width (flat `HStack`/`Row`, not a `ZStack`/`Box` overlay — see "Reader header Row 1"
-  above) | Gear (right). Icons: bookmark-edit = `bookmark`/`bookmark.fill`; bookmarks-list =
-  `list.bullet` (a literal list glyph, since that button opens the actual bookmarks list —
-  search/tap-to-navigate/swipe-to-delete); selector = `text.book.closed`/`MenuBook` (the full
-  book/chapter/volume picker — deliberately *not* a list-shaped icon, so it's not mistaken for
-  the bookmarks button). See "Bookmark-list icon swap" below for why this changed.
+- **Row 1**: [bookmark, bookmarks-list] (tight-grouped pair) [jump-to-today] (left) | nav pills,
+  fill remaining width (flat `HStack`/`Row`, not a `ZStack`/`Box` overlay — see "Reader header
+  Row 1" above) | Gear (right). Icons: bookmark-edit = `bookmark`/`bookmark.fill`; bookmarks-list
+  = `list.bullet` (a literal list glyph, since that button opens the actual bookmarks list —
+  search/tap-to-navigate/swipe-to-delete); jump-to-today = `calendar`/`Icons.Default.
+  CalendarToday`. See "Bookmark-list icon swap" below and "Yomi jump icon replaces the redundant
+  selector" under Yomi for how this slot's icon evolved.
 - **Row 2**: Back (left) | language pill `א/A/אA` (center) | commentary toggle (right)
 - **Row 3** (Talmud only): Audio player row
 
@@ -1811,7 +1823,7 @@ Single `ActiveSheet` enum drives all sheets:
 
 ```swift
 private enum ActiveSheet: String, Identifiable {
-    case selector, settings, bookmarks, bookmarkEdit, chapterPicker, bookPicker, simanPicker
+    case settings, bookmarks, bookmarkEdit, chapterPicker, bookPicker, simanPicker
     var id: String { rawValue }
 }
 @State private var activeSheet: ActiveSheet? = nil
@@ -1852,13 +1864,15 @@ Stops automatically on daf/tractate change via `.onChange`.
 — search, tap-to-navigate, swipe-to-delete — but the header's second icon (`bookmarks`, a
 stacked-ribbon glyph) didn't read as "tap here for a list" to a user unfamiliar with that
 specific SF Symbol/Material icon, while the *third* icon (`list.bullet`, the full book/chapter
-selector) does look exactly like "a list" — so the selector kept getting tapped by mistake,
-landing on "pick a passage and jump to it" instead of the bookmarks list. Fixed by swapping the
-glyphs, not the sheets: bookmarks-list button → `list.bullet` (iOS) / `Icons.AutoMirrored.
-Filled.List` (Android); selector button → `text.book.closed` (iOS) / `Icons.Default.MenuBook`
-(Android). Also grouped the bookmark-edit and bookmarks-list icons into their own tight-spaced
-sub-`HStack`/`Row` (4pt gap on iOS; 40.dp shrunk `IconButton`s on Android) since they're the
-functionally-related pair, keeping the unrelated selector icon a full 10pt/48.dp away.
+selector — since removed, see "Yomi jump icon replaces the redundant selector" under Yomi) did
+look exactly like "a list" — so the selector kept getting tapped by mistake, landing on "pick a
+passage and jump to it" instead of the bookmarks list. Fixed by swapping the glyphs, not the
+sheets: bookmarks-list button → `list.bullet` (iOS) / `Icons.AutoMirrored.Filled.List` (Android);
+selector button → `text.book.closed` (iOS) / `Icons.Default.MenuBook` (Android, both later
+replaced entirely — again, see Yomi). Also grouped the bookmark-edit and bookmarks-list icons
+into their own tight-spaced sub-`HStack`/`Row` (4pt gap on iOS; 40.dp shrunk `IconButton`s on
+Android) since they're the functionally-related pair, keeping the unrelated third icon a full
+10pt/48.dp away — a spacing choice that still stands for the jump-to-today icon that replaced it.
 
 ---
 
@@ -1915,7 +1929,22 @@ override), `photo_url`, `status` (`"approved"`).
 
 ## Yomi
 
-`YomiService.swift`: fetches `https://www.sefaria.org/api/calendars`, maps calendar item refs → app catalog indices. Key mappings in static dicts (`talmudNameMap`, `rambamNameMap`). Yomi buttons appear in `TextSelectorView`.
+`YomiService.swift`/`.kt`: fetches `https://www.sefaria.org/api/calendars`, maps calendar item refs → app catalog indices. Key mappings in static dicts (`talmudNameMap`, `rambamNameMap`). Covers Daf Yomi, Daily Mishnah, Daily Rambam, 929 (Tanakh), Parashat Hashavua, and (2026-09-06) Yerushalmi Yomi.
+
+### Yomi jump icon replaces the redundant selector (2026-09-06)
+
+**Removed the old combined book/chapter selector icon (`text.book.closed`/`Icons.Default.MenuBook`) from `TextReaderView`'s/`TextReaderScreen`'s header entirely — not just for Teshuvot, which already hid it (see the Teshuvot section's own note).** Every category's own book/volume/chapter nav pills sit right in that same header row and already give full navigation, which is exactly the reasoning that motivated hiding it for Teshuvot in the first place — per explicit user request, it turned out to apply universally, not just there. The icon slot it vacated now shows a **"jump to today" icon** (`calendar` SF Symbol / `Icons.Default.CalendarToday`) instead, gated by `showsYomiJumpButton` (iOS: computed property on `TextReaderView`; Android: local `val` in the `TextReaderScreen` composable) — shown only where a real Sefaria daily-learning cycle applies to the screen currently open:
+- **Talmud** (either subcategory) — Bavli → Daf Yomi, Yerushalmi → Yerushalmi Yomi
+- **Mishnah**, but only the `.mishnah`/`MISHNAH` subcategory, not Tosefta (no "Tosefta Yomi" cycle exists)
+- **Tanakh** → this week's Parashat Hashavua
+
+Rambam is deliberately excluded even though `YomiService` already resolves Daily Rambam — the user's request named only Daf Yomi, Yerushalmi Yomi, Mishnah Yomi, and Parsha; Daily Rambam's existing plumbing is untouched (still reachable, just not from this new icon) in case a future request wants it added to `showsYomiJumpButton` too.
+
+Tapping the icon calls a new `jumpToTodayYomi()`/`jumpToTodayYomi(vm)` — fetches `YomiService.fetchToday()` fresh (no caching, unlike the old selector sheet's `@State`-cached results, since a header icon has no sheet lifetime to cache across), sets the relevant `vm` selection properties directly, then calls `vm.load()`. Talmud Yerushalmi resolves via **tractate name**, not a raw seder/tractate index pair — `YomiService`'s `YerushalmiYomiResult` only carries `tractateName` (matching `MishnahTractate.name`, since Yerushalmi reuses the Mishnah seder/tractate structure but `yerushalmiSederIndex`/`yerushalmiTractateIndexInSeder` index into a *filtered* subset of it, per `vm.yerushalmiSedarim`/`yerushalmiTractateCandidates`). Replicating that filtering logic inside the static `YomiService` would have been redundant and error-prone; instead the call site does `vm.allYerushalmiTractates.firstIndex(where: { $0.name == y.tractateName })` (iOS) / `indexOfFirst` (Android) and passes the result straight to the already-existing `vm.setYerushalmiGlobalTractate(_:)`, which was built for exactly this "global index → seder/tractate state" resolution.
+
+**Yerushalmi Yomi did not exist anywhere in the app before this — confirmed live against `https://www.sefaria.org/api/calendars` (not assumed) that Sefaria's calendar does carry a `"Yerushalmi Yomi"` item**, category `"Talmud"`, with a ref shape like `"Jerusalem Talmud Shevuot 2:3:2-3:1:2"` — chapter:halakha:segment, optionally a `-`-joined range; only the start (chapter:halakha) is used for navigation, matching the exact ref pattern `TextReaderViewModel`/`SefariaTextClient` already build for Yerushalmi (`"Jerusalem Talmud {tractate.name} {chapter}:{halakha}"`). `YomiService.parseYerushalmiYomi(ref:)` (iOS) / `parseYerushalmiYomi(ref:)` (Android) added alongside the existing parsers, and `fetchToday()`'s return tuple/`YomiResults` data class both gained a `yerushalmi` field (Android's is a nullable `data class` field with a default, so no other call site broke; iOS's tuple destructure in `TextSelectorView.swift`'s `fetchYomi()` was updated to `_`-ignore the new 6th element).
+
+**`TextSelectorView.swift` (iOS) and `TextSelectorScreen.kt` (Android) — the old full wheel-picker sheet, including its own `yomiButton`/`tanakhYomiButton`/`parshaButton` — are now fully unreferenced dead code**, same status as `CategoryMenuView.swift` (see the top of this file): nothing sets `ActiveSheet.selector`/`ActiveSheet.SELECTOR` anymore, and grepping confirms no other call site instantiates either view. Left in place rather than deleted, matching this codebase's established handling of superseded UI — if a future change wants the wheel-picker layouts back (e.g. for a category whose nav pills alone aren't sufficient), the logic is still there to lift from.
 
 ---
 

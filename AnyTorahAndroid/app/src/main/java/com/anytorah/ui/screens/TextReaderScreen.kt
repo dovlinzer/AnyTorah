@@ -28,9 +28,9 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Headphones
-import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -72,16 +72,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.anytorah.api.RelatedYCTPiece
 import com.anytorah.api.TalmudAudioService
+import com.anytorah.api.YomiService
 import com.anytorah.audio.AudioPlayer
 import com.anytorah.models.ContemporaryTeshuvotVolume
 import com.anytorah.models.ContemporaryTeshuvotWork
 import com.anytorah.models.MidrashWork
+import com.anytorah.models.MishnahSubcategory
 import com.anytorah.models.NishmatHaBayitSiman
 import com.anytorah.models.SASimanNames
 import com.anytorah.models.SATopicSection
 import com.anytorah.models.TextCatalog
 import com.anytorah.models.TextCategory
 import com.anytorah.models.TextDisplayMode
+import com.anytorah.models.TalmudSubcategory
 import com.anytorah.models.TeshuvotSubcategory
 import com.anytorah.models.TeshuvotWork
 import com.anytorah.api.IggrosMoshePodcastService
@@ -98,7 +101,7 @@ import androidx.compose.ui.graphics.Color
 import com.anytorah.viewmodels.TextReaderViewModel
 import kotlinx.coroutines.launch
 
-enum class ActiveSheet { SELECTOR, SETTINGS, BOOKMARKS, BOOKMARK_EDIT, CHAPTER_PICKER, BOOK_PICKER, VOLUME_PICKER, RELATED_ARTICLES, PODCAST_CITATIONS }
+enum class ActiveSheet { SETTINGS, BOOKMARKS, BOOKMARK_EDIT, CHAPTER_PICKER, BOOK_PICKER, VOLUME_PICKER, RELATED_ARTICLES, PODCAST_CITATIONS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -121,6 +124,15 @@ fun TextReaderScreen(
     // use the ordinary text pipeline like Rishonim/Acharonim, Row 2 included.
     val isContemporaryPdf = vm.category == TextCategory.TESHUVOT &&
         vm.teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY && !vm.contemporaryUsesSefaria
+
+    // Shown only where a Sefaria daily-learning schedule actually applies to the screen
+    // currently open -- Tosefta and Rambam have no requested yomi cycle here. Matches iOS.
+    val showsYomiJumpButton = when (vm.category) {
+        TextCategory.TALMUD  -> true                                        // Bavli -> Daf Yomi, Yerushalmi -> Yerushalmi Yomi
+        TextCategory.MISHNAH -> vm.mishnahSubcategory == MishnahSubcategory.MISHNAH  // not Tosefta
+        TextCategory.TANAKH  -> true                                        // -> this week's parsha
+        else -> false
+    }
 
     var activeSheet by remember { mutableStateOf<ActiveSheet?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -196,10 +208,10 @@ fun TextReaderScreen(
                 .padding(horizontal = 4.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left: bookmark, bookmarks list, selector. The first two are shrunk to 40.dp (from
-            // IconButton's default 48.dp touch target) and grouped in their own Row so they sit
-            // visibly closer together, since they're functionally related; selector (unrelated —
-            // opens the full book/chapter picker) keeps the default size and a normal gap.
+            // Left: bookmark, bookmarks list, jump-to-today. The first two are shrunk to 40.dp
+            // (from IconButton's default 48.dp touch target) and grouped in their own Row so
+            // they sit visibly closer together, since they're functionally related; the
+            // jump-to-today icon (unrelated) keeps the default size and a normal gap.
             Row {
                 Row {
                     IconButton(
@@ -223,14 +235,17 @@ fun TextReaderScreen(
                         )
                     }
                 }
-                // Teshuvot's book/volume/siman pills already give full navigation on their own
-                // (tap any pill to jump straight to that level) -- the separate combined
-                // selector sheet is redundant for it, per explicit request. Matches iOS.
-                if (vm.category != TextCategory.TESHUVOT) {
-                    IconButton(onClick = { activeSheet = ActiveSheet.SELECTOR }) {
+                // The old combined book/chapter selector sheet (MenuBook icon) was removed
+                // entirely (not just for Teshuvot) -- every category's own book/chapter nav
+                // pills, right in this same row, already give full navigation, making the
+                // separate wheel-picker sheet purely redundant everywhere. In its place: a
+                // "jump to today" icon, shown only where a yomi/parsha schedule actually
+                // applies to the current screen -- see `showsYomiJumpButton`. Matches iOS.
+                if (showsYomiJumpButton) {
+                    IconButton(onClick = { scope.launch { jumpToTodayYomi(vm) } }) {
                         Icon(
-                            Icons.Default.MenuBook,
-                            contentDescription = "Selector",
+                            Icons.Default.CalendarToday,
+                            contentDescription = "Jump to today",
                             tint = colors.appForeground
                         )
                     }
@@ -617,15 +632,6 @@ fun TextReaderScreen(
                         onDismiss = { activeSheet = null }
                     )
                 }
-                ActiveSheet.SELECTOR -> {
-                    // TextSelectorScreen's own "Read" button already calls vm.load()
-                    // before invoking onRead — just dismiss the sheet here.
-                    TextSelectorScreen(
-                        vm = vm,
-                        onRead = { activeSheet = null },
-                        showHeader = true
-                    )
-                }
                 ActiveSheet.CHAPTER_PICKER -> {
                     ChapterPickerSheet(vm = vm, onDone = {
                         activeSheet = null
@@ -678,6 +684,44 @@ fun TextReaderScreen(
             }
         }
     }
+}
+
+// Fetches today's Sefaria daily-learning schedule and jumps the reader straight to it. Matches
+// iOS's `jumpToTodayYomi()` in TextReaderView.swift.
+private suspend fun jumpToTodayYomi(vm: TextReaderViewModel) {
+    val result = YomiService.fetchToday()
+    when (vm.category) {
+        TextCategory.TALMUD -> {
+            if (vm.talmudSubcategory == TalmudSubcategory.YERUSHALMI) {
+                val y = result.yerushalmi ?: return
+                val globalIdx = vm.allYerushalmiTractates.indexOfFirst { it.name == y.tractateName }
+                if (globalIdx == -1) return
+                vm.setYerushalmiGlobalTractate(globalIdx)
+                vm.yerushalmiChapter = y.chapter
+                vm.yerushalmiHalakha = y.halakha
+            } else {
+                val d = result.daf ?: return
+                vm.talmudSederIndex = d.sederIndex
+                vm.talmudTractateIndexInSeder = d.tractateIndexInSeder
+                vm.talmudDaf = d.daf
+            }
+        }
+        TextCategory.MISHNAH -> {
+            if (vm.mishnahSubcategory != MishnahSubcategory.MISHNAH) return
+            val m = result.mishnah ?: return
+            vm.mishnahSederIndex = m.sederIndex
+            vm.mishnahTractateIndexInSeder = m.tractateIndexInSeder
+            vm.mishnahChapter = m.chapter
+        }
+        TextCategory.TANAKH -> {
+            val p = result.parsha ?: return
+            vm.tanakhBookIndex = p.bookIndex
+            vm.tanakhChapter = p.chapter
+            vm.tanakhScrollToVerse = p.verse
+        }
+        else -> return
+    }
+    vm.load()
 }
 
 @Composable

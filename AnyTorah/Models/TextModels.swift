@@ -1053,7 +1053,15 @@ enum TeshuvotWork: String, CaseIterable, Identifiable, Codable {
                 ("Kamma", "קמא", "Noda BiYehudah I"), ("Tinyana", "תניינא", "Noda BiYehudah II"),
             ]
             let sections: [(disp: String, dispHe: String, name: String, counts: [Int])] = [
-                ("OC", "או״ח", "Orach Chayim", [42, 141]),
+                // "Orach Chaim" (no 'y') here, unlike every other work's "Orach Chayim" — this
+                // is Sefaria's own indexed section title specifically for Noda BiYehudah
+                // (confirmed live via its /api/v2/index schema, 2026-09-01), not a typo to
+                // "correct" to match the rest of this file. Using "Orach Chayim" here fails:
+                // Sefaria doesn't recognize it as a second-level title under "Noda BiYehudah I"/
+                // "II" and falls back to treating the ref as the bare, ambiguous "complex"
+                // book-level ref, erroring "please pass a more specific ref" — exactly the bug
+                // reported (OC volumes failed, YD/EH/CM didn't).
+                ("OC", "או״ח", "Orach Chaim", [42, 141]),
                 ("YD", "יו״ד", "Yoreh Deah", [100, 215]),
                 ("EH", "אה״ע", "Even HaEzer", [95, 161]),
                 ("CM", "חו״מ", "Choshen Mishpat", [39, 62]),

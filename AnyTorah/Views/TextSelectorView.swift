@@ -208,7 +208,7 @@ struct TextSelectorView: View {
         guard [TextCategory.talmud, .mishnah, .rambam, .tanakh].contains(vm.category) else { return }
         yomiLoading = true
         yomiLabel = nil
-        let (daf, mishnah, rambam, tanakh, parsha) = await YomiService.fetchToday()
+        let (daf, mishnah, rambam, tanakh, parsha, _) = await YomiService.fetchToday()
         cachedDaf     = daf
         cachedMishnah = mishnah
         cachedRambam  = rambam

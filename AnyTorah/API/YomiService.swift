@@ -35,6 +35,13 @@ struct YomiService {
         let displayLabel: String   // e.g. "Kelim 4"
     }
 
+    struct YerushalmiYomiResult {
+        let tractateName: String  // matches MishnahTractate.name — resolve via vm.allYerushalmiTractates
+        let chapter: Int
+        let halakha: Int
+        let displayLabel: String  // e.g. "Shevuot 2:3"
+    }
+
     struct RambamYomiResult {
         let seferIndex: Int
         let workIndexInSefer: Int
@@ -86,18 +93,20 @@ struct YomiService {
                                        mishnah: MishnahYomiResult?,
                                        rambam: RambamYomiResult?,
                                        tanakh: TanakhYomiResult?,
-                                       parsha: ParshaResult?) {
+                                       parsha: ParshaResult?,
+                                       yerushalmi: YerushalmiYomiResult?) {
         guard let url = URL(string: "https://www.sefaria.org/api/calendars"),
               let (data, _) = try? await URLSession.shared.data(from: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let items = json["calendar_items"] as? [[String: Any]]
-        else { return (nil, nil, nil, nil, nil) }
+        else { return (nil, nil, nil, nil, nil, nil) }
 
         var daf: DafYomiResult?
         var mishnah: MishnahYomiResult?
         var rambam: RambamYomiResult?
         var tanakh: TanakhYomiResult?
         var parsha: ParshaResult?
+        var yerushalmi: YerushalmiYomiResult?
 
         for item in items {
             guard let titleEn = (item["title"] as? [String: Any])?["en"] as? String else { continue }
@@ -115,11 +124,13 @@ struct YomiService {
             case "Parashat Hashavua":
                 let name = (item["displayValue"] as? [String: Any])?["en"] as? String ?? ""
                 parsha = parseParshaYomi(ref: ref, name: name)
+            case "Yerushalmi Yomi":
+                yerushalmi = parseYerushalmiYomi(ref: ref)
             default: break
             }
         }
 
-        return (daf, mishnah, rambam, tanakh, parsha)
+        return (daf, mishnah, rambam, tanakh, parsha, yerushalmi)
     }
 
     // MARK: - Parsers
@@ -197,6 +208,26 @@ struct YomiService {
         return ParshaResult(bookIndex: bookIdx, chapter: chapter, verse: verse,
                             name: name,
                             displayLabel: "\(name) (\(book.name) \(chapter))")
+    }
+
+    /// Parses "Jerusalem Talmud Shevuot 2:3:2-3:1:2" → YerushalmiYomiResult.
+    /// The locator is chapter:halakha:segment, optionally a "-" range — only the start
+    /// (chapter:halakha) matters for navigation. Matches the ref shape TextReaderViewModel/
+    /// SefariaTextClient build for Yerushalmi ("Jerusalem Talmud {tractate.name} {ch}:{halakha}").
+    private static func parseYerushalmiYomi(ref: String) -> YerushalmiYomiResult? {
+        let prefix = "Jerusalem Talmud "
+        let r = ref.hasPrefix(prefix) ? String(ref.dropFirst(prefix.count)) : ref
+        let parts = r.components(separatedBy: " ")
+        guard parts.count >= 2 else { return nil }
+        let startLocator = (parts.last ?? "").components(separatedBy: "-").first ?? ""
+        let locatorParts = startLocator.components(separatedBy: ":")
+        guard locatorParts.count >= 2,
+              let chapter = Int(locatorParts[0]),
+              let halakha = Int(locatorParts[1])
+        else { return nil }
+        let tractateName = parts.dropLast().joined(separator: " ")
+        return YerushalmiYomiResult(tractateName: tractateName, chapter: chapter, halakha: halakha,
+                                    displayLabel: "\(tractateName) \(chapter):\(halakha)")
     }
 
     /// Parses "Mishneh Torah, The Order of Prayer 4" → RambamYomiResult

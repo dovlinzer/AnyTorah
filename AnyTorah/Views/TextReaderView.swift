@@ -59,7 +59,7 @@ struct TextReaderView: View {
     // Single enum drives all sheet presentations — multiple .sheet(isPresented:) modifiers
     // on the same view interfere with each other in SwiftUI, causing the wrong sheet to show.
     private enum ActiveSheet: String, Identifiable {
-        case selector, settings, bookmarks, bookmarkEdit, chapterPicker, bookPicker, volumePicker, relatedArticles, podcastCitations
+        case settings, bookmarks, bookmarkEdit, chapterPicker, bookPicker, volumePicker, relatedArticles, podcastCitations
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet? = nil
@@ -161,8 +161,6 @@ struct TextReaderView: View {
         }
         .sheet(item: $activeSheet) { item in
             switch item {
-            case .selector:
-                selectorSheet
             case .settings:
                 SettingsView()
             case .bookmarks:
@@ -206,8 +204,8 @@ struct TextReaderView: View {
             HStack(spacing: 8) {
                 // Left-side cluster — always together at the leading edge. The bookmark-edit and
                 // bookmarks-list icons are grouped in their own tight-spaced HStack (4pt) since
-                // they're functionally related; the selector icon (unrelated — opens the full
-                // book/chapter picker) keeps a bit more breathing room (10pt) from that pair.
+                // they're functionally related; the jump-to-today icon (unrelated) keeps a bit
+                // more breathing room (10pt) from that pair.
                 HStack(spacing: 10) {
                     HStack(spacing: 4) {
                         Button { activeSheet = .bookmarkEdit } label: {
@@ -228,13 +226,15 @@ struct TextReaderView: View {
                                 .font(.body)
                         }
                     }
-                    // Teshuvot's book/volume/siman pills already give full navigation on their
-                    // own (tap any pill to jump straight to that level) — the separate combined
-                    // selector sheet (TeshuvotWheels) is redundant for it, per explicit request,
-                    // and was never wired up for the Contemporary subcategory in the first place.
-                    if vm.category != .teshuvot {
-                        Button { activeSheet = .selector } label: {
-                            Image(systemName: "text.book.closed")
+                    // The old combined book/chapter selector sheet (text.book.closed icon) was
+                    // removed entirely (not just for Teshuvot) — every category's own book/
+                    // chapter nav pills, right in this same row, already give full navigation,
+                    // making the separate wheel-picker sheet purely redundant everywhere. In its
+                    // place: a "jump to today" icon, shown only where a yomi/parsha schedule
+                    // actually applies to the current screen — see `showsYomiJumpButton`.
+                    if showsYomiJumpButton {
+                        Button { Task { await jumpToTodayYomi() } } label: {
+                            Image(systemName: "calendar")
                                 .foregroundStyle(appFg)
                                 .font(.body)
                         }
@@ -405,6 +405,52 @@ struct TextReaderView: View {
         // Force the entire header chrome to be LTR regardless of system locale
         // (Hebrew text inside still renders RTL via bidi algorithm)
         .environment(\.layoutDirection, .leftToRight)
+    }
+
+    // MARK: - "Jump to today" (Daf/Yerushalmi/Mishnah Yomi, Parsha)
+
+    /// Shown only where a Sefaria daily-learning schedule actually applies to the screen
+    /// currently open — Tosefta and Rambam have no requested yomi cycle here.
+    private var showsYomiJumpButton: Bool {
+        switch vm.category {
+        case .talmud:  return true                             // Bavli → Daf Yomi, Yerushalmi → Yerushalmi Yomi
+        case .mishnah: return vm.mishnahSubcategory == .mishnah // not Tosefta
+        case .tanakh:  return true                              // → this week's parsha
+        default:       return false
+        }
+    }
+
+    private func jumpToTodayYomi() async {
+        let result = await YomiService.fetchToday()
+        switch vm.category {
+        case .talmud:
+            if vm.talmudSubcategory == .yerushalmi {
+                guard let y = result.yerushalmi,
+                      let globalIdx = vm.allYerushalmiTractates.firstIndex(where: { $0.name == y.tractateName })
+                else { return }
+                vm.setYerushalmiGlobalTractate(globalIdx)
+                vm.yerushalmiChapter = y.chapter
+                vm.yerushalmiHalakha = y.halakha
+            } else {
+                guard let d = result.daf else { return }
+                vm.talmudSederIndex           = d.sederIndex
+                vm.talmudTractateIndexInSeder = d.tractateIndexInSeder
+                vm.talmudDaf                  = d.daf
+            }
+        case .mishnah:
+            guard vm.mishnahSubcategory == .mishnah, let m = result.mishnah else { return }
+            vm.mishnahSederIndex           = m.sederIndex
+            vm.mishnahTractateIndexInSeder = m.tractateIndexInSeder
+            vm.mishnahChapter              = m.chapter
+        case .tanakh:
+            guard let p = result.parsha else { return }
+            vm.tanakhBookIndex     = p.bookIndex
+            vm.tanakhChapter       = p.chapter
+            vm.tanakhScrollToVerse = p.verse
+        default:
+            return
+        }
+        await vm.load()
     }
 
     // MARK: - Audio player row (Row 3, Talmud only)
@@ -1134,29 +1180,6 @@ struct TextReaderView: View {
             }
         }
         .padding(.horizontal, 2)
-    }
-
-    // MARK: - Selector sheet
-
-    private var selectorSheet: some View {
-        NavigationStack {
-            TextSelectorView(vm: vm, appBg: appBg, appFg: appFg) {
-                activeSheet = nil
-                Task { await vm.load() }
-            }
-            .navigationTitle("Select Passage")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { activeSheet = nil }
-                        .foregroundStyle(appFg)
-                }
-            }
-            .toolbarBackground(appBg, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-        }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
     }
 
     // MARK: - Chapter picker sheet
