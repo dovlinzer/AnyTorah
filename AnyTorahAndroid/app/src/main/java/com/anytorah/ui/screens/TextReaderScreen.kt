@@ -166,13 +166,14 @@ fun TextReaderScreen(
     // the siman pill already uses (TeshuvotPageManager.siman), keyed here (not inside the
     // effect) so the effect body -- and the state writes it does -- only re-runs when the
     // resolved siman actually changes, not on every single page turn within one teshuvah's span.
-    // Context stays out of the ViewModel by established convention (see contemporaryPage's own
-    // doc comment) -- this LaunchedEffect is where Context-needing lookups for Contemporary
-    // state live, same as navChapterTitle(context)'s call site.
+    // vm.resolvedContemporarySiman(context) (not the plain TeshuvotPageManager.siman floor
+    // lookup directly) so this agrees with the header pill on "what siman am I looking at" --
+    // honors an explicit picker selection (contemporaryPickedSiman) when two simanim share a
+    // page, same reasoning as navChapterTitle(context)'s own call site.
     val currentContemporarySiman = if (vm.category == TextCategory.TESHUVOT &&
         vm.teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY && !vm.contemporaryUsesSefaria
     ) {
-        TeshuvotPageManager.siman(context, vm.contemporaryVolume.id, vm.contemporaryPage)
+        vm.resolvedContemporarySiman(context)
     } else null
 
     LaunchedEffect(vm.contemporaryVolume.id, currentContemporarySiman) {
@@ -819,22 +820,28 @@ private fun ChapterPickerSheet(vm: TextReaderViewModel, onDone: () -> Unit) {
             }
             TextCategory.TESHUVOT -> {
                 if (vm.teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY && !vm.contemporaryUsesSefaria) {
-                    // Selecting a siman jumps contemporaryPage to that siman's indexed page
-                    // (see TeshuvotPageManager.page) rather than storing the siman itself --
-                    // page, not siman, is Contemporary's real navigable unit, since the index
-                    // is a hand-maintained best-effort lookup, not guaranteed page-perfect.
+                    // Selecting a siman jumps contemporaryPage to that siman's indexed page via
+                    // vm.jumpToContemporarySiman (not a plain page assignment) -- this also
+                    // records exactly which siman was picked, so the header pill shows it
+                    // correctly even when another siman shares the same page (see
+                    // TextReaderViewModel.contemporaryPickedSiman's doc comment).
                     val context = LocalContext.current
                     val simanCount = vm.contemporaryVolume.simanCount.coerceAtLeast(1)
-                    var selectedSiman by remember(vm.contemporaryVolume.id) { mutableStateOf(1) }
+                    // Re-keyed on volume id (like before) but seeded from the actually-resolved
+                    // current siman rather than a hardcoded 1 -- a bare 1 only happened to look
+                    // right because switching volumes always lands on siman 1 today; seeding
+                    // from vm.resolvedContemporarySiman keeps this correct even after a restored
+                    // (non-1) position, matching the fix applied to iOS's equivalent picker.
+                    var selectedSiman by remember(vm.contemporaryVolume.id) {
+                        mutableStateOf(vm.resolvedContemporarySiman(context) ?: vm.contemporaryPage)
+                    }
                     WheelPicker(
                         items = (1..simanCount).map { if (useHe) SASimanNames.toHebrewNumeral(it) else it.toString() },
                         selectedIndex = (selectedSiman - 1).coerceIn(0, simanCount - 1),
                         onIndexSelected = { idx ->
                             val siman = idx + 1
                             selectedSiman = siman
-                            TeshuvotPageManager.page(context, vm.contemporaryVolume.id, siman)?.let {
-                                vm.setContemporaryPage(it)
-                            }
+                            vm.jumpToContemporarySiman(siman)
                         },
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -901,12 +908,17 @@ private fun VolumePickerSheet(vm: TextReaderViewModel, onDone: () -> Unit) {
         // ("Part IV"). The generic word is dropped entirely when the volume labels aren't
         // plain numbers -- "Kamma"/"EH I" already read fine on their own; only "Part IV"-style
         // needs it.
-        // Scoped exception (2026-08-30), not a global flip: Benei Banim/B'mareh HaBazak need
-        // חלק visually RIGHT of the numeral, the opposite of every other numeric-labeled work
-        // already verified correct with the typed order above. If a future numeric-labeled
-        // Hebrew volume work looks backwards on-device, it likely needs its own entry in this
-        // same exception set rather than a global change.
-        val wordBeforeNumeralInHebrew = setOf(TeshuvotWork.BENEI_BANIM, TeshuvotWork.BMAREH_HABAZAK)
+        // Exception set (2026-08-30, expanded 2026-09-01 after on-device review found the
+        // default order wrong for most numeric-labeled works, not just Benei Banim/B'mareh
+        // HaBazak): these need the generic word (Chelek/Klal) visually RIGHT of the numeral. If
+        // a future numeric-labeled Hebrew volume work looks backwards on-device, it likely needs
+        // its own entry here too rather than a global flip.
+        val wordBeforeNumeralInHebrew = setOf(
+            TeshuvotWork.BENEI_BANIM, TeshuvotWork.BMAREH_HABAZAK,
+            TeshuvotWork.ROSH, TeshuvotWork.RASHBA, TeshuvotWork.TERUMAT_HA_DESHEN, TeshuvotWork.SEFER_HA_TASHBETZ,
+            TeshuvotWork.HALAKHOT_KETANOT, TeshuvotWork.MAHARSHAM, TeshuvotWork.MELAMMED_LEHOIL, TeshuvotWork.MESHIV_DAVAR,
+            TeshuvotWork.RADBAZ, TeshuvotWork.SHEILAT_YAAVETZ,
+        )
         WheelPicker(
             items = (1..count).map { v ->
                 val numeral = if (vm.saHebrewMode) vm.teshuvotWork.volumePickerDisplayLabelHebrew(v) else vm.teshuvotWork.volumeDisplayLabel(v)

@@ -71,10 +71,6 @@ struct TextReaderView: View {
     @AppStorage("bottomPanelFraction") private var bottomPanelFraction: Double = 0.40
     @State private var liveBottomFraction: Double? = nil
     @State private var mainTextSelectionMode: Bool = false
-    /// Transient UI-only siman-wheel selection for Contemporary Teshuvot's siman picker — see
-    /// its `.teshuvot` branch in `chapterPickerWheel`. Not persisted; `contemporaryPage` (the
-    /// resolved page, which IS persisted) is the real state.
-    @State private var contemporarySimanSelection: Int = 1
 
     private var cardFill: Color { appFg.opacity(0.08) }
 
@@ -1302,13 +1298,19 @@ struct TextReaderView: View {
                 // ContemporaryTeshuvotVolume.page(forSiman:)) rather than storing the siman
                 // itself — page, not siman, is Contemporary's real navigable unit, since the
                 // index is a hand-maintained best-effort lookup, not guaranteed page-perfect.
+                // Reads straight from `vm.resolvedContemporarySiman()` (the same source the
+                // header pill uses) rather than a separate local `@State` copy — a local copy
+                // only updates when the wheel itself is touched, so it went stale the moment the
+                // volume changed some other way (the volume/work pills), leaving the wheel
+                // positioned on the previous volume's siman until manually scrolled.
                 Picker("", selection: Binding(
-                    get: { contemporarySimanSelection },
+                    get: { vm.resolvedContemporarySiman() ?? vm.contemporaryPage },
                     set: { newValue in
-                        contemporarySimanSelection = newValue
-                        if let page = vm.contemporaryVolume.page(forSiman: newValue) {
-                            vm.contemporaryPage = page
-                        }
+                        // jumpToContemporarySiman (not a plain page assignment) also records
+                        // exactly which siman was picked, so the header pill shows it correctly
+                        // even when another siman shares the same page -- see
+                        // TextReaderViewModel.contemporaryPickedSiman's doc comment.
+                        vm.jumpToContemporarySiman(newValue)
                     }
                 )) {
                     ForEach(1...max(1, vm.contemporaryVolume.simanCount), id: \.self) { s in
@@ -1418,13 +1420,18 @@ struct TextReaderView: View {
                     let numeral = saHebrewMode
                         ? vm.teshuvotWork.volumePickerDisplayLabelHebrew(v)
                         : vm.teshuvotWork.volumeDisplayLabel(v)
-                    // Scoped exception (2026-08-30), not a global flip: Benei Banim/B'mareh
-                    // HaBazak need חלק visually RIGHT of the numeral, the opposite of every
-                    // other numeric-labeled work already verified correct with the typed order
-                    // below. RTL wheel-row bidi gotcha — see the comment above; if a future
-                    // numeric-labeled Hebrew volume work looks backwards on-device, it likely
-                    // needs its own entry in this same exception set rather than a global change.
-                    let wordBeforeNumeralInHebrew: Set<TeshuvotWork> = [.beneiBanim, .bmarehHabazak]
+                    // Exception set (2026-08-30, expanded 2026-09-01 after on-device review
+                    // found the default order wrong for most numeric-labeled works, not just
+                    // Benei Banim/B'mareh HaBazak): these need the generic word (Chelek/Klal)
+                    // visually RIGHT of the numeral. RTL wheel-row bidi gotcha — see the comment
+                    // above; if a future numeric-labeled Hebrew volume work looks backwards
+                    // on-device, it likely needs its own entry here too rather than a global flip.
+                    let wordBeforeNumeralInHebrew: Set<TeshuvotWork> = [
+                        .beneiBanim, .bmarehHabazak,
+                        .rosh, .rashba, .terumatHaDeshen, .seferHaTashbetz,
+                        .halakhotKetanot, .maharsham, .melammedLehoil, .meshivDavar,
+                        .radbaz, .sheilatYaavetz,
+                    ]
                     let text = vm.teshuvotWork.volumeLabelIsNumeric
                         ? (saHebrewMode
                             ? (wordBeforeNumeralInHebrew.contains(vm.teshuvotWork) ? "\(label) \(numeral)" : "\(numeral) \(label)")

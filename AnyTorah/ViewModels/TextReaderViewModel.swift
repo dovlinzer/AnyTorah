@@ -201,16 +201,46 @@ final class TextReaderViewModel {
         didSet {
             guard !isRestoring else { return }
             contemporaryVolume = contemporaryWork.volumes.first!
-            contemporaryPage = 1
+            contemporaryPage = Self.firstSimanPage(for: contemporaryVolume)
+            contemporaryPickedSiman = nil
             saveState(for: .teshuvot)
         }
     }
     var contemporaryVolume: ContemporaryTeshuvotVolume = ContemporaryTeshuvotWork.works.first!.volumes.first! {
         didSet {
             guard !isRestoring else { return }
-            contemporaryPage = 1
+            contemporaryPage = Self.firstSimanPage(for: contemporaryVolume)
+            contemporaryPickedSiman = nil
             saveState(for: .teshuvot)
         }
+    }
+
+    /// Set only by `jumpToContemporarySiman(_:)` (the siman picker), never by forward/back
+    /// paging -- lets the header pill honor exactly which siman the reader picked even when
+    /// another siman shares the same page (a real, common case -- see `navChapterTitle`'s use of
+    /// this and `TeshuvotPageManager.siman(volume:page:)`'s own doc comment on the same bug).
+    /// Not itself cleared on every page change; `navChapterTitle` instead checks whether this
+    /// siman's own indexed page still equals `contemporaryPage` and falls through to the plain
+    /// floor lookup the moment it doesn't (e.g. after a forward/back page turn) -- simpler and
+    /// less error-prone than clearing it from every call site that mutates `contemporaryPage`.
+    var contemporaryPickedSiman: Int? = nil
+
+    /// Jumps to the page a specific siman starts on and remembers that this exact siman was
+    /// explicitly picked (see `contemporaryPickedSiman`) -- the siman picker's only entry point,
+    /// instead of assigning `contemporaryPage` directly.
+    func jumpToContemporarySiman(_ siman: Int) {
+        contemporaryPickedSiman = siman
+        if let page = TeshuvotPageManager.shared.page(volume: contemporaryVolume.id, siman: siman) {
+            contemporaryPage = page
+        }
+    }
+
+    /// The page siman 1 actually starts on, not raw page 1 -- several volumes open with a
+    /// title/front-matter page or two before siman 1 begins (e.g. Iggros Moshe OC I: siman 1 is
+    /// page 5, not 1), and landing on that title page while the siman pill/picker reads "1" was
+    /// a real, reported mismatch. Falls back to 1 if siman 1 isn't indexed yet for this volume.
+    private static func firstSimanPage(for volume: ContemporaryTeshuvotVolume) -> Int {
+        TeshuvotPageManager.shared.page(volume: volume.id, siman: 1) ?? 1
     }
     // Contemporary's reader (an image pager, not the Sefaria text pipeline) never calls
     // load(), which is where every other category's state normally gets persisted -- this
@@ -219,7 +249,11 @@ final class TextReaderViewModel {
     // -- work's and volume's own didSets both cascade into setting contemporaryPage, so a single
     // call here (rather than duplicating it in all three didSets) is sufficient; restore has its
     // own explicit call since didSets are suppressed under isRestoring.
-    var contemporaryPage: Int = 1 {
+    // Default is siman 1's real page, not raw page 1 -- on a genuinely fresh install (no
+    // "lastCategory" ever saved), init() skips restoreState(for:) entirely, so this stored
+    // default is what actually renders the very first time -- a bare `1` landed on the
+    // title/front-matter page while the pill still read "1", the exact bug this fixes.
+    var contemporaryPage: Int = TextReaderViewModel.firstSimanPage(for: ContemporaryTeshuvotWork.works.first!.volumes.first!) {
         didSet {
             if !isRestoring {
                 saveState(for: .teshuvot)
@@ -236,13 +270,30 @@ final class TextReaderViewModel {
     private(set) var podcastArtwork: [String: URL] = [:]
     @ObservationIgnored private var lastCheckedPodcastKey: String?
 
+    /// The siman actually being displayed right now -- `contemporaryPickedSiman` when it's
+    /// still valid (see its own doc comment and `navChapterTitle`'s identical check), else the
+    /// plain floor lookup. Shared by `navChapterTitle`'s pill, `refreshPodcastCitations`, and
+    /// the siman picker wheel (`TextReaderView.chapterPickerWheel`'s `.teshuvot` branch) so all
+    /// three agree on "what siman am I looking at" when two simanim share a page -- not
+    /// `private` because the picker wheel needs it too (see the bug this fixed: switching
+    /// Contemporary volumes updated the header pill correctly but the picker wheel, which used
+    /// to carry its own separate `@State` copy of the selection, kept showing the previous
+    /// volume's siman until the user actually touched the wheel).
+    func resolvedContemporarySiman() -> Int? {
+        if let picked = contemporaryPickedSiman,
+           TeshuvotPageManager.shared.page(volume: contemporaryVolume.id, siman: picked) == contemporaryPage {
+            return picked
+        }
+        return TeshuvotPageManager.shared.siman(volume: contemporaryVolume.id, page: contemporaryPage)
+    }
+
     /// Resolves the current siman from contemporaryPage via the same floor lookup the siman
     /// pill already uses, looks up citing episodes, and kicks off their artwork fetches. Only
     /// recomputes when the resolved siman actually changes -- most page turns stay within one
     /// teshuvah's span and shouldn't refetch on every single one.
     private func refreshPodcastCitations() {
         guard !contemporaryUsesSefaria,
-              let siman = TeshuvotPageManager.shared.siman(volume: contemporaryVolume.id, page: contemporaryPage)
+              let siman = resolvedContemporarySiman()
         else {
             citedPodcastEpisodes = []
             lastCheckedPodcastKey = nil
@@ -422,7 +473,8 @@ final class TextReaderViewModel {
                    let v = contemporaryWork.volumes.first(where: { $0.id == volId }) {
                     contemporaryVolume = v
                 }
-                contemporaryPage = d.object(forKey: "sel_contemp_page") as? Int ?? 1
+                contemporaryPage = d.object(forKey: "sel_contemp_page") as? Int ?? Self.firstSimanPage(for: contemporaryVolume)
+                contemporaryPickedSiman = nil
                 // contemporaryPage's didSet is suppressed under isRestoring, so this needs an
                 // explicit call to pick up citations for the just-restored position.
                 refreshPodcastCitations()
@@ -1036,8 +1088,11 @@ final class TextReaderViewModel {
                 // implementation detail. No descriptor/label, bare numeral only, per explicit
                 // request — falls back to the page number only if literally nothing is indexed
                 // yet for this volume.
-                let siman = TeshuvotPageManager.shared.siman(volume: contemporaryVolume.id, page: contemporaryPage)
-                    ?? contemporaryPage
+                //
+                // resolvedContemporarySiman() honors an explicit pick (contemporaryPickedSiman)
+                // when it's still valid — when two simanim share a page, the plain floor lookup
+                // alone can't tell which one the reader actually wants.
+                let siman = resolvedContemporarySiman() ?? contemporaryPage
                 return useHe ? SASimanNames.toHebrewNumeral(siman) : "\(siman)"
             }
             // Volume (when present) has its own pill — see navVolumeTitle — so this stays

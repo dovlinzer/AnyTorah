@@ -54,7 +54,12 @@ object TeshuvotPageManager {
     /** The siman most likely being displayed on a given page -- the reverse of [page], used to
      *  drive the reader header's siman pill. Finds the largest indexed siman whose own page is
      *  <= the given page (a floor lookup, not an exact match) -- see the Swift copy's doc
-     *  comment for the full reasoning. */
+     *  comment for the full reasoning, including why ties (two simanim starting on the exact
+     *  same page, a real common case) now deterministically prefer the SMALLEST siman rather
+     *  than whichever `JSONObject` key happened to iterate last (a real reported bug,
+     *  2026-08-31). Doesn't handle "the reader explicitly picked the LATER of two simanim
+     *  sharing a page" -- that's `TextReaderViewModel.contemporaryPickedSiman`'s job, checked
+     *  before this function is even called. */
     fun siman(context: Context, volume: String, page: Int): Int? {
         val obj = try { simanIndex(context).optJSONObject(volume) } catch (e: Exception) { null } ?: return null
         var bestSiman: Int? = null
@@ -63,9 +68,11 @@ object TeshuvotPageManager {
         while (keys.hasNext()) {
             val simanStr = keys.next()
             val simanPage = obj.optInt(simanStr, -1)
-            if (simanPage in 0..page && simanPage > bestPage) {
+            val siman = simanStr.toIntOrNull() ?: continue
+            if (simanPage !in 0..page) continue
+            if (simanPage > bestPage || (simanPage == bestPage && siman < (bestSiman ?: Int.MAX_VALUE))) {
                 bestPage = simanPage
-                bestSiman = simanStr.toIntOrNull()
+                bestSiman = siman
             }
         }
         return bestSiman

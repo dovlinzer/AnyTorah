@@ -235,7 +235,22 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
     // gets saved.
     var contemporaryWork by mutableStateOf(ContemporaryTeshuvotWork.works.first())
     var contemporaryVolume by mutableStateOf(ContemporaryTeshuvotWork.works.first().volumes.first())
-    var contemporaryPage by mutableIntStateOf(1)
+    // Default is siman 1's real page, not raw page 1 -- restoreState(TESHUVOT) only reaches the
+    // firstSimanPage fallback below once teshuvotSubcategory is already CONTEMPORARY, but on a
+    // fresh install teshuvotSubcategory itself still defaults to RISHONIM (no "sel_teshuvot_sub"
+    // pref saved yet), so the very first visit to Contemporary/Iggros Moshe renders whatever this
+    // stored default is -- a bare 1 landed on the title/front-matter page while the pill still
+    // read "1", the exact bug this fixes.
+    var contemporaryPage by mutableIntStateOf(firstSimanPage(ContemporaryTeshuvotWork.works.first().volumes.first()))
+
+    /** Set only by [jumpToContemporarySiman] (the siman picker), never by forward/back paging --
+     *  lets the header pill honor exactly which siman the reader picked even when another siman
+     *  shares the same page (a real, common case -- see [resolvedContemporarySiman] and
+     *  [TeshuvotPageManager.siman]'s own doc comment on the same bug). Not itself cleared on
+     *  every page change; [resolvedContemporarySiman] instead checks whether this siman's own
+     *  indexed page still equals [contemporaryPage] and falls through to the plain floor lookup
+     *  the moment it doesn't (e.g. after a forward/back page turn). */
+    var contemporaryPickedSiman by mutableStateOf<Int?>(null)
 
     /** True when Contemporary's currently-selected "book" is one of the Sefaria-digitized works
      *  (Mishpetei Uziel, Benei Banim, B'mareh HaBazak — fetched/rendered through the ordinary
@@ -249,14 +264,48 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
     fun setContemporaryWork(work: ContemporaryTeshuvotWork) {
         contemporaryWork = work
         contemporaryVolume = work.volumes.first()
-        contemporaryPage = 1
+        contemporaryPage = firstSimanPage(contemporaryVolume)
+        contemporaryPickedSiman = null
         saveState(TextCategory.TESHUVOT)
     }
 
     fun setContemporaryVolume(volume: ContemporaryTeshuvotVolume) {
         contemporaryVolume = volume
-        contemporaryPage = 1
+        contemporaryPage = firstSimanPage(contemporaryVolume)
+        contemporaryPickedSiman = null
         saveState(TextCategory.TESHUVOT)
+    }
+
+    /** Jumps to the page a specific siman starts on and remembers that this exact siman was
+     *  explicitly picked (see [contemporaryPickedSiman]) -- the siman picker's only entry point,
+     *  instead of assigning [contemporaryPage] directly. */
+    fun jumpToContemporarySiman(siman: Int) {
+        contemporaryPickedSiman = siman
+        TeshuvotPageManager.page(getApplication(), contemporaryVolume.id, siman)?.let { contemporaryPage = it }
+    }
+
+    /** The page siman 1 actually starts on, not raw page 1 -- several volumes open with a
+     *  title/front-matter page or two before siman 1 begins (e.g. Iggros Moshe OC I: siman 1 is
+     *  page 5, not 1), and landing on that title page while the siman pill/picker reads "1" was
+     *  a real, reported mismatch. Falls back to 1 if siman 1 isn't indexed yet for this volume.
+     *  Uses [getApplication] directly (already done elsewhere in this class, e.g. the
+     *  EinAyahLoader call below) rather than threading Context through from the Composable
+     *  layer, since [com.anytorah.viewmodels.TextReaderViewModel] is an AndroidViewModel. */
+    private fun firstSimanPage(volume: ContemporaryTeshuvotVolume): Int =
+        TeshuvotPageManager.page(getApplication(), volume.id, 1) ?: 1
+
+    /** The siman actually being displayed right now -- [contemporaryPickedSiman] when it's
+     *  still valid (see its own doc comment), else the plain floor lookup. Shared by
+     *  [navChapterTitle]'s pill and the podcast-citations `LaunchedEffect` in
+     *  TextReaderScreen.kt so both agree on "what siman am I looking at" when two simanim share
+     *  a page. Takes Context explicitly (unlike [firstSimanPage]/[jumpToContemporarySiman]'s use
+     *  of [getApplication]) to match [navChapterTitle]'s own existing optional-Context shape. */
+    fun resolvedContemporarySiman(context: android.content.Context): Int? {
+        val picked = contemporaryPickedSiman
+        if (picked != null && TeshuvotPageManager.page(context, contemporaryVolume.id, picked) == contemporaryPage) {
+            return picked
+        }
+        return TeshuvotPageManager.siman(context, contemporaryVolume.id, contemporaryPage)
     }
 
     fun setContemporaryPage(page: Int) {
@@ -656,7 +705,12 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
                     val volId = prefs.getString("sel_contemp_volume", null)
                     contemporaryVolume = contemporaryWork.volumes.firstOrNull { it.id == volId }
                         ?: contemporaryWork.volumes.first()
-                    contemporaryPage = prefs.getInt("sel_contemp_page", 1)
+                    contemporaryPage = if (prefs.contains("sel_contemp_page")) {
+                        prefs.getInt("sel_contemp_page", 1)
+                    } else {
+                        firstSimanPage(contemporaryVolume)
+                    }
+                    contemporaryPickedSiman = null
                 }
             }
         }
@@ -938,15 +992,12 @@ class TextReaderViewModel(application: Application) : AndroidViewModel(applicati
         }
         TextCategory.TESHUVOT -> {
             if (teshuvotSubcategory == TeshuvotSubcategory.CONTEMPORARY && !contemporaryUsesSefaria) {
-                // Reverse-looks-up which siman the current page falls within (a floor lookup
-                // against the siman->page index -- see TeshuvotPageManager.siman) so this pill
-                // reads as "you're on siman N", matching what the siman picker actually
-                // navigates by -- not the underlying page number, which is an implementation
-                // detail. No descriptor/label, bare numeral only, per explicit request -- falls
-                // back to the page number if context is unavailable or nothing's indexed yet.
-                val siman = contemporaryContext?.let {
-                    TeshuvotPageManager.siman(it, contemporaryVolume.id, contemporaryPage)
-                } ?: contemporaryPage
+                // resolvedContemporarySiman honors an explicit pick (contemporaryPickedSiman)
+                // when it's still valid -- when two simanim share a page, the plain floor lookup
+                // alone can't tell which one the reader actually wants. No descriptor/label,
+                // bare numeral only, per explicit request -- falls back to the page number if
+                // context is unavailable or nothing's indexed yet.
+                val siman = contemporaryContext?.let { resolvedContemporarySiman(it) } ?: contemporaryPage
                 if (saHebrewMode) SASimanNames.toHebrewNumeral(siman) else "$siman"
             } else {
                 // Volume (when present) has its own pill -- see navVolumeTitle -- so this stays

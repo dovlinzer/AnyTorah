@@ -586,17 +586,18 @@ an earlier round) are unchanged.
 ### Standing policy: RTL wheel-row word order, verify per-work (2026-08-30)
 
 `regularVolumePickerSheet` / `VolumePickerSheet`'s wheel rows type the numeral before the word
-in Hebrew mode ("ד חלק") because a native wheel picker row's own bidi resolution does not
-reorder RTL text the way plain `Text` does — typing the numeral first was verified on-device to
-land it visually on the right, for the works checked at the time. **This is not guaranteed to
-hold for every future numeric-labeled work** — Benei Banim and B'mareh HaBazak (added
-2026-08-30) needed the opposite order (word visually right of the numeral), fixed via a small
+in Hebrew mode ("ד חלק") by default because a native wheel picker row's own bidi resolution does
+not reorder RTL text the way plain `Text` does — typing the numeral first was verified on-device
+to land it visually on the right, for the works checked at the time. **This did not hold for
+most numeric-labeled works, not just an edge case or two** — the 2026-08-30 note here claimed
+~10 other works were "already confirmed correct with the default order," but that was an
+assumption, not a real on-device check: a 2026-09-01 review found 10 of them actually needed the
+opposite order (word visually right of the numeral) — Rosh, Rashba, Terumat HaDeshen, Sefer
+HaTashbetz, Halakhot Ketanot, Maharsham, Melammed Lehoil, Meshiv Davar, Radbaz, Sheilat Yaavetz —
+on top of Benei Banim/B'mareh HaBazak, already fixed. All 12 are now in the
 `wordBeforeNumeralInHebrew` exception set (`TextReaderView.swift`, `TextReaderScreen.kt`) rather
-than a global flip, to avoid regressing the ~10 other pre-existing numeric-labeled works
-(Radbaz, Rav Pealim, Rosh, Rashba, Melammed Lehoil, etc.) already confirmed correct with the
-default order. **When adding a new numeric-labeled Hebrew volume work, check it on-device** —
-if the word lands on the wrong side, add the work to that same exception set rather than
-guessing or flipping the shared default.
+than flipping the shared default globally. **When adding a new numeric-labeled Hebrew volume
+work, check it on-device — don't assume the default is right just because it wasn't flagged.**
 
 ### Standing policy: abbreviated Hebrew labels — picker spells out, pill abbreviates (2026-08-30)
 

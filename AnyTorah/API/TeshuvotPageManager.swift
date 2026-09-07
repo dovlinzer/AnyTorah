@@ -52,12 +52,22 @@ final class TeshuvotPageManager {
     /// page is <= the given page (a floor lookup, not an exact match) — correct for any page
     /// that falls within a teshuvah's own multi-page span, not just its first page, and degrades
     /// gracefully past the last indexed siman (stays pinned to it) rather than returning nil.
+    ///
+    /// When two or more simanim start on the exact same page (a real, common case — many pages
+    /// have 2-3 short teshuvot), this picks the SMALLEST of them: the one a reader arriving at
+    /// this page via forward paging would see first. Previously ties broke on Dictionary
+    /// iteration order (unspecified, effectively arbitrary per app launch) — a real reported bug
+    /// (2026-08-31): the pill inconsistently showed whichever tied entry happened to iterate
+    /// last, not necessarily the one the reader actually wants. Doesn't handle "the reader
+    /// explicitly picked the LATER of two simanim sharing a page" — that's
+    /// `TextReaderViewModel.contemporaryPickedSiman`'s job, checked before this function is even
+    /// called; this is only the page-arrival default.
     func siman(volume: String, page: Int) -> Int? {
         guard let index = simanIndex[volume] else { return nil }
         var best: (siman: Int, page: Int)? = nil
         for (simanStr, simanPage) in index {
             guard simanPage <= page, let siman = Int(simanStr) else { continue }
-            if best == nil || simanPage > best!.page {
+            if best == nil || simanPage > best!.page || (simanPage == best!.page && siman < best!.siman) {
                 best = (siman, simanPage)
             }
         }
