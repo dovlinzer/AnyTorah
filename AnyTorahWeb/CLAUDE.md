@@ -246,22 +246,43 @@ Machinery in `lib/sefariaClient.ts`:
     word ("המוציא") next recurred, many paragraphs later, skipping several real breaks in between.
     `literalCount < Math.ceil(parts.length / 2)` rejects such a window, falling through to a
     different word-count/skip or failing outright rather than risking a wild match.
-- `findTurBreakpoints(combinedHe, beitYosefHe)` — for each Beit Yosef entry (forward-only cursor,
-  never matching back to an earlier position even if the same short phrase recurs later), tries
-  matching its opening words at decreasing word counts (`[8,6,4,3]`, longer = more confident) and,
-  if that fails, retries after skipping the first 1-3 words (real cases: Beit Yosef opens with a
-  rhetorical connector like "ודע ד..." = "know that..." or "ומ"ש" = "ומה שכתב" = "and what [Tur]
-  wrote..." that isn't part of Tur's own text at all, so the literal quote only starts 1-3 words
-  later). An entry with no match at any skip/word-count contributes no break — it merges into the
-  preceding paragraph — rather than leaving a gap; this is an accepted, correct outcome for a
-  free-standing Beit Yosef remark with no literal anchor anywhere in Tur's text (confirmed by
-  exhaustive search), not just an unhandled failure.
+- **`findTurBreakpointsFromTags(combinedHe, entryCount)` — primary source, fixed 2026-09-11, tried
+  before the fuzzy matcher below.** Sefaria bakes exact Beit-Yosef position markers into Tur's own
+  Hebrew — `<i data-commentator="Beit Yosef" data-order="N.M"></i>`, empty position tags sprinkled
+  between words (same mechanism Darkhei Moshe's markers use, see below) — and `data-order`'s "N"
+  part reliably numbers Beit Yosef's entries in sequence (confirmed live across ~20 simanim: every
+  Orach Chayim/Even HaEzer siman checked and most Yoreh De'ah have tag count === entry count
+  exactly). Reading these is a plain mechanical parse with no matching heuristic at all, so it's
+  immune to the entire class of bug the fuzzy matcher below has to work around — including its
+  worst failure mode, a match landing *inside* a word. **Bug that motivated this, reported by the
+  user against Tur OC 1:** the fuzzy matcher's Hebrew-abbreviation gap (`[\s\S]{0,20}`, no
+  word-boundary anchor) found its leftmost satisfying position 4 characters into "שבשמים",
+  producing a paragraph that opened mid-word ("שמים פרט ארבעה דברי...") and shifted every later
+  break one entry off from its real Beit Yosef counterpart — visible on nearly every siman, not an
+  isolated glitch, which is why the feature "used to work better" (this replaced an *already*-fuzzy
+  first cut, so some drift was always possible, but this specific abbreviation-gap regression made
+  it systematic). Only trusted when the tag count exactly equals `entryCount`: real exceptions
+  exist, concentrated in Choshen Mishpat (e.g. Choshen Mishpat 1: 37 tags vs. 13 Beit Yosef
+  entries — some tags there anchor sub-positions *within* one longer entry rather than separate
+  entries), where it returns `null` rather than a wrong 1:1 guess, falling through to the fuzzy
+  matcher — unchanged behavior for those simanim, not a regression risk.
+- `findTurBreakpoints(combinedHe, beitYosefHe)` — fallback, used only when the tag-based approach
+  above returns `null`. For each Beit Yosef entry (forward-only cursor, never matching back to an
+  earlier position even if the same short phrase recurs later), tries matching its opening words at
+  decreasing word counts (`[8,6,4,3]`, longer = more confident) and, if that fails, retries after
+  skipping the first 1-3 words (real cases: Beit Yosef opens with a rhetorical connector like "ודע
+  ד..." = "know that..." or "ומ"ש" = "ומה שכתב" = "and what [Tur] wrote..." that isn't part of
+  Tur's own text at all, so the literal quote only starts 1-3 words later). An entry with no match
+  at any skip/word-count contributes no break — it merges into the preceding paragraph — rather
+  than leaving a gap; this is an accepted, correct outcome for a free-standing Beit Yosef remark
+  with no literal anchor anywhere in Tur's text (confirmed by exhaustive search), not just an
+  unhandled failure.
 - `splitByBreakpoints()` — cuts at the found offsets; a resulting chunk with no real text (e.g. a
   lone marker sitting right at a break) merges forward into the next real paragraph.
 - `computeTurParagraphChunks(mainRef, combinedHe)` — the shared orchestrator (fetches Beit Yosef,
-  computes breakpoints, splits) used by **both** `buildTurSegments` (the main text) and
-  `fetchTurParagraphPlainList` (Bach/Prisha+Drisha's matching corpus), so both always agree on
-  where a paragraph begins.
+  tries `findTurBreakpointsFromTags` then falls back to `findTurBreakpoints`, splits) used by
+  **both** `buildTurSegments` (the main text) and `fetchTurParagraphPlainList` (Bach/Prisha+Drisha's
+  matching corpus), so both always agree on where a paragraph begins.
 - `assignTurParagraphLabels(entries, paragraphs)` — labels each Beit Yosef/Bach/Prisha-Drisha panel
   entry with the Tur paragraph (0-based) it discusses, via the same `buildHebrewWordPattern`
   search (same forward-only, skip-retry heuristic) run against the already-split `paragraphs`
@@ -1476,6 +1497,53 @@ frontmost (a freshly opened/navigated popup takes focus by default), Mercava sit
 but still fully visible (non-overlapping screen regions), and the original, now-superseded main
 window ends up hidden behind both — which is the desired outcome, not a bug, since the whole
 point of the new popup is to replace using that window at that size.
+
+## Mercava side-by-side — pop-out window's own navigation didn't retarget Mercava, fixed 2026-09-11
+
+**Bug reported by the user:** changing daf in the *main* window correctly retargets an already-open
+Mercava popup (the `mercavaUrl`-watching `useEffect` right after `mercavaWindowRef`'s declaration
+above), but changing daf in the "Open AnyTorah alongside" pop-out window did nothing to Mercava.
+
+**Root cause: the pop-out is a wholly separate `Reader()` mount, in its own top-level browsing
+context, with its own empty `mercavaWindowRef`.** `openAnyTorahAlongside` hands off
+category/index/chapter/(halakha)/amud via a query string and opens a *second* `window.open()` —
+a distinct React tree with its own hooks, its own `useState`/`useRef`, nothing shared with the
+window that actually called `openOrFocusMercava` and populated *its* `mercavaWindowRef`. The
+pop-out's own Mercava/"alongside" buttons are deliberately hidden (`isSideBySidePopout`, see
+above) specifically because opening a *third* window from the pop-out would be wrong — but that
+same design left the pop-out with no way to reach the Mercava window at all once its own
+daf/amud changed, since it neither opened Mercava nor was ever handed a reference to it.
+
+**Fix: `window.opener` handshake, not a new named-window lookup.** The pop-out was opened via a
+plain `window.open()` with no `noopener`/`noreferrer` in `popupFeatures()`, so `window.opener`
+inside it is a live, same-origin reference back to the window that opened it — and that opener is
+exactly the window holding the real `mercavaWindowRef`. Rather than have the pop-out try to
+re-derive or re-open Mercava by its `"anytorah-mercava"` window name (which would risk silently
+spawning a *fresh*, default-positioned Mercava window if the user had since closed the original —
+the pop-out has no way to check `.closed` on a window it never held a reference to), the opener
+installs a small function on `window.__anytorahSyncMercava` (module-level `MERCAVA_SYNC_KEY`
+constant + `WindowWithMercavaSync` type in `Reader.tsx`) that closes over its own
+`mercavaWindowRef` and does exactly what its own same-window effect already does — checks
+`!mercavaWindowRef.current.closed` before reassigning `.location.href`. The pop-out's own
+`mercavaUrl`-watching effect (gated on `isSideBySidePopout`) calls
+`window.opener.__anytorahSyncMercava?.(mercavaUrl)` on every change, after checking
+`window.opener && !window.opener.closed`. This reuses the opener's own live reference and its own
+closed-check as the single source of truth, rather than duplicating a second, potentially-stale
+copy of "is Mercava still open" logic in the pop-out.
+
+**Why not `postMessage` or a `BroadcastChannel` instead:** both windows are same-origin and the
+pop-out already has direct synchronous access to `window.opener`'s globals — a message-passing
+round trip would add async indirection for no benefit here. `BroadcastChannel` in particular
+would also require Mercava-window awareness in every same-origin AnyTorah tab, not just the
+opener that actually holds the reference.
+
+**Verification limits, same as every other Mercava-popup change in this doc:** `tsc --noEmit` and
+`npm run lint` both pass with no new problems (same 16 pre-existing baseline as `main`, confirmed
+via `git stash`). The `mcp__Claude_Browser__*` preview pane cannot open real popup windows
+(`window.open()` returns `null` there — see the verification-limits note in the "Mercava
+side-by-side" section above), so the actual cross-window sync — open Mercava, open AnyTorah
+alongside, change daf in the pop-out, confirm Mercava retargets — still needs a real-Chrome/Safari
+check.
 
 ## Toolbar width pass, 2026-09-06 (label shortening, one-line scroll, sidebar hidden in the
 Mercava pop-out)

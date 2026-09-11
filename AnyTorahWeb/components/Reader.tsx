@@ -274,6 +274,14 @@ function popupFeatures(opts: { width: number; height: number; left: number; top:
   return `width=${opts.width},height=${opts.height},left=${opts.left},top=${opts.top},popup=1,toolbar=no,location=no,menubar=no,status=no,resizable=yes,scrollbars=yes`;
 }
 
+// Window-global hook letting a "side by side" AnyTorah pop-out (opened via openAnyTorahAlongside)
+// push its OWN daf navigation into the Mercava window — a window the pop-out never opened itself
+// (it was opened by its opener, which is the window that actually holds mercavaWindowRef) and so
+// has no direct reference to. The opener installs this function on `window`; the pop-out reaches
+// it via `window.opener`. See the two effects around `mercavaWindowRef` in the component below.
+const MERCAVA_SYNC_KEY = "__anytorahSyncMercava";
+type WindowWithMercavaSync = Window & { [MERCAVA_SYNC_KEY]?: (url: string) => void };
+
 const SHOW_DAF_IMAGE_KEY = "anytorah:showDafImage";
 
 function loadShowDafImage(): boolean {
@@ -1576,6 +1584,48 @@ export default function Reader() {
       mercavaWindowRef.current.location.href = mercavaUrl;
     }
   }, [mercavaUrl]);
+  // Opener half of the cross-window handshake (see MERCAVA_SYNC_KEY above): exposes a hook so a
+  // "side by side" pop-out this window opens (via openAnyTorahAlongside below) can push its own
+  // daf navigation into the Mercava window this window opened. `mercavaWindowRef` is a ref, so
+  // this closure always reads its live value despite the empty dependency array — no staleness.
+  // A no-op in a pop-out instance itself, since its own Mercava/alongside buttons are hidden
+  // (isSideBySidePopout) and it never populates mercavaWindowRef.
+  useEffect(() => {
+    (window as WindowWithMercavaSync)[MERCAVA_SYNC_KEY] = (url: string) => {
+      if (mercavaWindowRef.current && !mercavaWindowRef.current.closed) {
+        mercavaWindowRef.current.location.href = url;
+      }
+    };
+    return () => {
+      delete (window as WindowWithMercavaSync)[MERCAVA_SYNC_KEY];
+    };
+  }, []);
+  // Pop-out half of the handshake: this instance never opens the Mercava popup itself, but when
+  // it's the "side by side" AnyTorah half of an already-open pair, its own daf/amud navigation
+  // should still retarget the Mercava window sitting next to it — reach back through
+  // `window.opener` (the window that actually holds a reference to Mercava) rather than duplicating
+  // the open/track/poll logic here.
+  //
+  // Skips the very first time this fires (mercavaAlreadySyncedRef): openAnyTorahAlongside hands
+  // off the *current* category/index/chapter/amud, so on mount this pop-out's own mercavaUrl
+  // already matches what Mercava is already showing — re-navigating it again here would be a
+  // redundant no-op at best, and at worst re-triggers whatever OS/browser window-raising a
+  // same-URL `.location.href` reassignment causes right as the pop-out itself is trying to take
+  // focus (suspected cause of a reported "need an extra click" regression — this class of bug is
+  // exactly what the `mercavaWindowRef.current?.focus()` call in openAnyTorahAlongside below
+  // exists to avoid on the *opener* side; this guard avoids reintroducing it from the pop-out side).
+  const mercavaAlreadySyncedRef = useRef(false);
+  useEffect(() => {
+    if (!isSideBySidePopout || !mercavaUrl) return;
+    if (!mercavaAlreadySyncedRef.current) {
+      mercavaAlreadySyncedRef.current = true;
+      return;
+    }
+    const opener = window.opener as WindowWithMercavaSync | null;
+    if (opener && !opener.closed) {
+      opener[MERCAVA_SYNC_KEY]?.(mercavaUrl);
+    }
+  }, [isSideBySidePopout, mercavaUrl]);
   // This window's own React instance stays put — only a *new* window (this app has no in-place
   // "become narrower" API for the tab a user is already in) gets sized to Mercava's left
   // complement. Position/category/chapter is handed off via a query string
