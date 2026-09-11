@@ -1555,7 +1555,7 @@ Most follow `"CommentatorName on MainRef"`. Exceptions:
 | Onkelos | `"Onkelos Genesis 1"` — no "on" |
 | Targum Ketuvim | `"Targum Psalms 1"` — no "on" |
 | Abarbanel Torah | `"Abarbanel on Torah, Genesis 1"` — "Torah," prefix for Chumash |
-| Rav Hirsch | `"Rav Hirsch on Torah, Genesis 1"` — same pattern; German text only, no Hebrew |
+| Rav Hirsch | `"Rav Hirsch on Torah, Genesis 1"` — same pattern; still no Hebrew source text on Sefaria, but as of 2026-09 the default English version is the real Isaac Levy translation (Judaica Press, 1989, priority 4.0) covering all 5 Chumash books, not the German original — confirmed live against the API 2026-09-11, no app-side version pin, so this improved automatically with no code change. Previously the top-priority "en" version *was* the German original (no real English translation existed yet), which is what the old "German text only" note here referred to. |
 | Ralbag Torah | `"Ralbag on Torah, Genesis 1"`; Ruth/Esther: `"Ralbag Ruth 1"` (no "on") |
 | Alshich | Per-book Hebrew titles (see `alshichRef()` in TextModels.swift) |
 | Meshekh Chokhmah | `"Meshekh Chokhmah, Bereshit 1"` — Hebrew book name, comma separator |
