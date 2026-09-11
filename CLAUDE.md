@@ -1366,6 +1366,7 @@ covers all 15 volumes' citations, so this feature needs no further code changes 
 | `Models/BookmarkManager.swift` | `@Observable` persistence layer |
 | `ViewModels/TextReaderViewModel.swift` | All selection state, `load()`, `loadCommentary()`, navigation labels |
 | `API/SefariaTextClient.swift` | Sefaria v2 API client; 100 MB disk cache |
+| `API/TurParagraphEngine.swift` | Tur/Beit-Yosef paragraph splitting + Darkhei Moshe markers — a faithful port of `AnyTorahWeb/lib/sefariaClient.ts`'s Tur logic (no shared code across platforms; fixes must be hand-ported to both, plus `AnyTorahAndroid/.../api/TurParagraphEngine.kt`). Unit-tested against live Sefaria data in `AnyTorahTests/TurParagraphEngineTests.swift`. See `AnyTorahWeb/CLAUDE.md`'s "Tur" section for the algorithm's own detailed writeup, including `findTurBreakpointsFromTags` (added 2026-09-11, ported here same day) — the tag-based primary path that replaced relying solely on the older fuzzy quote-matcher after a user-reported mid-word paragraph break on Tur OC 1. |
 | `API/YomiService.swift` | Fetches today's Daf/Mishnah/929/Parsha/Rambam from Sefaria calendars |
 | `API/TalmudAudioService.swift` | Resolves YCT Talmud audio URLs from Supabase |
 | `API/DedicationService.swift` | Fetches + decodes the daily/weekly/monthly learning dedication banner |
@@ -1385,6 +1386,7 @@ covers all 15 volumes' citations, so this feature needs no further code changes 
 | `models/TextCatalog.kt` | Static catalog |
 | `models/SASimanNames.kt` | SA siman names + `toHebrewNumeral()` |
 | `viewmodels/TextReaderViewModel.kt` | All selection state, load, commentary |
+| `api/TurParagraphEngine.kt` | Tur/Beit-Yosef paragraph splitting + Darkhei Moshe markers — mirrors the iOS `API/TurParagraphEngine.swift` file of the same purpose; see that row above for details. |
 | `ui/theme/BrandGradients.kt` | `BrandColorFamily` — the 10 home-tile gradients (5 purple, 5 blue), Compose translation of the iOS file of the same purpose |
 | `ui/screens/HomeScreen.kt` | Home screen — 10 flat category tiles (not 7); selecting one jumps straight to the reader |
 | `ui/screens/TextReaderScreen.kt` | Main reading screen composable + all picker sheets |

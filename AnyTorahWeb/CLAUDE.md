@@ -177,7 +177,21 @@ visible text instead of styling them.
   optional param now that category alone (not a subcategory flag) distinguishes Tosefta/Mishnah
   and Yerushalmi/Bavli.
 
-## Tur (web-only, not yet ported to native)
+## Tur (also ported to iOS/Android as `TurParagraphEngine` — see below)
+
+**Correction, 2026-09-11: this heading previously read "web-only, not yet ported to native," which
+was already stale the day it was written** — Tur shipped on iOS/Android (commit "Port Tur
+(Beit Yosef/Bach/Darkhei Moshe/Prisha+Drisha) to iOS and Android") the same day as, but a few hours
+*after*, the commit that wrote this note, and nothing updated it afterward. The native port is
+`AnyTorah/API/TurParagraphEngine.swift` / `AnyTorahAndroid/.../api/TurParagraphEngine.kt` — a
+"faithful, line-by-line port" (their own doc comments' words) of this file's Tur/Beit-Yosef logic,
+independently unit-tested against live Sefaria data (`AnyTorahTests/TurParagraphEngineTests.swift`,
+`.../test/.../TurParagraphEngineTest.kt`) rather than shared code — there's no cross-platform
+shared-logic layer in this repo, so a fix here (like `findTurBreakpointsFromTags` below) has to be
+hand-ported to both native files and their golden test data separately, same as every other
+web/native duplication in this project. See those two files' own doc comments for the native side
+of this feature; this section documents the (shared-in-spirit, duplicated-in-practice) algorithm
+itself.
 
 A top-level category between Rambam and Shulchan Arukh, siman-based like SA (`lib/textCatalog.ts`
 `TurSection`: OC/YD/EH/CM, 697/403/178/426 simanim — near-identical to SA's own 697/403/178/427,

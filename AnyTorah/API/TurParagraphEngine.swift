@@ -225,6 +225,43 @@ enum TurParagraphEngine {
 
     // MARK: - Finding Tur's own paragraph breakpoints from Beit Yosef's entries
 
+    /// Matches Sefaria's own Beit-Yosef position markers baked into Tur's Hebrew —
+    /// `<i data-commentator="Beit Yosef" data-order="N.M"></i>` — sprinkled between words. See
+    /// `findTurBreakpointsFromTags`.
+    private static let turBeitYosefTagPattern = "<i data-commentator=\"Beit Yosef\" data-order=\"(\\d+)\\.\\d+\"></i>"
+
+    /// Finds Tur paragraph breakpoints from Sefaria's own embedded Beit-Yosef position markers
+    /// instead of fuzzy-matching Beit Yosef's opening words (`findTurBreakpoints` below) — a
+    /// faithful port of AnyTorahWeb's `findTurBreakpointsFromTags` (`lib/sefariaClient.ts`), added
+    /// there 2026-09-11 after a user-reported bug on Tur OC 1: `buildHebrewWordPattern`'s
+    /// abbreviation gap (`[\s\S]{0,20}`, no word-boundary anchor) let a match start mid-word — the
+    /// leftmost position satisfying its 20-character budget landed 4 characters into "שבשמים",
+    /// producing a paragraph that opened mid-word ("שמים פרט ארבעה דברי...") and shifted every
+    /// later break one entry off from its real Beit Yosef counterpart. These tags are the exact
+    /// positions Sefaria's editors anchored each Beit Yosef entry to, so reading them is a plain
+    /// mechanical parse, immune to the whole class of quote-matching bug `findTurBreakpoints`
+    /// exists to work around.
+    ///
+    /// Only trusted when the tag count exactly matches `entryCount` (confirmed live against real
+    /// Sefaria data across ~20 simanim spanning all four Tur sections that this holds almost
+    /// everywhere, but not for a real minority concentrated in Choshen Mishpat, where some tags
+    /// anchor sub-positions *within* one longer entry rather than separate entries) — returns nil,
+    /// not a partial/best-guess list, whenever the counts disagree, so the caller falls back to
+    /// `findTurBreakpoints`.
+    static func findTurBreakpointsFromTags(_ combinedHe: String, _ entryCount: Int) -> [Int]? {
+        guard let regex = try? NSRegularExpression(pattern: turBeitYosefTagPattern) else { return nil }
+        let ns = combinedHe as NSString
+        var seen = Set<Int>()
+        var breakpoints: [Int] = []
+        regex.enumerateMatches(in: combinedHe, range: NSRange(location: 0, length: ns.length)) { match, _, _ in
+            guard let match, let n = Int(ns.substring(with: match.range(at: 1))) else { return }
+            if seen.contains(n) { return }
+            seen.insert(n)
+            breakpoints.append(match.range.location)
+        }
+        return breakpoints.count == entryCount ? breakpoints : nil
+    }
+
     /// Finds, for each Beit Yosef entry (in siman order), the raw-string UTF-16 offset in
     /// `combinedHe` (Tur's own post-header Hebrew, tags intact, all seifim concatenated — see
     /// `combineTurSeifim`) where that entry's opening words begin. These offsets become the
@@ -310,12 +347,14 @@ enum TurParagraphEngine {
     }
 
     /// Fetches Beit Yosef for `mainRef` (via the caller-supplied `fetchBeitYosefEntries`) and
-    /// uses its entries to split `combinedHe` into paragraphs (`findTurBreakpoints`/
-    /// `splitByBreakpoints`) — shared by the main-text builder and the matching corpus used by
-    /// `assignTurParagraphLabels` for Bach/Prisha+Drisha, so both always agree on where a Tur
-    /// paragraph begins. A siman with no usable Beit Yosef data (fetch failure, or a siman Beit
-    /// Yosef simply doesn't cover) falls back to a single paragraph for the whole siman — never
-    /// a crash, never a gap.
+    /// uses its entries to split `combinedHe` into paragraphs — shared by the main-text builder
+    /// and the matching corpus used by `assignTurParagraphLabels` for Bach/Prisha+Drisha, so both
+    /// always agree on where a Tur paragraph begins. Prefers Sefaria's own embedded position
+    /// markers (`findTurBreakpointsFromTags`) when they line up 1:1 with Beit Yosef's entry
+    /// count — exact by construction, no matching heuristic involved — falling back to fuzzy
+    /// quote-matching (`findTurBreakpoints`) only when they don't. A siman with no usable Beit
+    /// Yosef data (fetch failure, or a siman Beit Yosef simply doesn't cover) falls back to a
+    /// single paragraph for the whole siman — never a crash, never a gap.
     static func computeTurParagraphChunks(
         _ combinedHe: String,
         fetchBeitYosefEntries: () async -> [CommentaryEntry]
@@ -325,7 +364,8 @@ enum TurParagraphEngine {
             if case let .text(_, _, he, _) = entry { return he }
             return nil
         }
-        let breakpoints = findTurBreakpoints(combinedHe, beitYosefHe)
+        let breakpoints = findTurBreakpointsFromTags(combinedHe, beitYosefHe.count)
+            ?? findTurBreakpoints(combinedHe, beitYosefHe)
         return splitByBreakpoints(combinedHe, breakpoints)
     }
 

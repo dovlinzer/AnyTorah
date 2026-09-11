@@ -34,18 +34,24 @@ final class TurParagraphEngineTests: XCTestCase {
 
     // Ground truth pulled directly from the live, already-shipped AnyTorahWeb app
     // (/api/commentary, /api/chapter) for Tur, Orach Chayim — not guessed. Identical to the
-    // already-verified Android Kotlin test's golden data.
+    // already-verified Android Kotlin test's golden data. Regenerated 2026-09-11 against the
+    // tag-based paragraph splitting fix (findTurBreakpointsFromTags) — the previous values here
+    // were captured from the pre-fix fuzzy matcher and are no longer correct: e.g. siman 1's
+    // labels used to read [0, 2, 2, 3, ...] because the fuzzy matcher's mid-word break on OC 1
+    // (see findTurBreakpointsFromTags' doc comment) merged/duplicated entries 1 and 2 into one
+    // wrong paragraph; siman 3/25/43/132's mainSegmentCount also changed now that spurious extra
+    // (or missing) breaks the fuzzy matcher used to produce are gone.
     private let golden: [Golden] = [
         Golden(siman: 1, beitYosefCount: 17, mainSegmentCount: 17,
-               labels: [0, 2, 2, 3, 4, 5, 6, 8, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
-        Golden(siman: 3, beitYosefCount: 20, mainSegmentCount: 18,
-               labels: [0, 1, 2, 3, 4, 4, 5, 6, 7, 8, 9, 10, 10, 11, 12, 13, 15, 15, 16, 17]),
-        Golden(siman: 25, beitYosefCount: 9, mainSegmentCount: 9,
+               labels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
+        Golden(siman: 3, beitYosefCount: 20, mainSegmentCount: 20,
+               labels: [0, 1, 2, 3, 4, 4, 6, 7, 8, 9, 10, 11, 11, 13, 14, 15, 16, 17, 18, 19]),
+        Golden(siman: 25, beitYosefCount: 9, mainSegmentCount: 10,
                labels: [0, 1, 2, 3, 4, 5, 6, 7, 7]),
-        Golden(siman: 43, beitYosefCount: 6, mainSegmentCount: 5,
-               labels: [0, 1, 1, 2, 3, 4]),
-        Golden(siman: 132, beitYosefCount: 2, mainSegmentCount: 3,
-               labels: [1, 2]),
+        Golden(siman: 43, beitYosefCount: 6, mainSegmentCount: 6,
+               labels: [0, 1, 1, 3, 4, 5]),
+        Golden(siman: 132, beitYosefCount: 2, mainSegmentCount: 2,
+               labels: [0, 1]),
         Golden(siman: 133, beitYosefCount: 2, mainSegmentCount: 2,
                labels: [0, 1]),
     ]
@@ -96,12 +102,17 @@ final class TurParagraphEngineTests: XCTestCase {
     }
 
     func testOC132DoesNotFragmentAtTheCitationColon() async throws {
+        // Regenerated 2026-09-11 for the tag-based split (findTurBreakpointsFromTags): 2 segments
+        // now, matching this siman's 2 real Beit Yosef entries exactly — the old fuzzy matcher's
+        // expected 3 included a spurious extra break unrelated to the (צא:) colon this test
+        // guards against (confirmed live: the colon still doesn't fragment anything under the
+        // fix — it sits mid-segment inside segment 1's text, not at a boundary).
         let mainHe = try await fetchTurMainHe("Orach Chayim", 132)
         let enPlaceholder = Array(repeating: "", count: mainHe.count)
         let segments = await TurParagraphEngine.buildTurSegments(mainHe, enPlaceholder) {
             await self.fetchTurCommentaryEntries(.beitYosef, "Orach Chayim", 132)
         }
-        XCTAssertEqual(segments.count, 3)
+        XCTAssertEqual(segments.count, 2)
     }
 
     func testOC133SevenVersePsalmListStaysOneParagraph() async throws {
